@@ -1,0 +1,162 @@
+import 'dart:collection';
+
+import 'package:burrow/models/reader_settings.dart';
+import 'package:burrow/models/style_run.dart';
+import 'package:burrow/services/book_search.dart';
+import 'package:flutter/material.dart';
+
+/// Builds the [InlineSpan] children for the page covering `text[start:end)`,
+/// merging style runs (emphasis, blockquotes) with search-match highlights
+/// and inline images.
+///
+/// Returns spans that tile the whole range: unstyled segments are emitted with
+/// [base] so no text is ever dropped. Images are rendered as [WidgetSpan]
+/// children sized to fit [renderWidth] while preserving aspect ratio, and
+/// capped vertically by [maxHeight] so decorative art does not dominate.
+List<InlineSpan> buildPageSpans({
+  required String text,
+  required int start,
+  required int end,
+  required TextStyle base,
+  required ReaderTheme theme,
+  List<StyleRun> runs = const [],
+  List<ImageRun> images = const [],
+  double renderWidth = 300,
+  double maxHeight = double.infinity,
+  List<SearchResult> matches = const [],
+  SearchResult? currentMatch,
+}) {
+  final slice = text.substring(start, end);
+  if (runs.isEmpty && matches.isEmpty && images.isEmpty) {
+    return [TextSpan(text: slice, style: base)];
+  }
+
+  // Build a map from offset -> ImageRun for quick lookup.
+  final imageMap = <int, ImageRun>{};
+  for (final img in images) {
+    if (img.offset >= start && img.offset < end) {
+      imageMap[img.offset] = img;
+    }
+  }
+
+  // Cut points: range bounds plus every run/match/image boundary inside it.
+  final cuts = SplayTreeSet<int>()..addAll([start, end]);
+  for (final r in runs) {
+    if (r.start > start && r.start < end) cuts.add(r.start);
+    if (r.end > start && r.end < end) cuts.add(r.end);
+  }
+  for (final m in matches) {
+    final ms = m.offset.clamp(start, end);
+    final me = (m.offset + m.length).clamp(start, end);
+    if (ms >= me) continue;
+    cuts.add(ms);
+    cuts.add(me);
+  }
+  for (final imgOff in imageMap.keys) {
+    cuts.add(imgOff);
+    cuts.add(imgOff + 1); // \uFFFC is one character
+  }
+  final boundaries = cuts.toList(growable: false);
+
+  // Copy before sorting: callers pass immutable or shared lists.
+  final sortedRuns = List<StyleRun>.of(runs)
+    ..sort((a, b) => a.start.compareTo(b.start));
+  final sortedMatches = List<SearchResult>.of(matches)
+    ..sort((a, b) => a.offset.compareTo(b.offset));
+
+  var runIdx = 0;
+  var matchIdx = 0;
+  final children = <InlineSpan>[];
+  for (var i = 0; i < boundaries.length - 1; i++) {
+    final segStart = boundaries[i];
+    final segEnd = boundaries[i + 1];
+
+    // Check if this segment is an image placeholder.
+    if (segEnd == segStart + 1 && imageMap.containsKey(segStart)) {
+      final img = imageMap[segStart]!;
+      final size = img.renderedSize(renderWidth, maxHeight: maxHeight);
+      Widget imageWidget = Image.memory(
+        img.bytes,
+        width: size.width,
+        height: size.height,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => Container(
+          width: size.width,
+          height: 48,
+          decoration: BoxDecoration(
+            color: theme.muted.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(Icons.broken_image_outlined,
+              color: theme.muted, size: 24),
+        ),
+      );
+      if (img.onTap != null) {
+        imageWidget = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: img.onTap,
+          child: imageWidget,
+        );
+      }
+      children.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Center(child: imageWidget),
+        ),
+      ));
+      continue;
+    }
+
+    // Advance pointers past spans that end before this segment starts.
+    while (runIdx < sortedRuns.length && sortedRuns[runIdx].end <= segStart) {
+      runIdx++;
+    }
+    while (matchIdx < sortedMatches.length &&
+        sortedMatches[matchIdx].offset + sortedMatches[matchIdx].length <=
+            segStart) {
+      matchIdx++;
+    }
+
+    final run =
+        runIdx < sortedRuns.length && sortedRuns[runIdx].start <= segStart
+            ? sortedRuns[runIdx]
+            : null;
+    final match = matchIdx < sortedMatches.length &&
+            sortedMatches[matchIdx].offset <= segStart
+        ? sortedMatches[matchIdx]
+        : null;
+
+    var segStyle = base;
+    if (run != null) {
+      segStyle = segStyle.copyWith(
+        fontWeight: run.bold ? FontWeight.w700 : null,
+        fontStyle: run.italic || run.quote ? FontStyle.italic : null,
+        color: run.quote ? theme.muted : null,
+      );
+    }
+    if (match != null) {
+      final isCurrent = match == currentMatch;
+      segStyle = segStyle.copyWith(
+        backgroundColor:
+            theme.accent.withValues(alpha: isCurrent ? 0.35 : 0.15),
+        color: isCurrent ? theme.accent : null,
+        fontWeight: isCurrent ? FontWeight.w700 : null,
+      );
+    }
+    final textContent = slice.substring(segStart - start, segEnd - start);
+    // Skip if this is just the \uFFFC placeholder text (shouldn't reach here
+    // normally, but guard against it).
+    if (!textContent.contains('\uFFFC')) {
+      children.add(TextSpan(
+        text: textContent,
+        style: segStyle,
+      ));
+    }
+  }
+
+  if (children.isEmpty) {
+    return [TextSpan(text: slice, style: base)];
+  }
+  return children;
+}

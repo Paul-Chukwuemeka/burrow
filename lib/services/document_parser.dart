@@ -1,0 +1,1245 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
+import 'package:xml/xml.dart';
+
+import '../models/book.dart';
+import '../models/style_run.dart';
+import '../utils/book_title.dart';
+
+class Chapter {
+  const Chapter(this.title, this.body, [this.runs = const [], this.images = const []]);
+  final String title;
+  final String body;
+
+  /// Styled ranges over [body] (emphasis, blockquotes). Empty for plain-text
+  /// sources; rendering falls back to uniform styling when absent.
+  final List<StyleRun> runs;
+
+  /// Inline images embedded in [body] at the corresponding `\uFFFC` offsets.
+  final List<ImageRun> images;
+}
+
+class ParsedDocument {
+  const ParsedDocument({
+    required this.title,
+    required this.author,
+    required this.chapters,
+    this.coverBytes,
+    this.description,
+    this.annotation,
+    this.genre,
+    this.seriesName,
+    this.seriesIndex,
+    this.publisher,
+    this.isbn,
+    this.language,
+    this.publicationDate,
+    this.rights,
+    this.type,
+    this.source,
+    this.titleSort,
+    this.authorSort,
+  });
+  final String title;
+  final String author;
+  final List<Chapter> chapters;
+
+  /// Raw image bytes (jpeg/png) for the cover, if the file embeds one.
+  final List<int>? coverBytes;
+
+  final String? description;
+  final String? annotation;
+  final String? genre;
+  final String? seriesName;
+  final double? seriesIndex;
+  final String? publisher;
+  final String? isbn;
+  final String? language;
+  final String? publicationDate;
+  final String? rights;
+  final String? type;
+  final String? source;
+  final String? titleSort;
+  final String? authorSort;
+}
+
+/// One table-of-contents entry, in document order.
+///
+/// [fragment] is kept (not stripped) because several entries commonly point
+/// into a single spine document via `#anchor`; each of those is a chapter in
+/// its own right, so the fragment is what tells them apart.
+@immutable
+class TocEntry {
+  const TocEntry(this.fileKey, this.fragment, this.title);
+
+  /// Normalized zip path of the target document, without the fragment.
+  final String fileKey;
+
+  /// Raw (still percent-encoded) anchor id, or null when the entry targets the
+  /// whole document.
+  final String? fragment;
+
+  final String title;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TocEntry &&
+      other.fileKey == fileKey &&
+      other.fragment == fragment &&
+      other.title == title;
+
+  @override
+  int get hashCode => Object.hash(fileKey, fragment, title);
+}
+
+class DocumentParser {
+  /// Parses a document into chapters. Heavy work runs in a background isolate.
+  static Future<ParsedDocument> parse(String path, BookFormat format) {
+    return compute(_parseIsolate, path);
+  }
+
+  static Future<ParsedDocument> _parseIsolate(String path) async {
+    switch (formatFromExtension(path)) {
+      case BookFormat.epub:
+        return _parseEpub(path);
+      case BookFormat.pdf:
+        return ParsedDocument(
+          title: _titleFromFilename(path),
+          author: '',
+          chapters: const [Chapter('', '')],
+        );
+      case BookFormat.txt:
+        return _parseTxt(path);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // EPUB: a minimal OPF/spine/NCX reader over the zip container.
+  // --------------------------------------------------------------------------
+
+  static Future<ParsedDocument> _parseEpub(String path) async {
+    final Uint8List bytes;
+    try {
+      bytes = await File(path).readAsBytes();
+    } catch (_) {
+      throw const FormatException('Not a valid EPUB file');
+    }
+    return parseEpubBytes(bytes, fallbackTitle: _titleFromFilename(path));
+  }
+
+  /// Parses EPUB [bytes] into chapters. Separated from file reading so tests
+  /// can drive the whole OPF/spine/NCX path from an in-memory archive.
+  @visibleForTesting
+  static ParsedDocument parseEpubBytes(
+    Uint8List bytes, {
+    String fallbackTitle = '',
+  }) {
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      throw const FormatException('Not a valid EPUB file');
+    }
+
+    // Case-insensitive entry lookup; EPUBs are inconsistent about casing.
+    final entries = {
+      for (final f in archive.files)
+        Uri.decodeComponent(f.name.toLowerCase()): f,
+    };
+    Uint8List? entry(String name) => entries[name.toLowerCase()]?.content;
+
+    XmlDocument? tryParse(Uint8List? data) {
+      if (data == null) return null;
+      try {
+        return XmlDocument.parse(utf8.decode(data, allowMalformed: true));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    // container.xml -> rootfile (the .opf path).
+    final container = tryParse(entry('META-INF/container.xml'));
+    String opfPath = '';
+    if (container != null) {
+      for (final el in _els(container, 'rootfile')) {
+        final full = el.getAttribute('full-path');
+        if (full != null && full.isNotEmpty) {
+          opfPath = full;
+          break;
+        }
+      }
+    }
+    final opfData = entry(opfPath);
+    final opf = opfData == null ? null : tryParse(opfData);
+    if (opf == null) throw const FormatException('Not a valid EPUB file');
+
+    final opfDir = opfPath.contains('/')
+        ? opfPath.substring(0, opfPath.lastIndexOf('/'))
+        : '';
+
+    // Metadata.
+    var title = '';
+    var author = '';
+    for (final el in _els(opf, 'title')) {
+      final t = el.innerText.trim();
+      if (t.isNotEmpty) {
+        title = t;
+        break;
+      }
+    }
+    for (final el in _els(opf, 'creator')) {
+      final a = el.innerText.trim();
+      if (a.isNotEmpty) {
+        author = a;
+        break;
+      }
+    }
+
+    String? description;
+    for (final el in _els(opf, 'description')) {
+      final d = el.innerText.trim();
+      if (d.isNotEmpty) {
+        description = d;
+        break;
+      }
+    }
+
+    // Annotation: Calibre stores this in <meta name="calibre:annotation">.
+    String? annotation;
+    for (final el in _els(opf, 'meta')) {
+      if ((el.getAttribute('name') ?? '') == 'calibre:annotation') {
+        annotation = el.getAttribute('content')?.trim();
+        break;
+      }
+    }
+
+    String? language;
+    for (final el in _els(opf, 'language')) {
+      final l = el.innerText.trim();
+      if (l.isNotEmpty) {
+        language = l;
+        break;
+      }
+    }
+
+    String? publisher;
+    for (final el in _els(opf, 'publisher')) {
+      final p = el.innerText.trim();
+      if (p.isNotEmpty) {
+        publisher = p;
+        break;
+      }
+    }
+
+    // Genre: collect ALL dc:subject values and join with comma.
+    final genres = <String>[];
+    for (final el in _els(opf, 'subject')) {
+      final s = el.innerText.trim();
+      if (s.isNotEmpty) genres.add(s);
+    }
+    final genre = genres.isEmpty ? null : genres.join(', ');
+
+    // ISBN: strip hyphens, prefer explicit scheme, handle ISBN-10 with X.
+    String? isbn;
+    for (final el in _els(opf, 'identifier')) {
+      final scheme = (el.getAttribute('scheme') ?? el.getAttribute('opf:scheme') ?? '').toLowerCase();
+      final raw = el.innerText.trim();
+      final v = raw.replaceAll('-', '');
+      if (scheme == 'isbn') {
+        isbn = raw;
+        break;
+      }
+      if (isbn == null && v.isNotEmpty && RegExp(r'^\d{9}[\dXx]$').hasMatch(v)) {
+        isbn = raw;
+      }
+    }
+
+    // Series: Calibre convention <meta name="calibre:series" content="..."/>
+    // or EPUB3 <meta property="belongs-to-series">.
+    String? seriesName;
+    double? seriesIndex;
+    for (final el in _els(opf, 'meta')) {
+      final name = el.getAttribute('name') ?? '';
+      if (name == 'calibre:series') {
+        seriesName = el.getAttribute('content')?.trim();
+      } else if (name == 'calibre:series_index') {
+        seriesIndex = double.tryParse(el.getAttribute('content')?.trim() ?? '');
+      }
+    }
+    if (seriesName == null) {
+      for (final el in _els(opf, 'meta')) {
+        final prop = el.getAttribute('property') ?? '';
+        if (prop == 'belongs-to-series') {
+          seriesName = el.innerText.trim();
+        } else if (prop == 'group-position') {
+          seriesIndex ??= double.tryParse(el.innerText.trim());
+        }
+      }
+    }
+
+    String? publicationDate;
+    for (final el in _els(opf, 'date')) {
+      final d = el.innerText.trim();
+      if (d.isNotEmpty) {
+        publicationDate = d;
+        break;
+      }
+    }
+
+    String? rights;
+    for (final el in _els(opf, 'rights')) {
+      final r = el.innerText.trim();
+      if (r.isNotEmpty) {
+        rights = r;
+        break;
+      }
+    }
+
+    String? type;
+    for (final el in _els(opf, 'type')) {
+      final t = el.innerText.trim();
+      if (t.isNotEmpty) {
+        type = t;
+        break;
+      }
+    }
+
+    String? source;
+    for (final el in _els(opf, 'source')) {
+      final s = el.innerText.trim();
+      if (s.isNotEmpty) {
+        source = s;
+        break;
+      }
+    }
+
+    // Sort forms from opf:file-as attribute.
+    String? titleSort;
+    for (final el in _els(opf, 'title')) {
+      final fa = el.getAttribute('opf:file-as')?.trim();
+      if (fa != null && fa.isNotEmpty) {
+        titleSort = fa;
+        break;
+      }
+    }
+    String? authorSort;
+    for (final el in _els(opf, 'creator')) {
+      final fa = el.getAttribute('opf:file-as')?.trim();
+      if (fa != null && fa.isNotEmpty) {
+        authorSort = fa;
+        break;
+      }
+    }
+
+    // Manifest: id -> resolved href. The item flagged properties="nav" is the
+    // EPUB3 table of contents.
+    final manifest = <String, String>{};
+    String? navPath;
+    for (final el in _els(opf, 'item')) {
+      final id = el.getAttribute('id');
+      final href = el.getAttribute('href');
+      if (id == null || href == null) continue;
+      final resolved = _resolveHref(opfDir, href);
+      manifest[id] = resolved;
+      final props = el.getAttribute('properties');
+      if (props != null && props.split(RegExp(r'\s+')).contains('nav')) {
+        navPath = resolved;
+      }
+    }
+
+    // Spine order (fall back to all XHTML manifest entries).
+    final spineIds = [
+      for (final el in _els(opf, 'itemref'))
+        if (el.getAttribute('idref') != null) el.getAttribute('idref')!,
+    ];
+    final docPaths = [
+      ...spineIds.map((id) => manifest[id]).nonNulls,
+      if (spineIds.isEmpty)
+        ...manifest.values.where((p) => p.endsWith('.xhtml') || p.endsWith('.html')),
+    ];
+
+    // Table of contents, in reading order and with fragments intact.
+    var tocEntries = const <TocEntry>[];
+    final spineToc = _els(opf, 'spine').firstOrNull?.getAttribute('toc');
+    var ncxPath = spineToc == null ? null : manifest[spineToc];
+    if (ncxPath == null) {
+      for (final p in manifest.values) {
+        if (p.toLowerCase().endsWith('.ncx')) {
+          ncxPath = p;
+          break;
+        }
+      }
+    }
+    if (ncxPath != null) {
+      final ncxDir =
+          ncxPath.contains('/') ? ncxPath.substring(0, ncxPath.lastIndexOf('/')) : '';
+      tocEntries = _parseNcx(entry(ncxPath), ncxDir);
+    }
+    if (tocEntries.isEmpty && navPath != null) {
+      tocEntries = _parseNavDoc(entry(navPath), navPath);
+    }
+    // Last resort for books that never flag their nav document.
+    if (tocEntries.isEmpty) {
+      for (final p in manifest.values) {
+        if (!_isHtmlPath(p)) continue;
+        tocEntries = _parseNavDoc(entry(p), p, requireNav: true);
+        if (tocEntries.isNotEmpty) break;
+      }
+    }
+
+    // Group entries by target document, preserving reading order.
+    final byFile = <String, List<TocEntry>>{};
+    for (final e in tocEntries) {
+      (byFile[e.fileKey] ??= <TocEntry>[]).add(e);
+    }
+
+    // Convert each spine document to one or more chapters. A document that
+    // several TOC entries point into is split at their anchors, so every
+    // entry becomes a chapter of its own.
+    final chapters = <Chapter>[];
+    for (final p in docPaths) {
+      final html = entry(p);
+      if (html == null) continue;
+      final docDir = p.contains('/') ? p.substring(0, p.lastIndexOf('/')) : '';
+      final (body, runs, anchors, images) =
+          parseHtmlDocument(
+            utf8.decode(html, allowMalformed: true),
+            archiveEntries: {
+              for (final e in entries.values)
+                Uri.decodeComponent(e.name.toLowerCase()): e.content,
+            },
+            baseDir: docDir,
+          );
+      if (body.trim().isEmpty) continue;
+      chapters.addAll(
+        splitByAnchors(body, runs, anchors, byFile[_normalizeKey(p)] ?? const [], images),
+      );
+    }
+    if (chapters.isEmpty) {
+      throw const FormatException('EPUB contains no readable text');
+    }
+
+    return ParsedDocument(
+      title: title.isEmpty ? fallbackTitle : title,
+      author: author,
+      chapters: chapters,
+      coverBytes: _extractCover(archive, entries, opf),
+      description: description,
+      annotation: annotation,
+      genre: genre,
+      seriesName: seriesName,
+      seriesIndex: seriesIndex,
+      publisher: publisher,
+      isbn: isbn,
+      language: language,
+      publicationDate: publicationDate,
+      rights: rights,
+      type: type,
+      source: source,
+      titleSort: titleSort,
+      authorSort: authorSort,
+    );
+  }
+
+  static Iterable<XmlElement> _els(XmlNode node, String local) =>
+      node.descendantElements.where((e) => e.name.local == local);
+
+  /// Cuts one spine document into a chapter per table-of-contents [entries].
+  ///
+  /// Many EPUBs hold several chapters in a single document and distinguish them
+  /// only by `#anchor`. Splitting here — rather than one chapter per file — is
+  /// what makes each entry addressable: pagination, the contents sheet and
+  /// saved positions all key off the chapter list, so they need no changes.
+  ///
+  /// [runs] are rebased into each slice's coordinate space. Text before the
+  /// first anchor becomes an untitled leading chapter, which the contents sheet
+  /// hides but which still reads in sequence. Entries whose fragment is absent
+  /// from the document are ignored; if none resolve, the document stays whole.
+  @visibleForTesting
+  static List<Chapter> splitByAnchors(
+    String body,
+    List<StyleRun> runs,
+    Map<String, int> anchors,
+    List<TocEntry> entries, [
+    List<ImageRun> images = const [],
+  ]) {
+    // offset -> title, first entry wins when two anchors land together.
+    final cuts = <int, String>{};
+    for (final e in entries) {
+      final offset =
+          e.fragment == null ? 0 : _anchorOffset(anchors, e.fragment!);
+      if (offset == null) continue;
+      cuts.putIfAbsent(offset.clamp(0, body.length), () => e.title);
+    }
+
+    if (cuts.isEmpty) {
+      // No usable anchors: keep the document whole, titled by its first entry.
+      return [Chapter(entries.isEmpty ? '' : entries.first.title, body, runs, images)];
+    }
+
+    final offsets = cuts.keys.toList()..sort();
+    if (offsets.first > 0) offsets.insert(0, 0);
+
+    final out = <Chapter>[];
+    for (var i = 0; i < offsets.length; i++) {
+      final start = offsets[i];
+      final end = i + 1 < offsets.length ? offsets[i + 1] : body.length;
+      if (end <= start) continue;
+      final slice = body.substring(start, end);
+      if (slice.trim().isEmpty) continue;
+      out.add(Chapter(cuts[start] ?? '', slice, _sliceRuns(runs, start, end), _sliceImages(images, start, end)));
+    }
+    return out.isEmpty
+        ? [Chapter(entries.first.title, body, runs, images)]
+        : out;
+  }
+
+  /// Clips [runs] to `[start, end)` and shifts them to slice-local offsets.
+  static List<StyleRun> _sliceRuns(List<StyleRun> runs, int start, int end) {
+    if (runs.isEmpty) return const [];
+    final out = <StyleRun>[];
+    for (final r in runs) {
+      final s = math.max(r.start, start);
+      final e = math.min(r.end, end);
+      if (e <= s) continue;
+      out.add(StyleRun(
+        s - start,
+        e - start,
+        bold: r.bold,
+        italic: r.italic,
+        quote: r.quote,
+      ));
+    }
+    return out;
+  }
+
+  /// Clips [images] to `[start, end)` and shifts them to slice-local offsets.
+  static List<ImageRun> _sliceImages(List<ImageRun> images, int start, int end) {
+    if (images.isEmpty) return const [];
+    final out = <ImageRun>[];
+    for (final img in images) {
+      if (img.offset >= start && img.offset < end) {
+        out.add(ImageRun(
+          offset: img.offset - start,
+          bytes: img.bytes,
+          intrinsicWidth: img.intrinsicWidth,
+          intrinsicHeight: img.intrinsicHeight,
+          alt: img.alt,
+          fullWidth: img.fullWidth,
+        ));
+      }
+    }
+    return out;
+  }
+
+  static String _normalizeKey(String path) =>
+      Uri.decodeComponent(path).toLowerCase();
+
+  /// Resolves [href] (possibly `../`-relative, percent-encoded, with
+  /// fragment) against the OPF's directory inside the zip.
+  static String _resolveHref(String baseDir, String href) {
+    final clean = href.split('#').first.trim();
+    final decoded = Uri.decodeComponent(clean);
+    final parts = baseDir.isEmpty ? decoded.split('/') : '$baseDir/$decoded'.split('/');
+    final out = <String>[];
+    for (final part in parts) {
+      if (part.isEmpty || part == '.') continue;
+      if (part == '..') {
+        if (out.isNotEmpty) out.removeLast();
+      } else {
+        out.add(part);
+      }
+    }
+    return out.join('/');
+  }
+
+  /// Splits [href] into its resolved document path and its fragment.
+  static (String, String?) _splitHref(String baseDir, String href) {
+    final hash = href.indexOf('#');
+    final frag = hash >= 0 ? href.substring(hash + 1).trim() : '';
+    String path;
+    try {
+      path = _resolveHref(baseDir, href);
+    } catch (_) {
+      // Malformed percent-escapes: fall back to the undecoded path.
+      path = href.split('#').first.trim();
+    }
+    return (path, frag.isEmpty ? null : frag);
+  }
+
+  static bool _isHtmlPath(String p) {
+    final l = p.toLowerCase();
+    return l.endsWith('.xhtml') || l.endsWith('.html') || l.endsWith('.htm');
+  }
+
+  /// Looks up [fragment] among [anchors], tolerating percent-encoding
+  /// differences between the TOC and the document itself.
+  static int? _anchorOffset(Map<String, int> anchors, String fragment) {
+    final direct = anchors[fragment];
+    if (direct != null) return direct;
+    try {
+      final decoded = Uri.decodeComponent(fragment);
+      final hit = anchors[decoded];
+      if (hit != null) return hit;
+    } catch (_) {
+      // Not valid percent-encoding; nothing more to try.
+    }
+    return null;
+  }
+
+  /// EPUB2 TOC (toc.ncx): navPoint/navLabel/text + content/@src, flattened in
+  /// document order so nested navPoints keep their reading sequence.
+  static List<TocEntry> _parseNcx(Uint8List? data, String ncxDir) {
+    final result = <TocEntry>[];
+    final doc = data == null ? null : _safeParse(data);
+    if (doc == null) return result;
+    try {
+      final seen = <String>{};
+      for (final point in _els(doc, 'navPoint')) {
+        final texts = _els(point, 'text');
+        final label = texts.isNotEmpty ? texts.first.innerText.trim() : '';
+        final src = _els(point, 'content').firstOrNull?.getAttribute('src');
+        if (src == null || label.isEmpty) continue;
+        final (file, fragment) = _splitHref(ncxDir, src);
+        if (file.isEmpty) continue;
+        final key = _normalizeKey(file);
+        if (!seen.add('$key#${fragment ?? ''}')) continue;
+        result.add(TocEntry(key, fragment, label));
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  /// EPUB3 TOC (xhtml with properties="nav"): anchors within the toc `<nav>`.
+  ///
+  /// When [requireNav] is set, documents without a real `<nav>` are rejected —
+  /// that keeps a stray link in some other page from being mistaken for a TOC.
+  static List<TocEntry> _parseNavDoc(
+    Uint8List? data,
+    String docPath, {
+    bool requireNav = false,
+  }) {
+    final result = <TocEntry>[];
+    final doc = data == null ? null : _safeParse(data);
+    if (doc == null) return result;
+    try {
+      final navs = _els(doc, 'nav').toList();
+      if (navs.isEmpty && requireNav) return result;
+      // Prefer the nav flagged epub:type="toc"; fall back to the first nav.
+      XmlElement? nav;
+      for (final n in navs) {
+        String? type;
+        for (final a in n.attributes) {
+          if (a.name.local == 'type') {
+            type = a.value;
+            break;
+          }
+        }
+        if (type != null && type.split(RegExp(r'\s+')).contains('toc')) {
+          nav = n;
+          break;
+        }
+      }
+      nav ??= navs.firstOrNull ?? doc.rootElement;
+      final baseDir = docPath.contains('/')
+          ? docPath.substring(0, docPath.lastIndexOf('/'))
+          : '';
+      final seen = <String>{};
+      for (final a in _els(nav, 'a')) {
+        final href = a.getAttribute('href');
+        final label = a.innerText.trim();
+        if (href == null || label.isEmpty) continue;
+        final (file, fragment) = _splitHref(baseDir, href);
+        if (file.isEmpty) continue;
+        final key = _normalizeKey(file);
+        if (!seen.add('$key#${fragment ?? ''}')) continue;
+        result.add(TocEntry(key, fragment, label));
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  static XmlDocument? _safeParse(Uint8List data) {
+    try {
+      return XmlDocument.parse(utf8.decode(data, allowMalformed: true));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Cover image bytes: OPF `<meta name="cover" content="id">` -> manifest
+  /// item -> raw bytes. Falls back to any archive entry named like a cover.
+  static List<int>? _extractCover(
+    Archive archive,
+    Map<String, ArchiveFile> entries,
+    XmlDocument opf,
+  ) {
+    try {
+      for (final meta in _els(opf, 'meta')) {
+        if (meta.getAttribute('name')?.toLowerCase() != 'cover') continue;
+        final coverId = meta.getAttribute('content');
+        for (final item in _els(opf, 'item')) {
+          if (item.getAttribute('id') != coverId) continue;
+          if (!(item.getAttribute('media-type') ?? '').startsWith('image/')) {
+            continue;
+          }
+          final href = item.getAttribute('href');
+          if (href == null) continue;
+          final bytes = entries[_resolveHrefForLookup(href)]?.content;
+          if (bytes != null && bytes.isNotEmpty) return bytes;
+        }
+      }
+      // Fallback: any image entry whose name mentions "cover".
+      const imageExt = {'.jpg', '.jpeg', '.png', '.webp', '.gif'};
+      for (final f in archive.files) {
+        final lower = f.name.toLowerCase();
+        final dot = lower.lastIndexOf('.');
+        if (dot < 0 || !imageExt.contains(lower.substring(dot))) continue;
+        if (lower.contains('cover')) return f.content;
+      }
+    } catch (_) {
+      // Malformed metadata should never block an import.
+    }
+    return null;
+  }
+
+  /// Cover hrefs live in the same directory space as the OPF itself.
+  static String _resolveHrefForLookup(String href) {
+    final clean = Uri.decodeComponent(href.split('#').first.trim());
+    final parts = clean.split('/');
+    final out = <String>[];
+    for (final part in parts) {
+      if (part.isEmpty || part == '.') continue;
+      if (part == '..') {
+        if (out.isNotEmpty) out.removeLast();
+      } else {
+        out.add(part);
+      }
+    }
+    return out.join('/');
+  }
+
+  // --------------------------------------------------------------------------
+  // TXT
+  // --------------------------------------------------------------------------
+
+  static Future<ParsedDocument> _parseTxt(String path) async {
+    final bytes = await File(path).readAsBytes();
+    var text = utf8.decode(bytes, allowMalformed: true);
+    // If malformed replacement chars dominate, retry as Latin-1.
+    if ('\uFFFD'.allMatches(text).length > text.length / 64) {
+      text = latin1.decode(bytes, allowInvalid: true);
+    }
+    if (text.trim().isEmpty) throw const FormatException('File is empty');
+    final chapters = chapterizeTxt(text);
+    return ParsedDocument(
+      title: _titleFromFilename(path),
+      author: '',
+      chapters: chapters,
+    );
+  }
+
+  /// Splits plain text into chapters using heading patterns and blank-line runs.
+  static List<Chapter> chapterizeTxt(String text) {
+    // Regex for explicit chapter headings at line start:
+    // "Chapter 1", "Chapter 12:", "PART I", "PART 12", etc.
+    final headingRe = RegExp(
+      r'^(?:Chapter|Ch(?:apter)?\.?)\s+\d+'
+      r'|^PART\s+[IVX\d]+',
+      caseSensitive: false,
+      multiLine: true,
+    );
+
+    // Find all heading positions.
+    final headings = <MapEntry<int, String>>[];
+    for (final match in headingRe.allMatches(text)) {
+      headings.add(MapEntry(match.start, match.group(0)!.trim()));
+    }
+
+    // Find blank-line run positions (3+ consecutive blank lines).
+    final blankRunRe = RegExp(r'\n\s*\n\s*\n[ \t]*\n*');
+    final blankRuns = <int>[];
+    for (final match in blankRunRe.allMatches(text)) {
+      blankRuns.add(match.start);
+    }
+
+    // Merge split points from headings and blank-line runs, sorted.
+    final splitPoints = <int>{};
+    for (final h in headings) {
+      // Find the start of the line containing the heading.
+      var lineStart = h.key;
+      while (lineStart > 0 && text[lineStart - 1] != '\n') {
+        lineStart--;
+      }
+      splitPoints.add(lineStart);
+    }
+    for (final bp in blankRuns) {
+      // Split after the blank run (at the first non-blank content).
+      final afterBlank = bp + blankRunRe.firstMatch(text.substring(bp))!.end;
+      if (afterBlank < text.length) {
+        splitPoints.add(afterBlank);
+      }
+    }
+
+    // If no splits found, return single chapter.
+    if (splitPoints.isEmpty) {
+      return [Chapter('', text)];
+    }
+
+    final sorted = splitPoints.toList()..sort();
+    final chapters = <Chapter>[];
+    var start = 0;
+
+    for (final splitAt in sorted) {
+      if (splitAt <= start) continue;
+      final chunk = text.substring(start, splitAt).trimRight();
+      if (chunk.trim().isNotEmpty) {
+        // Determine title: use the heading line if this chunk starts with one.
+        final firstLineEnd = chunk.indexOf('\n');
+        final firstLine = (firstLineEnd >= 0
+                ? chunk.substring(0, firstLineEnd)
+                : chunk)
+            .trim();
+        final title = headingRe.hasMatch(firstLine) ? firstLine : '';
+        chapters.add(Chapter(title, chunk));
+      }
+      start = splitAt;
+    }
+
+    // Final chunk after last split point.
+    if (start < text.length) {
+      final chunk = text.substring(start).trim();
+      if (chunk.isNotEmpty) {
+        final firstLineEnd = chunk.indexOf('\n');
+        final firstLine = (firstLineEnd >= 0
+                ? chunk.substring(0, firstLineEnd)
+                : chunk)
+            .trim();
+        final title = headingRe.hasMatch(firstLine) ? firstLine : '';
+        chapters.add(Chapter(title, chunk));
+      }
+    }
+
+    return chapters.isEmpty ? [Chapter('', text)] : chapters;
+  }
+
+  // --------------------------------------------------------------------------
+  // Helpers
+  // --------------------------------------------------------------------------
+
+  static String _titleFromFilename(String path) {
+    final base = path.split(Platform.pathSeparator).last;
+    final dot = base.lastIndexOf('.');
+    return cleanBookTitle(dot > 0 ? base.substring(0, dot) : base);
+  }
+
+  static final RegExp _blockTagRe = RegExp(
+    r'</?(p|div|h[1-6]|li|tr|br|section|article|blockquote)\b[^>]*>',
+    caseSensitive: false,
+  );
+
+  static final RegExp _entityRe = RegExp(
+    r'&(amp|lt|gt|quot|apos|nbsp|mdash|ndash|hellip|lsquo|rsquo|ldquo|rdquo|#\d+|#x[0-9a-fA-F]+);',
+  );
+
+  /// Markup that carries no reading content. Dropping `<head>` also drops the
+  /// document `<title>`, which would otherwise be prepended to every chapter;
+  /// `<style>`/`<script>` bodies survive tag stripping as raw CSS/JS text, so
+  /// they have to go as whole elements. An unclosed element simply doesn't
+  /// match, leaving the markup untouched.
+  static final RegExp _nonContentRe = RegExp(
+    r'<!--.*?-->'
+    r'|<head\b[^>]*>.*?</head\s*>'
+    r'|<script\b[^>]*>.*?</script\s*>'
+    r'|<style\b[^>]*>.*?</style\s*>',
+    dotAll: true,
+    caseSensitive: false,
+  );
+
+  static String _stripNonContent(String html) =>
+      html.replaceAll(_nonContentRe, '');
+
+  /// Minimal HTML-to-text conversion: block tags become newlines, remaining
+  /// tags are stripped, common entities decoded, whitespace collapsed.
+  static String htmlToText(String html) {
+    var s = _stripNonContent(html);
+    s = s.replaceAllMapped(_blockTagRe, (_) => '\n');
+    s = s.replaceAll(RegExp(r'<[^>]*>'), '');
+    s = _decodeEntities(s);
+    s = s.replaceAll(RegExp(r'[ \t\r\f\v]+'), ' ');
+    s = s.replaceAll(RegExp(r'\n[ \t]+'), '\n');
+    s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    return s.trim();
+  }
+
+  /// Like [htmlToText] but also extracts styled ranges (bold, italic,
+  /// blockquote) over the produced text. The plain-text output matches
+  /// [htmlToText], so both share one coordinate space.
+  static (String, List<StyleRun>) htmlToRichText(String html) {
+    final (text, runs, _, noImages) = parseHtmlDocument(html);
+    return (text, runs);
+  }
+
+  /// Converts [html] to plain text plus style runs, and records where each
+  /// `id`/`<a name>` anchor lands in that text.
+  ///
+  /// Anchor offsets point at the first visible character following the anchor,
+  /// so they are valid chapter-split positions: slicing the text there never
+  /// cuts a word, and every offset shares the coordinate space used by both
+  /// pagination and rich rendering.
+  @visibleForTesting
+  static (String, List<StyleRun>, Map<String, int>, List<ImageRun>) parseHtmlDocument(
+    String html, {
+    Map<String, Uint8List>? archiveEntries,
+    String baseDir = '',
+  }) {
+    final builder = _RichTextBuilder(
+      archiveEntries: archiveEntries,
+      baseDir: baseDir,
+    );
+    final cleaned = _stripNonContent(html);
+    var cursor = 0;
+    for (final m in _tagRe.allMatches(cleaned)) {
+      builder.text(cleaned.substring(cursor, m.start));
+      _handleTag(builder, m.group(0)!);
+      cursor = m.end;
+    }
+    builder.text(cleaned.substring(cursor));
+    return builder.finish();
+  }
+
+  static final RegExp _tagRe = RegExp(r'<[^>]*>');
+
+  // Attribute readers. The leading `\s` keeps `data-id`/`xml:id` from matching
+  // as a bare `id`, since a tag always separates attributes with whitespace.
+  static final RegExp _idAttrRe = RegExp(
+    r'''\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
+  static final RegExp _nameAttrRe = RegExp(
+    r'''\sname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
+  static final RegExp _srcAttrRe = RegExp(
+    r'''\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
+  static final RegExp _altAttrRe = RegExp(
+    r'''\salt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
+
+  static String? _attr(RegExp re, String raw) {
+    final m = re.firstMatch(raw);
+    if (m == null) return null;
+    final v = m.group(1) ?? m.group(2) ?? m.group(3);
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
+  static const _blockTagNames = {
+    'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'li', 'tr', 'br', 'section', 'article', 'blockquote',
+  };
+
+  static void _handleTag(_RichTextBuilder b, String raw) {
+    final m = RegExp(r'^<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9]*)').firstMatch(raw);
+    if (m == null) return;
+    final closing = m.group(1) == '/';
+    final name = (m.group(2)!).toLowerCase();
+
+    // Anchor targets: `id` on any element, plus legacy `<a name="...">`.
+    if (!closing) {
+      final id = _attr(_idAttrRe, raw);
+      if (id != null) b.anchor(id);
+      if (name == 'a') {
+        final legacy = _attr(_nameAttrRe, raw);
+        if (legacy != null) b.anchor(legacy);
+      }
+    }
+
+    if (name == 'b' || name == 'strong' || name == 'i' || name == 'em') {
+      // Whitespace straddling the tag boundary belongs to the outer style,
+      // so flush it before the depth changes.
+      b.flushSpace();
+    }
+    switch (name) {
+      case 'b' || 'strong':
+        b.boldDepth = math.max(0, b.boldDepth + (closing ? -1 : 1));
+      case 'i' || 'em':
+        b.italicDepth = math.max(0, b.italicDepth + (closing ? -1 : 1));
+      case 'blockquote':
+        b.newline();
+        b.quoteDepth = math.max(0, b.quoteDepth + (closing ? -1 : 1));
+      case 'img':
+        if (!closing) {
+          b.image(
+            _attr(_srcAttrRe, raw),
+            _attr(_altAttrRe, raw),
+            id: _attr(_idAttrRe, raw),
+          );
+        }
+      default:
+        if (_blockTagNames.contains(name)) {
+          b.newline();
+        }
+    }
+  }
+
+  static String _decodeEntities(String input) {
+    const named = {
+      'amp': '&',
+      'lt': '<',
+      'gt': '>',
+      'quot': '"',
+      'apos': "'",
+      'nbsp': ' ',
+      'mdash': '\u2014',
+      'ndash': '\u2013',
+      'hellip': '\u2026',
+      'lsquo': '\u2018',
+      'rsquo': '\u2019',
+      'ldquo': '\u201C',
+      'rdquo': '\u201D',
+    };
+    return input.replaceAllMapped(_entityRe, (m) {
+      final e = m.group(1)!;
+      if (e.startsWith('#x')) {
+        return String.fromCharCode(int.parse(e.substring(2), radix: 16));
+      }
+      if (e.startsWith('#')) {
+        return String.fromCharCode(int.parse(e.substring(1)));
+      }
+      return named[e] ?? m.group(0)!;
+    });
+  }
+}
+
+/// Incrementally builds plain text plus style runs from HTML events.
+///
+/// Whitespace rules mirror [DocumentParser.htmlToText]: horizontal whitespace
+/// collapses to one space, spaces around line breaks are dropped, runs of
+/// newlines collapse to at most two, and the result is left- and right-trimmed.
+class _RichTextBuilder {
+  _RichTextBuilder({this.archiveEntries, this.baseDir = ''});
+
+  /// Optional EPUB zip entries for resolving image src paths.
+  final Map<String, Uint8List>? archiveEntries;
+  final String baseDir;
+
+  final StringBuffer _buf = StringBuffer();
+  final List<StyleRun> _runs = [];
+  final List<ImageRun> _images = [];
+  int boldDepth = 0;
+  int italicDepth = 0;
+  int quoteDepth = 0;
+  final Map<String, int> _anchors = {};
+  final List<String> _pendingAnchors = [];
+  int _pendingNewlines = 0;
+  bool _pendingSpace = false;
+  String? _lastChar;
+
+  /// A block/line break: collapses with adjacent breaks, drops pending space.
+  void newline() => _pendingNewlines++;
+
+  /// Records an anchor id, resolved to the offset of the next visible
+  /// character. First declaration wins, matching how browsers treat
+  /// duplicate ids.
+  void anchor(String id) {
+    if (id.isEmpty || _anchors.containsKey(id)) return;
+    _pendingAnchors.add(id);
+  }
+
+  /// Emits a `\uFFFC` placeholder for an inline image, resolving [src]
+  /// against the EPUB archive when available.
+  void image(String? src, String? alt, {String? id}) {
+    if (src == null || src.isEmpty) return;
+    if (archiveEntries == null) return;
+    // Flush pending whitespace/newlines before the placeholder.
+    flushSpace();
+    if (_pendingNewlines > 0 && _buf.isNotEmpty) {
+      final n = math.min(_pendingNewlines, 2);
+      _buf.write('\n' * n);
+      _lastChar = '\n';
+      _pendingNewlines = 0;
+    }
+    _pendingSpace = false;
+    // Resolve anchors.
+    if (_pendingAnchors.isNotEmpty) {
+      final at = _buf.length;
+      for (final id in _pendingAnchors) {
+        _anchors[id] = at;
+      }
+      _pendingAnchors.clear();
+    }
+    // Resolve the image path against the chapter's base directory.
+    final resolved = DocumentParser._resolveHref(baseDir, src);
+    final entry = _findImageEntry(resolved);
+    if (entry == null) return;
+    final offset = _buf.length;
+    _buf.write('\uFFFC');
+    final (w, h) = _decodeImageDimensions(entry);
+    final isCover = id != null && id.toLowerCase().contains('cover');
+    _images.add(ImageRun(
+      offset: offset,
+      bytes: entry,
+      intrinsicWidth: w,
+      intrinsicHeight: h,
+      alt: alt ?? '',
+      fullWidth: isCover,
+    ));
+  }
+
+  Uint8List? _findImageEntry(String resolved) {
+    final entries = archiveEntries!;
+    // Try exact match first.
+    final key = Uri.decodeComponent(resolved.toLowerCase());
+    if (entries.containsKey(key)) return entries[key];
+    // Try filename-only match (handles path mismatches in EPUBs).
+    final filename = resolved.contains('/')
+        ? resolved.substring(resolved.lastIndexOf('/') + 1)
+        : resolved;
+    for (final e in entries.entries) {
+      if (e.key.endsWith('/$filename') || e.key == filename) {
+        return e.value;
+      }
+    }
+    return null;
+  }
+
+  /// Reads width/height from PNG/JPEG headers. Falls back to 0×0 on failure.
+  static (int, int) _decodeImageDimensions(Uint8List bytes) {
+    if (bytes.length >= 24 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      // PNG: width at offset 16, height at offset 20 (big-endian uint32).
+      final w = (bytes[16] << 24 | bytes[17] << 16 | bytes[18] << 8 | bytes[19]);
+      final h = (bytes[20] << 24 | bytes[21] << 16 | bytes[22] << 8 | bytes[23]);
+      return (w, h);
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
+      // JPEG: scan for SOF0–SOF15 marker (0xFFC0–0xFFCF).
+      var i = 2;
+      while (i + 9 < bytes.length) {
+        if (bytes[i] != 0xFF) { i++; continue; }
+        final marker = bytes[i + 1];
+        if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 &&
+            marker != 0xC8 && marker != 0xCC) {
+          final h = (bytes[i + 5] << 8) | bytes[i + 6];
+          final w = (bytes[i + 7] << 8) | bytes[i + 8];
+          return (w, h);
+        }
+        final len = (bytes[i + 2] << 8) | bytes[i + 3];
+        i += 2 + len;
+      }
+    }
+    return (0, 0);
+  }
+
+  /// Emits any pending whitespace now, with the current style flags.
+  void flushSpace() {
+    if (!_pendingSpace) return;
+    if (_buf.isNotEmpty && _lastChar != '\n') {
+      _emit(' ');
+    }
+    _pendingSpace = false;
+  }
+
+  void text(String raw) {
+    if (raw.isEmpty) return;
+    final decoded = DocumentParser._decodeEntities(raw);
+    for (final m
+        in RegExp(r'[ \t\r\f\v]+|[^ \t\r\f\v]+').allMatches(decoded)) {
+      final tok = m.group(0)!;
+      if (tok.codeUnitAt(0) == 0x20 ||
+          tok.codeUnitAt(0) == 0x09 ||
+          tok.codeUnitAt(0) == 0x0A ||
+          tok.codeUnitAt(0) == 0x0D) {
+        _pendingSpace = true;
+        continue;
+      }
+      if (_pendingNewlines > 0 && _buf.isNotEmpty) {
+        final n = math.min(_pendingNewlines, 2);
+        _buf.write('\n' * n);
+        _lastChar = '\n';
+      }
+      _pendingNewlines = 0;
+      if (_pendingSpace &&
+          _buf.isNotEmpty &&
+          _lastChar != '\n') {
+        _emit(' ');
+      }
+      _pendingSpace = false;
+      // Resolve anchors to this token's start: newlines and the separating
+      // space belong to the preceding text, not to the anchored section.
+      if (_pendingAnchors.isNotEmpty) {
+        final at = _buf.length;
+        for (final id in _pendingAnchors) {
+          _anchors[id] = at;
+        }
+        _pendingAnchors.clear();
+      }
+      _emit(tok);
+    }
+  }
+
+  void _emit(String tok) {
+    final start = _buf.length;
+    _buf.write(tok);
+    _lastChar = tok[tok.length - 1];
+    final bold = boldDepth > 0;
+    final italic = italicDepth > 0;
+    final quote = quoteDepth > 0;
+    if (!bold && !italic && !quote) return;
+    if (_runs.isNotEmpty) {
+      final last = _runs.last;
+      if (last.end == start &&
+          last.bold == bold &&
+          last.italic == italic &&
+          last.quote == quote) {
+        _runs[_runs.length - 1] =
+            StyleRun(last.start, _buf.length, bold: bold, italic: italic, quote: quote);
+        return;
+      }
+    }
+    _runs.add(
+        StyleRun(start, _buf.length, bold: bold, italic: italic, quote: quote));
+  }
+
+  (String, List<StyleRun>, Map<String, int>, List<ImageRun>) finish() {
+    var text = _buf.toString();
+    // Right-trim while clamping runs to the trimmed length.
+    var end = text.length;
+    while (end > 0 && _isWs(text.codeUnitAt(end - 1))) {
+      end--;
+    }
+    text = text.substring(0, end);
+    final runs =
+        _runs.where((r) => r.start < end).map((r) {
+          return r.end <= end
+              ? r
+              : StyleRun(r.start, end,
+                  bold: r.bold, italic: r.italic, quote: r.quote);
+        }).toList();
+    final images = _images.where((img) => img.offset < end).toList();
+    // Trailing anchors had no following text; park them at the very end so
+    // they resolve to an empty slice and get dropped rather than mis-titling
+    // the preceding section.
+    for (final id in _pendingAnchors) {
+      _anchors[id] = end;
+    }
+    _pendingAnchors.clear();
+    final anchors = {
+      for (final e in _anchors.entries) e.key: math.min(e.value, end),
+    };
+    return (text, runs, anchors, images);
+  }
+
+  static bool _isWs(int c) =>
+      c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
+}
