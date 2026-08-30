@@ -39,6 +39,7 @@ class _BurrowAppState extends State<BurrowApp> {
   @override
   void dispose() {
     widget.library.removeListener(_onThemeChanged);
+    widget.library.dispose();
     DictionaryService.instance.close();
     super.dispose();
   }

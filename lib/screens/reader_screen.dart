@@ -129,11 +129,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   List<PdfOutlineNode> _pdfOutline = [];
   bool _pdfLoading = true;
 
+  // Comic state.
+  List<Uint8List> _comicPages = [];
+  int _comicPage = 0;
+  bool _comicLoading = true;
+
   // Dictionary state.
   OverlayEntry? _dictionaryButtonEntry;
   ({int start, int end})? _selectedWordRange;
 
   bool get _isPdf => _book.format == BookFormat.pdf;
+  bool get _isComic => _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
 
   @override
   void initState() {
@@ -148,6 +154,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       _pdfController.addListener(_onPdfViewChanged);
     } else {
       _loadDocument();
+    }
+    if (_isComic) {
+      _loadComicPages();
     }
     _searchController.addListener(_onSearchTextChanged);
   }
@@ -1149,6 +1158,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       body = _ErrorView(message: _error!);
     } else if (_isPdf) {
       body = _buildPdf(theme);
+    } else if (_isComic) {
+      body = _buildComic(theme);
     } else {
       body = _buildReflowable(context, theme);
     }

@@ -295,22 +295,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
             : 'Added ${added.length} book${added.length == 1 ? '' : 's'}'
                 '${failed > 0 ? ', $failed unreadable' : ''}',
       );
+    } catch (e) {
+      debugPrint('Scan failed: $e');
+      if (mounted) _snack('Scan failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _importPaths(List<String> paths, {bool openFirst = true}) async {
+    final errors = <String>[];
     final (added, failed) = await BookImporter.importPaths(
       widget.library,
       paths,
-      onFormatError: (e) => _snack(e.message),
-      onError: (_) => _snack('Could not open file'),
+      onFormatError: (e) => errors.add(e.message),
+      onError: (_) => errors.add('Could not open file'),
     );
     if (!mounted) return;
     if (openFirst && added.isNotEmpty) await _openBook(added.first);
     if (paths.length > 1) {
-      _snack('Added ${added.length} book${added.length == 1 ? '' : 's'}');
+      final msg = StringBuffer('Added ${added.length} book${added.length == 1 ? '' : 's'}');
+      if (errors.isNotEmpty) {
+        msg.write(' (${errors.length} failed)');
+      }
+      _snack(msg.toString());
+    } else if (errors.isNotEmpty) {
+      _snack(errors.first);
     }
   }
 
@@ -594,9 +604,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           backgroundColor: scheme.errorContainer,
                           foregroundColor: scheme.onErrorContainer,
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           Navigator.pop(sheetContext);
-                          widget.library.deleteBookWithFile(
+                          await widget.library.deleteBookWithFile(
                             book.id,
                             deleteFile: deleteFile,
                           );
@@ -721,11 +731,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
               onSubmitted: (_) async {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
-                  await widget.library.createCollection(name);
-                  final collections = widget.library.collections;
-                  if (collections.isNotEmpty) {
-                    await widget.library.addBookToCollection(
-                        collections.last.id, book.id);
+                  final id = await widget.library.createCollection(name);
+                  if (id.isNotEmpty) {
+                    await widget.library.addBookToCollection(id, book.id);
                   }
                   Navigator.pop(sheetContext);
                 }
@@ -746,11 +754,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     onPressed: () async {
                       final name = controller.text.trim();
                       if (name.isNotEmpty) {
-                        await widget.library.createCollection(name);
-                        final collections = widget.library.collections;
-                        if (collections.isNotEmpty) {
-                          await widget.library.addBookToCollection(
-                              collections.last.id, book.id);
+                        final id = await widget.library.createCollection(name);
+                        if (id.isNotEmpty) {
+                          await widget.library.addBookToCollection(id, book.id);
                         }
                         Navigator.pop(sheetContext);
                       }

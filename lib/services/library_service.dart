@@ -41,6 +41,14 @@ class LibraryService extends ChangeNotifier {
   @visibleForTesting
   void debugAttachDatabase(db.AppDatabase database) => _db = database;
 
+  /// Releases database resources. Call when the app is shutting down.
+  @override
+  void dispose() {
+    _db?.close();
+    _db = null;
+    super.dispose();
+  }
+
   Directory? _coversDir;
 
   List<Book> get books => List.unmodifiable(_books);
@@ -217,6 +225,7 @@ class LibraryService extends ChangeNotifier {
       try {
         final book = Book.fromJson(item as Map<String, dynamic>);
         if (_books.any((b) => b.id == book.id)) continue;
+        if (!_isValidBookPath(book.path)) continue;
         _books.add(book);
         if (_db != null) {
           await _db!.insertBook(db.bookToCompanion(book));
@@ -489,7 +498,7 @@ class LibraryService extends ChangeNotifier {
     if (_coversDir != null) return _coversDir!;
     final docs = await getApplicationDocumentsDirectory();
     _coversDir = Directory('${docs.path}/burrow_covers');
-    if (!_coversDir!.existsSync()) _coversDir!.createSync(recursive: true);
+    _coversDir!.createSync(recursive: true);
     return _coversDir!;
   }
 
@@ -549,16 +558,18 @@ class LibraryService extends ChangeNotifier {
   // Collections
   // ---------------------------------------------------------------------------
 
-  Future<void> createCollection(String name) async {
-    if (_db == null) return;
+  Future<String> createCollection(String name) async {
+    if (_db == null) return '';
+    final id = _newId();
     final collection = db.CollectionsCompanion.insert(
-      id: _newId(),
+      id: id,
       name: name,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
     await _db!.insertCollection(collection);
     _collections.addAll(await _db!.getAllCollections());
     notifyListeners();
+    return id;
   }
 
   Future<void> deleteCollection(String id) async {
@@ -765,5 +776,18 @@ class LibraryService extends ChangeNotifier {
   Future<int> getReadingStreak() async {
     if (_db == null) return 0;
     return _db!.getReadingStreak();
+  }
+
+  /// Validates that a book path from a backup is not obviously malicious.
+  /// Rejects paths with null bytes, paths that are just filenames (no directory),
+  /// and paths containing suspicious traversal patterns.
+  static bool _isValidBookPath(String path) {
+    if (path.isEmpty) return false;
+    if (path.contains('\x00')) return false;
+    // Reject paths that are just a filename with no directory component.
+    if (!path.contains('/') && !path.contains('\\')) return false;
+    // Reject obvious traversal attempts.
+    if (path.contains('..')) return false;
+    return true;
   }
 }

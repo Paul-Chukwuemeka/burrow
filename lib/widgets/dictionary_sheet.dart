@@ -32,6 +32,7 @@ class _DictionaryContent extends StatefulWidget {
 
 class _DictionaryContentState extends State<_DictionaryContent> {
   LookupResult? _result;
+  Map<SpeechPart, List<Concept>> _grouped = {};
   List<String> _examples = [];
   List<String> _synonyms = [];
   bool _loading = true;
@@ -68,6 +69,7 @@ class _DictionaryContentState extends State<_DictionaryContent> {
 
       setState(() {
         _result = result;
+        _grouped = result.groupByPos();
         _examples = examples;
         _synonyms = synonyms;
         _loading = false;
@@ -160,7 +162,7 @@ class _DictionaryContentState extends State<_DictionaryContent> {
                       ],
                     ] else ...[
                       const SizedBox(height: 16),
-                      for (final entry in _result!.groupByPos().entries) ...[
+                      for (final entry in _grouped.entries) ...[
                         _PosHeader(label: entry.key.label, color: accent),
                         const SizedBox(height: 8),
                         for (int i = 0; i < entry.value.length; i++) ...[
