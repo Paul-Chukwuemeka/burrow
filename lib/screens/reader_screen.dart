@@ -129,6 +129,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   // Dictionary state.
   OverlayEntry? _dictionaryButtonEntry;
+  ({int start, int end})? _selectedWordRange;
 
   bool get _isPdf => _book.format == BookFormat.pdf;
 
@@ -961,8 +962,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // Word selection toolbar
   // ---------------------------------------------------------------------------
 
-  void _showWordToolbar(Offset globalPosition, String word) {
+  void _showWordToolbar(Offset globalPosition, String word, int bodyStart, int bodyEnd) {
     _dismissDictionaryButton();
+    setState(() => _selectedWordRange = (start: bodyStart, end: bodyEnd));
 
     _dictionaryButtonEntry = OverlayEntry(
       builder: (context) {
@@ -1065,6 +1067,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _dismissDictionaryButton() {
     _dictionaryButtonEntry?.remove();
     _dictionaryButtonEntry = null;
+    if (_selectedWordRange != null) {
+      setState(() => _selectedWordRange = null);
+    }
   }
 
   void _openDictionarySheet(String word) {
@@ -1140,6 +1145,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   _showWordToolbar(
                     Offset(size.width / 2, size.height / 2),
                     word,
+                    0,
+                    0,
                   );
                 }
               }
@@ -1371,9 +1378,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                       ? _searchResults[_currentResultIndex]
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
-                  onLongPressWord: (word, globalPosition) {
-                    _showWordToolbar(globalPosition, word);
+                  onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
+                    _showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
                   },
+                  selectedWordRange: _selectedWordRange,
                 );
               },
             ),
@@ -1735,6 +1743,7 @@ class _PageContent extends StatelessWidget {
     this.currentMatch,
     this.pageMaxHeight = double.infinity,
     this.onLongPressWord,
+    this.selectedWordRange,
   });
 
   final String chapterTitle;
@@ -1751,7 +1760,8 @@ class _PageContent extends StatelessWidget {
   final List<SearchResult>? highlightMatches;
   final SearchResult? currentMatch;
   final double pageMaxHeight;
-  final void Function(String word, Offset globalPosition)? onLongPressWord;
+  final void Function(String word, Offset globalPosition, int bodyStart, int bodyEnd)? onLongPressWord;
+  final ({int start, int end})? selectedWordRange;
 
   @override
   Widget build(BuildContext context) {
@@ -1829,7 +1839,7 @@ class _PageContent extends StatelessWidget {
       Offset(details.localPosition.dx, details.localPosition.dy - 20),
     );
 
-    onLongPressWord!(word, globalPos);
+    onLongPressWord!(word, globalPos, start, end);
   }
 
   static bool _isWordChar(String ch) {
@@ -1863,6 +1873,7 @@ class _PageContent extends StatelessWidget {
       maxHeight: pageMaxHeight,
       matches: highlightMatches ?? const [],
       currentMatch: currentMatch,
+      selectedRange: selectedWordRange,
     );
   }
 

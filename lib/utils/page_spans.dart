@@ -25,9 +25,10 @@ List<InlineSpan> buildPageSpans({
   double maxHeight = double.infinity,
   List<SearchResult> matches = const [],
   SearchResult? currentMatch,
+  ({int start, int end})? selectedRange,
 }) {
   final slice = text.substring(start, end);
-  if (runs.isEmpty && matches.isEmpty && images.isEmpty) {
+  if (runs.isEmpty && matches.isEmpty && images.isEmpty && selectedRange == null) {
     return [TextSpan(text: slice, style: base)];
   }
 
@@ -55,6 +56,14 @@ List<InlineSpan> buildPageSpans({
   for (final imgOff in imageMap.keys) {
     cuts.add(imgOff);
     cuts.add(imgOff + 1); // \uFFFC is one character
+  }
+  if (selectedRange != null) {
+    final rs = selectedRange.start.clamp(start, end);
+    final re = selectedRange.end.clamp(start, end);
+    if (rs < re) {
+      cuts.add(rs);
+      cuts.add(re);
+    }
   }
   final boundaries = cuts.toList(growable: false);
 
@@ -143,6 +152,15 @@ List<InlineSpan> buildPageSpans({
         color: isCurrent ? theme.accent : null,
         fontWeight: isCurrent ? FontWeight.w700 : null,
       );
+    }
+    if (selectedRange != null) {
+      final rs = selectedRange.start.clamp(start, end);
+      final re = selectedRange.end.clamp(start, end);
+      if (segStart >= rs && segEnd <= re) {
+        segStyle = segStyle.copyWith(
+          backgroundColor: theme.accent.withValues(alpha: 0.25),
+        );
+      }
     }
     final textContent = slice.substring(segStart - start, segEnd - start);
     // Skip if this is just the \uFFFC placeholder text (shouldn't reach here
