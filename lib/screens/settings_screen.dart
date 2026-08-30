@@ -190,7 +190,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                   )
                 : _dictDownloading
-                    ? null
+                    ? Text(
+                        _dictProgress > 0
+                            ? 'Downloading… ${(_dictProgress * 100).toStringAsFixed(0)}%'
+                            : 'Connecting…',
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      )
                     : Text(
                         'Tap to download (~40 MB)',
                         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),

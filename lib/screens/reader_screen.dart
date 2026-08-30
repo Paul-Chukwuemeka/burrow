@@ -187,9 +187,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final snippet = pageText.substring(offset, end).trim();
 
     if (_isCurrentPageBookmarked) {
-      // Find and delete the bookmark at this position.
-      final existing = await widget.library.getBookmarks(_book.id);
-      for (final bm in existing) {
+      // Find and delete the bookmark at this position using the in-memory list.
+      for (final bm in _bookmarks) {
         if (bm.chapter == chapter && bm.offset == offset) {
           await widget.library.deleteBookmark(bm.id);
           break;

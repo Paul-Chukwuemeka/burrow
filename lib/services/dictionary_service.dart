@@ -14,8 +14,6 @@ class DictionaryService {
 
   static final DictionaryService instance = DictionaryService._();
 
-  /// Replace with the actual URL after uploading dictionary_full.sqlite
-  /// to GitHub Releases.
   static const _dbUrl =
       'https://github.com/Paul-Chukwuemeka/burrow/releases/download/Dictionary/dictionary_full.sqlite';
 
@@ -37,6 +35,7 @@ class DictionaryService {
     final file = await _dbFile;
     _dbPath = file.path;
     _isDownloaded = file.existsSync();
+    await _cleanupStaleTempFiles();
   }
 
   /// Ensures the Lexicor engine is initialised. Downloads the DB on first use.
@@ -111,6 +110,19 @@ class DictionaryService {
     return file;
   }
 
+  /// Removes any leftover `.tmp` files from a previous interrupted download.
+  Future<void> _cleanupStaleTempFiles() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final tmpFile = File('${dir.path}/$_dbFileName.tmp');
+      if (await tmpFile.exists()) {
+        await tmpFile.delete();
+      }
+    } catch (_) {
+      // Best-effort cleanup; ignore errors.
+    }
+  }
+
   Future<void> _downloadDatabase(
     File targetFile, {
     Function(double progress)? onProgress,
@@ -135,19 +147,26 @@ class DictionaryService {
       }
 
       final contentLength = response.contentLength;
-      final bytes = <int>[];
+      final tempFile = File('${targetFile.path}.tmp');
+      final sink = tempFile.openWrite();
+
       int received = 0;
 
-      await for (final chunk in response) {
-        bytes.addAll(chunk);
-        received += chunk.length;
-        if (contentLength > 0) {
-          onProgress?.call(received / contentLength);
+      try {
+        await for (final chunk in response.timeout(
+          const Duration(minutes: 2),
+        )) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (contentLength > 0) {
+            onProgress?.call(received / contentLength);
+          }
         }
+      } finally {
+        await sink.flush();
+        await sink.close();
       }
 
-      final tempFile = File('${targetFile.path}.tmp');
-      await tempFile.writeAsBytes(bytes, flush: true);
       await tempFile.rename(targetFile.path);
     } finally {
       client.close();

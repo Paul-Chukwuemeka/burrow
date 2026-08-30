@@ -52,6 +52,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String? _genreFilter;
   String? _seriesFilter;
 
+  // Cached visible books.
+  List<Book>? _cachedVisibleBooks;
+  String? _cacheKey;
+
   final _searchController = TextEditingController();
 
   static const _allowedExtensions = ['epub', 'txt', 'pdf'];
@@ -100,6 +104,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   /// Books after applying search, format filter and local sorting.
   List<Book> get _visibleBooks {
+    final key = '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort';
+    if (_cacheKey == key && _cachedVisibleBooks != null) {
+      return _cachedVisibleBooks!;
+    }
+
     var books = widget.library.sorted;
     final filter = _filter;
     if (filter != null) {
@@ -155,6 +164,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             .toLowerCase()
             .compareTo(b.displayTitle.toLowerCase()));
     }
+
+    _cacheKey = key;
+    _cachedVisibleBooks = books;
     return books;
   }
 
@@ -171,15 +183,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ReaderScreen(
-          book: book,
-          library: widget.library,
-          heroTag: heroTag,
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ReaderScreen(
+            book: book,
+            library: widget.library,
+            heroTag: heroTag,
+          ),
         ),
-      ),
-    );
+      );
+    } on FileSystemException {
+      if (mounted) {
+        _snack('"${book.displayTitle}" could not be opened');
+      }
+      return;
+    }
     if (mounted) setState(() {}); // Refresh progress labels after returning.
   }
 
@@ -394,73 +413,76 @@ class _LibraryScreenState extends State<LibraryScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          24,
-          24,
-          MediaQuery.of(sheetContext).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Edit metadata',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: titleController,
-              decoration: const InputDecoration(
-                labelText: 'Title',
-                border: OutlineInputBorder(),
-              ),
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: authorController,
-              decoration: const InputDecoration(
-                labelText: 'Author',
-                border: OutlineInputBorder(),
-              ),
-              textCapitalization: TextCapitalization.words,
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Cancel'),
-                  ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Edit metadata',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () {
-                      final newTitle = titleController.text.trim();
-                      final newAuthor = authorController.text.trim();
-                      if (newTitle.isNotEmpty) {
-                        widget.library.updateBook(
-                          book.id,
-                          title: newTitle,
-                          author: newAuthor,
-                        );
-                      }
-                      Navigator.pop(sheetContext);
-                    },
-                    child: const Text('Save'),
-                  ),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Title',
+                  border: OutlineInputBorder(),
                 ),
-              ],
-            ),
-          ],
+                textCapitalization: TextCapitalization.sentences,
+                onChanged: (_) => setSheetState(() {}),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: authorController,
+                decoration: const InputDecoration(
+                  labelText: 'Author',
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.words,
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: titleController.text.trim().isEmpty
+                          ? null
+                          : () {
+                              final newTitle = titleController.text.trim();
+                              final newAuthor = authorController.text.trim();
+                              widget.library.updateBook(
+                                book.id,
+                                title: newTitle,
+                                author: newAuthor,
+                              );
+                              Navigator.pop(sheetContext);
+                            },
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

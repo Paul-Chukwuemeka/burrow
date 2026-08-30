@@ -39,7 +39,8 @@ class ScanService {
   /// Walks shared storage looking for documents. Returns absolute paths not
   /// already present in [knownPaths].
   static Future<List<String>> scanDevice({Set<String> knownPaths = const {}}) {
-    return Isolate.run(() => _walk('/storage/emulated/0', knownPaths));
+    return Isolate.run(() => _walk('/storage/emulated/0', knownPaths))
+        .timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
   /// Recursively scans a single user-chosen folder.
@@ -47,7 +48,8 @@ class ScanService {
     String folder, {
     Set<String> knownPaths = const {},
   }) {
-    return Isolate.run(() => _walk(folder, knownPaths));
+    return Isolate.run(() => _walk(folder, knownPaths))
+        .timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
   static List<String> _walk(String root, Set<String> knownPaths) {
