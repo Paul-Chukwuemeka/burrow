@@ -666,6 +666,30 @@ More text.''';
       expect(doc.chapters.single.title, isEmpty);
     });
 
+    test('strips HTML tags from description', () {
+      final doc = DocumentParser.parseEpubBytes(
+        _buildEpub(
+          opf: '''<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0"
+         unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Titled Book</dc:title>
+    <dc:creator>A. Writer</dc:creator>
+    <dc:description><p>A <b>bold</b> and <i>italic</i> story.</p></dc:description>
+  </metadata>
+  <manifest><item id="book" href="book.xhtml"
+        media-type="application/xhtml+xml"/></manifest>
+  <spine><itemref idref="book"/></spine>
+</package>''',
+          docs: {'book.xhtml': _xhtml('<p>content</p>')},
+        ),
+      );
+
+      expect(doc.description, 'A bold and italic story.');
+      expect(doc.description, isNot(contains('<p>')));
+      expect(doc.description, isNot(contains('<b>')));
+    });
+
     test('rejects a file that is not a zip', () {
       expect(
         () => DocumentParser.parseEpubBytes(

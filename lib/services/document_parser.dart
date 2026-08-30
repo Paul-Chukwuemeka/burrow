@@ -201,7 +201,7 @@ class DocumentParser {
 
     String? description;
     for (final el in _els(opf, 'description')) {
-      final d = el.innerText.trim();
+      final d = htmlToText(el.innerText.trim());
       if (d.isNotEmpty) {
         description = d;
         break;
