@@ -958,49 +958,108 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   // ---------------------------------------------------------------------------
-  // Dictionary
+  // Word selection toolbar
   // ---------------------------------------------------------------------------
 
-  void _showDictionaryButton(Offset globalPosition, String word) {
+  void _showWordToolbar(Offset globalPosition, String word) {
     _dismissDictionaryButton();
 
     _dictionaryButtonEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        left: globalPosition.dx - 20,
-        top: globalPosition.dy - 52,
-        child: Material(
-          color: Colors.transparent,
-          child: GestureDetector(
-            onTap: () {
-              _dismissDictionaryButton();
-              _openDictionarySheet(word);
-            },
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _settings.colors.background,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.menu_book_rounded,
-                size: 20,
-                color: _settings.colors.accent,
+      builder: (context) {
+        final theme = _settings.colors;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _dismissDictionaryButton,
               ),
             ),
+            Positioned(
+              left: (globalPosition.dx - 140).clamp(8.0, MediaQuery.sizeOf(context).width - 296.0),
+              top: globalPosition.dy - 56,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: theme.background,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _toolbarButton(
+                        label: 'Define',
+                        onTap: () {
+                          _dismissDictionaryButton();
+                          _openDictionarySheet(word);
+                        },
+                        theme: theme,
+                      ),
+                      _toolbarDivider(theme: theme),
+                      _toolbarButton(
+                        label: 'Copy',
+                        onTap: () {
+                          _dismissDictionaryButton();
+                          Clipboard.setData(ClipboardData(text: word));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Copied "$word"'),
+                              duration: const Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    Overlay.of(context).insert(_dictionaryButtonEntry!);
+  }
+
+  Widget _toolbarButton({
+    required String label,
+    required VoidCallback onTap,
+    required theme,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: theme.text,
           ),
         ),
       ),
     );
+  }
 
-    Overlay.of(context).insert(_dictionaryButtonEntry!);
+  Widget _toolbarDivider({required theme}) {
+    return Container(
+      width: 1,
+      height: 20,
+      color: theme.muted.withValues(alpha: 0.3),
+    );
   }
 
   void _dismissDictionaryButton() {
@@ -1078,7 +1137,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 final word = words.first.replaceAll(RegExp(r'[^a-zA-Z\u00C0-\u024F]'), '');
                 if (word.length >= 2) {
                   final size = MediaQuery.sizeOf(context);
-                  _showDictionaryButton(
+                  _showWordToolbar(
                     Offset(size.width / 2, size.height / 2),
                     word,
                   );
@@ -1313,7 +1372,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
                   onLongPressWord: (word, globalPosition) {
-                    _showDictionaryButton(globalPosition, word);
+                    _showWordToolbar(globalPosition, word);
                   },
                 );
               },
