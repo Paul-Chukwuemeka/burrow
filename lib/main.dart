@@ -4,12 +4,14 @@ import 'package:pdfrx/pdfrx.dart';
 import 'models/reader_settings.dart';
 import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'services/dictionary_service.dart';
 import 'services/library_service.dart';
 import 'theme/burrow_tokens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await PdfrxEntryFunctions.instance.init();
+  await DictionaryService.instance.init();
   final library = LibraryService();
   await library.load();
   runApp(BurrowApp(library: library));
@@ -37,6 +39,7 @@ class _BurrowAppState extends State<BurrowApp> {
   @override
   void dispose() {
     widget.library.removeListener(_onThemeChanged);
+    DictionaryService.instance.close();
     super.dispose();
   }
 
@@ -64,41 +67,51 @@ class _BurrowAppState extends State<BurrowApp> {
   Widget build(BuildContext context) {
     final appMode = widget.library.settings.appThemeMode;
     final isOled = appMode == AppThemeMode.oled;
-    return MaterialApp(
-      title: 'burrow',
-      debugShowCheckedModeBanner: false,
-      theme: _expressiveTheme(ColorScheme.fromSeed(
-        seedColor: const Color(0xFF2E6E4E),
-      )),
-      darkTheme: _expressiveTheme(isOled
-          ? ColorScheme.fromSeed(
-              seedColor: const Color(0xFF2E6E4E),
-              brightness: Brightness.dark,
-            ).copyWith(
-              surface: Colors.black,
-              surfaceContainerLow: const Color(0xFF0A0A0A),
-              surfaceContainer: const Color(0xFF111111),
-              surfaceContainerHigh: const Color(0xFF1A1A1A),
-              surfaceContainerHighest: const Color(0xFF222222),
-            )
-          : ColorScheme.fromSeed(
-              seedColor: const Color(0xFF2E6E4E),
-              brightness: Brightness.dark,
-            )),
-      themeMode: AppTheme.byMode(appMode).brightness == Brightness.light
-          ? ThemeMode.light
-          : ThemeMode.dark,
-      home: _home,
+    final settings = widget.library.settings;
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(settings.uiTextScale),
+      ),
+      child: MaterialApp(
+        title: 'burrow',
+        debugShowCheckedModeBanner: false,
+        theme: _expressiveTheme(
+          ColorScheme.fromSeed(seedColor: const Color(0xFF2E6E4E)),
+          uiFontFamily: settings.uiFontFamily,
+        ),
+        darkTheme: _expressiveTheme(
+          isOled
+              ? ColorScheme.fromSeed(
+                  seedColor: const Color(0xFF2E6E4E),
+                  brightness: Brightness.dark,
+                ).copyWith(
+                  surface: Colors.black,
+                  surfaceContainerLow: const Color(0xFF0A0A0A),
+                  surfaceContainer: const Color(0xFF111111),
+                  surfaceContainerHigh: const Color(0xFF1A1A1A),
+                  surfaceContainerHighest: const Color(0xFF222222),
+                )
+              : ColorScheme.fromSeed(
+                  seedColor: const Color(0xFF2E6E4E),
+                  brightness: Brightness.dark,
+                ),
+          uiFontFamily: settings.uiFontFamily,
+        ),
+        themeMode: AppTheme.byMode(appMode).brightness == Brightness.light
+            ? ThemeMode.light
+            : ThemeMode.dark,
+        home: _home,
+      ),
     );
   }
 
   // Material 3 Expressive-flavoured foundation: Roboto Flex variable type,
   // generous corner radii, tonal surfaces, squircle-ish FABs and springy ink.
-  ThemeData _expressiveTheme(ColorScheme scheme) {
+  ThemeData _expressiveTheme(ColorScheme scheme, {String? uiFontFamily}) {
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
-      fontFamily: 'Fraunces',
+      fontFamily: uiFontFamily ?? 'Fraunces',
       splashFactory: InkSparkle.splashFactory,
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,

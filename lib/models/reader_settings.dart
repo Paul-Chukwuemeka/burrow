@@ -126,6 +126,14 @@ const kReaderFonts = <ReaderFont>[
   ReaderFont(family: 'Public Sans', label: 'Public Sans', subtitle: 'Sans serif'),
 ];
 
+/// Fonts offered in the app UI font picker (settings screen).
+const kUiFonts = <ReaderFont>[
+  ReaderFont(family: null, label: 'Fraunces', subtitle: 'Default serif'),
+  ReaderFont(family: 'Bitter', label: 'Bitter', subtitle: 'Slab serif'),
+  ReaderFont(family: 'Atkinson Hyperlegible', label: 'Atkinson Hyperlegible', subtitle: 'Accessibility first'),
+  ReaderFont(family: 'Source Sans 3', label: 'Source Sans 3', subtitle: 'Clean sans serif'),
+];
+
 class ReaderSettings {
   ReaderSettings({
     this.fontSize = 18,
@@ -138,6 +146,8 @@ class ReaderSettings {
     this.volumeKeyTurns = false,
     this.pdfLayoutDirection = PdfLayoutDirection.vertical,
     this.pdfContinuousScroll = true,
+    this.uiFontFamily,
+    this.uiTextScale = 1.0,
   });
 
   double fontSize;
@@ -154,6 +164,9 @@ class ReaderSettings {
 
   PdfLayoutDirection pdfLayoutDirection;
   bool pdfContinuousScroll;
+
+  String? uiFontFamily;
+  double uiTextScale;
 
   ReaderTheme get colors => ReaderTheme.byMode(readerTheme);
 
@@ -177,12 +190,15 @@ class ReaderSettings {
         'volumeKeyTurns': volumeKeyTurns,
         'pdfLayoutDirection': pdfLayoutDirection.name,
         'pdfContinuousScroll': pdfContinuousScroll,
+        'uiFontFamily': uiFontFamily,
+        'uiTextScale': uiTextScale,
       };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
   /// corrupt or hand-edited pref can't produce a degenerate text style.
   static const fontSizeRange = (13.0, 30.0);
   static const lineHeightRange = (1.2, 2.2);
+  static const uiTextScaleRange = (0.8, 1.5);
 
   static double _clampTo(
     (double, double) range,
@@ -221,6 +237,12 @@ class ReaderSettings {
           orElse: () => PdfLayoutDirection.vertical,
         ),
         pdfContinuousScroll: json['pdfContinuousScroll'] as bool? ?? true,
+        uiFontFamily: json['uiFontFamily'] as String?,
+        uiTextScale: _clampTo(
+          uiTextScaleRange,
+          (json['uiTextScale'] as num?)?.toDouble() ?? 1.0,
+          1.0,
+        ),
       );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.

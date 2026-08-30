@@ -25,10 +25,18 @@ class DictionaryService {
   bool _initializing = false;
   Completer<void>? _initCompleter;
 
-  /// Whether the database has been downloaded and is ready for lookups.
-  Future<bool> get isReady async {
+  /// Cached path to the database file.
+  String? _dbPath;
+
+  /// Whether the database file exists on disk.
+  bool get isDownloaded => _isDownloaded ?? false;
+  bool? _isDownloaded;
+
+  /// Initialises the cached path and checks download status. Call once at app start.
+  Future<void> init() async {
     final file = await _dbFile;
-    return file.existsSync();
+    _dbPath = file.path;
+    _isDownloaded = file.existsSync();
   }
 
   /// Ensures the Lexicor engine is initialised. Downloads the DB on first use.
@@ -61,6 +69,7 @@ class DictionaryService {
       );
 
       if (!_initCompleter!.isCompleted) _initCompleter!.complete();
+      _isDownloaded = true;
     } catch (e) {
       if (!_initCompleter!.isCompleted) _initCompleter!.completeError(e);
       rethrow;
@@ -95,8 +104,11 @@ class DictionaryService {
   // ---------------------------------------------------------------------------
 
   Future<File> get _dbFile async {
+    if (_dbPath != null) return File(_dbPath!);
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_dbFileName');
+    final file = File('${dir.path}/$_dbFileName');
+    _dbPath = file.path;
+    return file;
   }
 
   Future<void> _downloadDatabase(

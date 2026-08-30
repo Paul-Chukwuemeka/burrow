@@ -1,19 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../models/reader_settings.dart';
+import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.library});
+  const SettingsScreen({
+    super.key,
+    required this.library,
+    this.autoDownloadDictionary = false,
+  });
 
   final LibraryService library;
+  final bool autoDownloadDictionary;
 
-  static void show(BuildContext context, {required LibraryService library}) {
+  static void show(BuildContext context, {
+    required LibraryService library,
+    bool autoDownloadDictionary = false,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => SettingsScreen(library: library),
+        builder: (_) => SettingsScreen(
+          library: library,
+          autoDownloadDictionary: autoDownloadDictionary,
+        ),
       ),
     );
   }
@@ -23,11 +35,65 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const _version = '1.0.0';
   ReaderSettings get _s => widget.library.settings;
+
+  bool _dictDownloading = false;
+  double _dictProgress = 0;
+  String? _dictError;
+  bool _dictReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _dictReady = DictionaryService.instance.isDownloaded;
+    if (widget.autoDownloadDictionary && !_dictReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startDictDownload());
+    }
+  }
 
   void _update(void Function() mutate) {
     setState(mutate);
     widget.library.saveSettings();
+  }
+
+  Future<void> _startDictDownload() async {
+    if (_dictDownloading) return;
+    setState(() {
+      _dictDownloading = true;
+      _dictProgress = 0;
+      _dictError = null;
+    });
+
+    try {
+      await DictionaryService.instance.ensureReady(
+        onProgress: (p) {
+          if (mounted) setState(() => _dictProgress = p);
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _dictReady = true;
+          _dictDownloading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Dictionary download failed: $e');
+      if (mounted) {
+        setState(() {
+          _dictDownloading = false;
+          if (e.toString().contains('TimeoutException')) {
+            _dictError = 'Download timed out. Please check your connection.';
+          } else if (e.toString().contains('HttpException')) {
+            _dictError = 'Download failed. Please try again later.';
+          } else if (e.toString().contains('SocketException')) {
+            _dictError = 'No internet connection. Please check your network.';
+          } else {
+            _dictError = 'Something went wrong. Please try again.';
+          }
+        });
+      }
+    }
   }
 
   @override
@@ -62,6 +128,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
             selected: _s.appThemeMode,
             onSelect: (mode) => _update(() => _s.appThemeMode = mode),
           ),
+          const SizedBox(height: 20),
+          // Font family picker.
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.font_download_outlined, color: scheme.onSurfaceVariant),
+            title: const Text('Font'),
+            trailing: DropdownButton<String>(
+              value: _s.uiFontFamily,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final f in kUiFonts)
+                  DropdownMenuItem(
+                    value: f.family,
+                    child: Text(f.label),
+                  ),
+              ],
+              onChanged: (v) => _update(() => _s.uiFontFamily = v),
+            ),
+          ),
+          // Text scale slider.
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.text_increase, color: scheme.onSurfaceVariant),
+            title: const Text('Text size'),
+            subtitle: Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: _s.uiTextScale,
+                    min: ReaderSettings.uiTextScaleRange.$1,
+                    max: ReaderSettings.uiTextScaleRange.$2,
+                    divisions: 7,
+                    label: '${(_s.uiTextScale * 100).round()}%',
+                    onChanged: (v) => _update(() => _s.uiTextScale = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    '${(_s.uiTextScale * 100).round()}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _sectionHeader('Dictionary'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.book_outlined, color: scheme.onSurfaceVariant),
+            title: const Text('Offline dictionary'),
+            subtitle: _dictReady
+                ? Text(
+                    'Downloaded',
+                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  )
+                : _dictDownloading
+                    ? null
+                    : Text(
+                        'Tap to download (~40 MB)',
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      ),
+            trailing: _dictDownloading
+                ? SizedBox(
+                    width: 48,
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          value: _dictProgress > 0 ? _dictProgress : null,
+                          color: scheme.primary,
+                        ),
+                      ),
+                    ),
+                  )
+                : _dictReady
+                    ? Icon(Icons.check_circle, color: scheme.primary)
+                    : _dictError != null
+                        ? IconButton(
+                            icon: Icon(Icons.refresh, color: scheme.error),
+                            onPressed: _startDictDownload,
+                          )
+                        : Icon(Icons.download, color: scheme.onSurfaceVariant),
+            onTap: _dictDownloading
+                ? null
+                : _dictReady
+                    ? null
+                    : _startDictDownload,
+          ),
+          if (_dictDownloading && _dictProgress > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: LinearProgressIndicator(
+                value: _dictProgress,
+                backgroundColor: scheme.surfaceContainerHighest,
+                color: scheme.primary,
+              ),
+            ),
+          if (_dictError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _dictError!,
+                style: TextStyle(fontSize: 12, color: scheme.error),
+              ),
+            ),
           const SizedBox(height: 24),
           _sectionHeader('About'),
           ListTile(
@@ -69,7 +248,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: Icon(Icons.info_outline, color: scheme.onSurfaceVariant),
             title: const Text('Version'),
             trailing: Text(
-              '1.0.0',
+              _version,
               style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
             ),
           ),
@@ -80,7 +259,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => showLicensePage(
               context: context,
               applicationName: 'Burrow',
-              applicationVersion: '1.0.0',
+              applicationVersion: _version,
               applicationLegalese: 'Dictionary data © Open English WordNet 2024 (CC BY 4.0)\n'
                   'Licensed under the Creative Commons Attribution 4.0 International License.\n'
                   'https://creativecommons.org/licenses/by/4.0/',

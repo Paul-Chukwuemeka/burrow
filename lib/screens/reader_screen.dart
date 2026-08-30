@@ -14,11 +14,13 @@ import '../models/reader_settings.dart';
 import '../models/style_run.dart';
 import '../services/book_search.dart';
 import '../services/document_parser.dart';
+import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/page_spans.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/dictionary_sheet.dart';
+import '../screens/settings_screen.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/toc_sheet.dart';
 
@@ -118,7 +120,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   final FocusNode _searchFocusNode = FocusNode();
   List<SearchResult> _searchResults = [];
   int _currentResultIndex = -1;
-  int _searchDoneCount = 0;
+  bool _searchDone = false;
 
   // PDF state.
   final PdfViewerController _pdfController = PdfViewerController();
@@ -161,6 +163,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final ref = _refAt(_flatPage);
     if (ref == null || _doc == null) return;
     final offset = _paginators[ref.$1].pages[ref.$2].start;
+    final capturedPage = _flatPage;
     widget.library
         .isBookmarked(
           bookId: _book.id,
@@ -168,7 +171,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           offset: offset,
         )
         .then((v) {
-      if (mounted) setState(() => _isCurrentPageBookmarked = v);
+      if (mounted && _flatPage == capturedPage) {
+        setState(() => _isCurrentPageBookmarked = v);
+      }
     });
   }
 
@@ -221,8 +226,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       final outline = await document.loadOutline();
       if (!mounted) return;
       setState(() => _pdfOutline = outline);
-    } catch (_) {
+    } catch (e) {
       // Outline not available for this PDF.
+      debugPrint('Failed to load PDF outline: $e');
     }
   }
 
@@ -252,8 +258,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.message);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      debugPrint('Failed to open document: $e');
       setState(() => _error = 'Could not open this document');
     }
   }
@@ -280,7 +287,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _search?.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _dismissDictionaryButton();
+    _dictionaryButtonEntry?.remove();
+    _dictionaryButtonEntry = null;
+    _selectedWordRange = null;
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -300,9 +309,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _startSession() {
     if (_sessionId >= 0) return; // already tracking
-    widget.library.startSession(_book.id).then((id) {
-      if (mounted) _sessionId = id;
-    });
+    _sessionId = -2; // sentinel: session pending
+    widget.library.startSession(_book.id).then(
+      (id) {
+        if (mounted) _sessionId = id;
+      },
+      onError: (_) {
+        if (mounted) _sessionId = -1;
+      },
+    );
   }
 
   void _endSession() {
@@ -745,19 +760,22 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         if (!mounted) return;
         setState(() {
           _searchResults = results;
-          _searchDoneCount = results.length;
           if (_currentResultIndex == -1 && results.isNotEmpty) {
             _currentResultIndex = 0;
           }
         });
       },
-      onDone: () {},
+      onDone: () {
+        if (!mounted) return;
+        setState(() => _searchDone = true);
+      },
     );
   }
 
   void _onSearchTextChanged() {
     final q = _searchController.text;
     _initSearch();
+    _searchDone = false;
     _search?.search(q);
     setState(() => _currentResultIndex = -1);
   }
@@ -765,6 +783,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _submitSearch() {
     final q = _searchController.text;
     _initSearch();
+    _searchDone = false;
     _search?.searchImmediate(q);
   }
 
@@ -778,7 +797,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _searchController.clear();
         _searchResults = [];
         _currentResultIndex = -1;
-        _searchDoneCount = 0;
+        _searchDone = false;
         _search?.dispose();
         _search = null;
       }
@@ -816,7 +835,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   Widget _buildSearchOverlay(ReaderTheme theme) {
     final count = _searchResults.length;
-    final isDone = _search?.allResults != null && _searchDoneCount == count;
+    final isDone = _searchDone;
     return Positioned(
       top: MediaQuery.paddingOf(context).top + 56,
       left: 8,
@@ -979,7 +998,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             ),
             Positioned(
               left: (globalPosition.dx - 140).clamp(8.0, MediaQuery.sizeOf(context).width - 296.0),
-              top: globalPosition.dy - 56,
+              top: (globalPosition.dy - 56).clamp(0.0, MediaQuery.sizeOf(context).height - 60),
               child: Material(
                 color: Colors.transparent,
                 child: Container(
@@ -1073,10 +1092,49 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   void _openDictionarySheet(String word) {
-    DictionarySheet.show(
-      context,
-      word: word.toLowerCase(),
-      theme: _settings.colors,
+    if (DictionaryService.instance.isDownloaded) {
+      DictionarySheet.show(
+        context,
+        word: word.toLowerCase(),
+        theme: _settings.colors,
+      );
+    } else {
+      _showDownloadDialog(word);
+    }
+  }
+
+  void _showDownloadDialog(String word) {
+    final theme = _settings.colors;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.background,
+        title: Text(
+          'Download dictionary?',
+          style: TextStyle(color: theme.text),
+        ),
+        content: Text(
+          'The offline dictionary (~40 MB) is needed to look up word definitions.\n\nDownload now?',
+          style: TextStyle(color: theme.muted, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: theme.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              SettingsScreen.show(
+                context,
+                library: widget.library,
+                autoDownloadDictionary: true,
+              );
+            },
+            child: Text('Download', style: TextStyle(color: theme.accent)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1197,7 +1255,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 },
           onDocumentChanged: (document) {
           if (document == null) return;
-          _pdfLoading = false;
+          setState(() => _pdfLoading = false);
           _loadPdfOutline(document);
         },
         viewerOverlayBuilder: (context, size, handleLinkTap) => [
