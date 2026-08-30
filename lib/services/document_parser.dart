@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
+import 'package:unrar/unrar.dart';
 import 'package:xml/xml.dart';
 
 import '../models/book.dart';
@@ -114,6 +117,9 @@ class DocumentParser {
         );
       case BookFormat.txt:
         return _parseTxt(path);
+      case BookFormat.cbz:
+      case BookFormat.cbr:
+        return _parseComicBook(path);
     }
   }
 
@@ -741,6 +747,156 @@ class DocumentParser {
       author: '',
       chapters: chapters,
     );
+  }
+
+  // --------------------------------------------------------------------------
+  // CBR / CBZ: comic book archives (images as pages)
+  // --------------------------------------------------------------------------
+
+  static const _imageExtensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'};
+
+  static Future<ParsedDocument> _parseComicBook(String path) async {
+    final format = formatFromExtension(path);
+    List<String> entryNames;
+    Uint8List Function(String entryName) readEntry;
+
+    if (format == BookFormat.cbz) {
+      final Uint8List bytes;
+      try {
+        bytes = await File(path).readAsBytes();
+      } catch (_) {
+        throw const FormatException('Not a valid CBZ file');
+      }
+      final Archive archive;
+      try {
+        archive = ZipDecoder().decodeBytes(bytes);
+      } catch (_) {
+        throw const FormatException('Not a valid CBZ/ZIP archive');
+      }
+      entryNames = archive.files
+          .where((f) => f.isFile && _isImage(f.name))
+          .map((f) => f.name)
+          .toList();
+      readEntry = (name) {
+        final file = archive.files.firstWhere((f) => f.name == name);
+        return Uint8List.fromList(file.content as List<int>);
+      };
+    } else {
+      // CBR: use unrar to list and extract entries.
+      final UnrarExtractor extractor;
+      try {
+        extractor = UnrarExtractor();
+      } catch (_) {
+        throw const FormatException('Not a valid CBR file');
+      }
+      try {
+        final files = extractor.listFiles(path);
+        entryNames = files
+            .where((f) => _isImage(f.name))
+            .map((f) => f.name)
+            .toList();
+        readEntry = (name) {
+          final data = extractor.extractFile(path, name);
+          return Uint8List.fromList(data);
+        };
+      } catch (_) {
+        throw const FormatException('Not a valid CBR/RAR archive');
+      }
+    }
+
+    // Natural sort: "2.jpg" before "10.jpg".
+    entryNames.sort(_naturalCompare);
+
+    if (entryNames.isEmpty) {
+      throw const FormatException('No images found in comic archive');
+    }
+
+    // Each image becomes a chapter with a single full-page ImageRun.
+    final chapters = <Chapter>[];
+    for (var i = 0; i < entryNames.length; i++) {
+      final imageBytes = readEntry(entryNames[i]);
+      // Decode image to get dimensions.
+      final decoded = img.decodeImage(imageBytes);
+      final width = decoded?.width ?? 800;
+      final height = decoded?.height ?? 1200;
+      final pageName = _filenameWithoutExtension(entryNames[i]);
+      // Body contains a single \uFFFC placeholder for the image.
+      chapters.add(
+        Chapter(
+          pageName.isNotEmpty ? pageName : 'Page ${i + 1}',
+          '\uFFFC',
+          const [],
+          [
+            ImageRun(
+              offset: 0,
+              bytes: imageBytes,
+              intrinsicWidth: width,
+              intrinsicHeight: height,
+              fullWidth: true,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // First image as cover.
+    final coverBytes = readEntry(entryNames.first);
+
+    return ParsedDocument(
+      title: _titleFromFilename(path),
+      author: '',
+      chapters: chapters,
+      coverBytes: coverBytes,
+    );
+  }
+
+  static bool _isImage(String name) {
+    final lower = name.toLowerCase();
+    for (final ext in _imageExtensions) {
+      if (lower.endsWith(ext)) return true;
+    }
+    return false;
+  }
+
+  static String _filenameWithoutExtension(String path) {
+    final name = path.split('/').last;
+    final dotIndex = name.lastIndexOf('.');
+    return dotIndex > 0 ? name.substring(0, dotIndex) : name;
+  }
+
+  /// Natural sort comparator for filenames (handles numeric ordering).
+  static int _naturalCompare(String a, String b) {
+    return _naturalCompareImpl(a.toLowerCase(), b.toLowerCase());
+  }
+
+  static int _naturalCompareImpl(String a, String b) {
+    final aRunes = a.runes.toList();
+    final bRunes = b.runes.toList();
+    var ia = 0;
+    var ib = 0;
+    while (ia < aRunes.length && ib < bRunes.length) {
+      final ca = aRunes[ia];
+      final cb = bRunes[ib];
+      if (ca >= 0x30 && ca <= 0x39 && cb >= 0x30 && cb <= 0x39) {
+        // Both digits: compare numeric run.
+        var numA = 0;
+        var numB = 0;
+        while (ia < aRunes.length && aRunes[ia] >= 0x30 && aRunes[ia] <= 0x39) {
+          numA = numA * 10 + (aRunes[ia] - 0x30);
+          ia++;
+        }
+        while (ib < bRunes.length && bRunes[ib] >= 0x30 && bRunes[ib] <= 0x39) {
+          numB = numB * 10 + (bRunes[ib] - 0x30);
+          ib++;
+        }
+        if (numA != numB) return numA.compareTo(numB);
+      } else {
+        if (ca != cb) return ca.compareTo(cb);
+        ia++;
+        ib++;
+      }
+    }
+    return aRunes.length.compareTo(bRunes.length);
   }
 
   /// Splits plain text into chapters using heading patterns and blank-line runs.

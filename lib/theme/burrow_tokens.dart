@@ -64,5 +64,13 @@ abstract final class Burrow {
                 ? const Color(0xFF66241A)
                 : const Color(0xFFFFB5A1),
           ),
+        BookFormat.cbz || BookFormat.cbr => (
+            scheme.brightness == Brightness.light
+                ? const Color(0xFFE8D5F5)
+                : const Color(0xFF3B1F54),
+            scheme.brightness == Brightness.light
+                ? const Color(0xFF5A2D82)
+                : const Color(0xFFD4B8F0),
+          ),
       };
 }

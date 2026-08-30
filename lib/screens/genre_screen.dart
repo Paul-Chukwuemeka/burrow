@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/book.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
+import '../utils/book_title.dart';
 import '../widgets/book_cover.dart';
 import 'book_info_screen.dart';
 import 'reader_screen.dart';

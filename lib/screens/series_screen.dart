@@ -6,11 +6,12 @@ import 'package:flutter/material.dart';
 import '../models/book.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
+import '../utils/book_title.dart';
 import '../widgets/book_cover.dart';
 import 'book_info_screen.dart';
 import 'reader_screen.dart';
 
-enum _SortMode { index, title, recent, added }
+enum _SortMode { order, title, recent, added }
 
 class SeriesScreen extends StatefulWidget {
   const SeriesScreen({
@@ -27,10 +28,10 @@ class SeriesScreen extends StatefulWidget {
 }
 
 class _SeriesScreenState extends State<SeriesScreen> {
-  _SortMode _sort = _SortMode.index;
+  _SortMode _sort = _SortMode.order;
 
   String _sortLabel(_SortMode m) => switch (m) {
-        _SortMode.index => 'Order',
+        _SortMode.order => 'Order',
         _SortMode.title => 'A\u2013Z',
         _SortMode.recent => 'Recent',
         _SortMode.added => 'Added',
@@ -39,7 +40,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
   List<Book> get _books {
     var list = widget.library.booksBySeries(widget.series);
     switch (_sort) {
-      case _SortMode.index:
+      case _SortMode.order:
         list.sort((a, b) {
           final ai = a.seriesIndex;
           final bi = b.seriesIndex;

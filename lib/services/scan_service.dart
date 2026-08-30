@@ -9,7 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 ///   runtime READ_EXTERNAL_STORAGE below that.
 /// - [scanFolder]: user picks one folder via SAF; no permission needed.
 class ScanService {
-  static const _extensions = {'.epub', '.txt', '.pdf'};
+  static const _extensions = {'.epub', '.txt', '.pdf', '.cbz', '.cbr'};
   static const _maxResults = 2000;
   static const _maxDepth = 14;
 

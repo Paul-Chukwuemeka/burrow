@@ -12,6 +12,9 @@ enum ReaderThemeMode { light, sepia, dark, dusk, oled }
 
 enum PdfLayoutDirection { vertical, horizontalLtr, horizontalRtl }
 
+/// Reading mode for image-based comics (CBR/CBZ).
+enum ComicReadingMode { paginated, vertical }
+
 /// App-level Material 3 brightness mapping.
 class AppTheme {
   const AppTheme._({required this.brightness});
@@ -146,6 +149,7 @@ class ReaderSettings {
     this.volumeKeyTurns = false,
     this.pdfLayoutDirection = PdfLayoutDirection.vertical,
     this.pdfContinuousScroll = true,
+    this.comicReadingMode = ComicReadingMode.paginated,
     this.uiFontFamily,
     this.uiTextScale = 1.0,
   });
@@ -164,6 +168,7 @@ class ReaderSettings {
 
   PdfLayoutDirection pdfLayoutDirection;
   bool pdfContinuousScroll;
+  ComicReadingMode comicReadingMode;
 
   String? uiFontFamily;
   double uiTextScale;
@@ -190,6 +195,7 @@ class ReaderSettings {
         'volumeKeyTurns': volumeKeyTurns,
         'pdfLayoutDirection': pdfLayoutDirection.name,
         'pdfContinuousScroll': pdfContinuousScroll,
+        'comicReadingMode': comicReadingMode.name,
         'uiFontFamily': uiFontFamily,
         'uiTextScale': uiTextScale,
       };
@@ -237,6 +243,10 @@ class ReaderSettings {
           orElse: () => PdfLayoutDirection.vertical,
         ),
         pdfContinuousScroll: json['pdfContinuousScroll'] as bool? ?? true,
+        comicReadingMode: ComicReadingMode.values.firstWhere(
+          (m) => m.name == json['comicReadingMode'],
+          orElse: () => ComicReadingMode.paginated,
+        ),
         uiFontFamily: json['uiFontFamily'] as String?,
         uiTextScale: _clampTo(
           uiTextScaleRange,

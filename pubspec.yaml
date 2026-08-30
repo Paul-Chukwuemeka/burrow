@@ -42,6 +42,7 @@ dependencies:
   path: ^1.9.1
   permission_handler: ^11.4.0
   archive: ^4.1.0
+  unrar: ^0.1.0
   xml: ^7.0.1
   wakelock_plus: ^1.2.8
   share_plus: ^13.3.0

@@ -88,12 +88,16 @@ const _formatPalettes = <BookFormat, List<double>>{
   BookFormat.epub: [96, 152], // greens
   BookFormat.txt: [26, 46], // ambers / ochres
   BookFormat.pdf: [4, 22], // clays / rusts
+  BookFormat.cbz: [270, 300], // purples / violets
+  BookFormat.cbr: [270, 300], // purples / violets
 };
 
 const _formatIcons = <BookFormat, IconData>{
   BookFormat.epub: Icons.menu_book_outlined,
   BookFormat.txt: Icons.article_outlined,
   BookFormat.pdf: Icons.picture_as_pdf_outlined,
+  BookFormat.cbz: Icons.comic_bubble_outlined,
+  BookFormat.cbr: Icons.comic_bubble_outlined,
 };
 
 class _PlaceholderCover extends StatelessWidget {

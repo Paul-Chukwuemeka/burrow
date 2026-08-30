@@ -58,7 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   final _searchController = TextEditingController();
 
-  static const _allowedExtensions = ['epub', 'txt', 'pdf'];
+  static const _allowedExtensions = ['epub', 'txt', 'pdf', 'cbz', 'cbr'];
 
   @override
   void initState() {

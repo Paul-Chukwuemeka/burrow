@@ -1313,6 +1313,137 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     );
   }
 
+  // ---------------------------- Comic ----------------------------------------
+
+  Future<void> _loadComicPages() async {
+    try {
+      final doc = await DocumentParser.parse(_book.path, _book.format);
+      final pages = <Uint8List>[];
+      for (final chapter in doc.chapters) {
+        for (final img in chapter.images) {
+          pages.add(img.bytes);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _comicPages = pages;
+        _comicPage = _book.lastChapter.clamp(0, pages.length - 1);
+        _comicLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load comic: $e';
+        _comicLoading = false;
+      });
+    }
+  }
+
+  Widget _buildComic(ReaderTheme theme) {
+    if (_comicLoading) {
+      return Center(child: CircularProgressIndicator(color: theme.accent));
+    }
+    if (_comicPages.isEmpty) {
+      return const _ErrorView(message: 'No pages found in comic');
+    }
+    if (_settings.comicReadingMode == ComicReadingMode.vertical) {
+      return _buildComicVertical(theme);
+    }
+    return _buildComicPaginated(theme);
+  }
+
+  Widget _buildComicPaginated(ReaderTheme theme) {
+    return Stack(
+      children: [
+        PageView.builder(
+          controller: _comicPageController,
+          itemCount: _comicPages.length,
+          onPageChanged: (i) {
+            setState(() => _comicPage = i);
+            // Save comic page position.
+            widget.library.savePosition(
+              id: _book.id,
+              chapter: i,
+              offset: 0,
+              progress: _comicPages.isEmpty ? 0 : i / _comicPages.length,
+            );
+          },
+          itemBuilder: (context, i) => InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 4.0,
+            child: Center(
+              child: Image.memory(
+                _comicPages[i],
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+        IgnorePointer(
+          ignoring: !_chromeVisible,
+          child: _chrome(
+            centerLabel:
+                'Page ${_comicPage + 1} of ${_comicPages.length}',
+            sliderMax: _comicPages.length > 1 ? _comicPages.length : 1,
+            sliderValue: (_comicPage + 1).clamp(
+              1,
+              _comicPages.length > 0 ? _comicPages.length : 1,
+            ),
+            sliderLabel: _comicPages.isEmpty
+                ? '-/-'
+                : '${(((_comicPage + 1) / _comicPages.length) * 100).round()}%',
+            onSliderChanged: (v) {
+              _comicPageController.jumpToPage(v - 1);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildComicVertical(ReaderTheme theme) {
+    return Stack(
+      children: [
+        ListView.builder(
+          padding: EdgeInsets.zero,
+          itemCount: _comicPages.length,
+          itemBuilder: (context, i) => InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 4.0,
+            child: Center(
+              child: Image.memory(
+                _comicPages[i],
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+        IgnorePointer(
+          ignoring: !_chromeVisible,
+          child: _chrome(
+            centerLabel:
+                'Page ${_comicPage + 1} of ${_comicPages.length}',
+            sliderMax: _comicPages.length > 1 ? _comicPages.length : 1,
+            sliderValue: (_comicPage + 1).clamp(
+              1,
+              _comicPages.length > 0 ? _comicPages.length : 1,
+            ),
+            sliderLabel: _comicPages.isEmpty
+                ? '-/-'
+                : '${(((_comicPage + 1) / _comicPages.length) * 100).round()}%',
+            onSliderChanged: (v) {
+              // For vertical mode, scroll to approximate position.
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  late final PageController _comicPageController = PageController(
+    initialPage: _book.lastChapter.clamp(0, math.max(0, _comicPages.length - 1)),
+  );
+
   // ---------------------------- Reflowable -----------------------------------
 
   Widget _buildReflowable(BuildContext context, ReaderTheme theme) {

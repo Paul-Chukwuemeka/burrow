@@ -1,4 +1,4 @@
-enum BookFormat { epub, txt, pdf }
+enum BookFormat { epub, txt, pdf, cbz, cbr }
 
 BookFormat formatFromExtension(String path) {
   final ext = path.toLowerCase().split('.').last;
@@ -7,6 +7,10 @@ BookFormat formatFromExtension(String path) {
       return BookFormat.epub;
     case 'pdf':
       return BookFormat.pdf;
+    case 'cbz':
+      return BookFormat.cbz;
+    case 'cbr':
+      return BookFormat.cbr;
     default:
       return BookFormat.txt;
   }
