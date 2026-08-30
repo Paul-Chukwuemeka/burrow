@@ -1814,7 +1814,11 @@ class _PageContent extends StatelessWidget {
       maxLines: null,
     )..layout(maxWidth: renderWidth);
 
-    final textOffset = painter.getPositionForOffset(details.localPosition).offset;
+    final adjusted = Offset(
+      details.localPosition.dx - 20,
+      details.localPosition.dy - 28,
+    );
+    final textOffset = painter.getPositionForOffset(adjusted).offset;
     final bodyOffset = page.start + textOffset;
 
     if (bodyOffset < 0 || bodyOffset >= text.length) return;
