@@ -1708,55 +1708,57 @@ class _FilterIconButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'Filters${activeCount > 0 ? ' ($activeCount active)' : ''}',
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: activeCount > 0
-                  ? scheme.primaryContainer
-                  : Colors.transparent,
-              borderRadius: Burrow.r(Burrow.shapeXs),
-              border: activeCount > 0
-                  ? null
-                  : Border.all(color: scheme.outline),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        child: Material(
+          color: activeCount > 0 ? scheme.primary : Colors.transparent,
+          shape: StadiumBorder(
+            side: BorderSide(
+              color: activeCount > 0 ? scheme.primary : scheme.outlineVariant,
             ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Icon(
-                  Icons.tune_rounded,
-                  size: 20,
-                  color: activeCount > 0
-                      ? scheme.onPrimaryContainer
-                      : scheme.onSurface,
-                ),
-              ),
-              if (activeCount > 0)
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: scheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '$activeCount',
-                      style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        height: 1,
-                      ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Icon(
+                      Icons.tune_rounded,
+                      size: 18,
+                      color: activeCount > 0
+                          ? scheme.onPrimary
+                          : scheme.onSurfaceVariant,
                     ),
                   ),
-                ),
-            ],
+                  if (activeCount > 0)
+                    Positioned(
+                      top: -6,
+                      right: -8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: scheme.onPrimary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          '$activeCount',
+                          style: TextStyle(
+                            color: scheme.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

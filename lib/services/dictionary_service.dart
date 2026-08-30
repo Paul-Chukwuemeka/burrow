@@ -17,7 +17,7 @@ class DictionaryService {
   /// Replace with the actual URL after uploading dictionary_full.sqlite
   /// to GitHub Releases.
   static const _dbUrl =
-      'https://github.com/YOUR_USERNAME/YOUR_REPO/releases/download/v1.0.0/dictionary_full.sqlite';
+      'https://github.com/Paul-Chukwuemeka/burrow/releases/download/Dictionary/dictionary_full.sqlite';
 
   static const _dbFileName = 'dictionary_full.sqlite';
 
