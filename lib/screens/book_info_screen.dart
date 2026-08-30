@@ -10,7 +10,9 @@ import '../utils/book_title.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/progress_bar.dart';
 import 'edit_book_screen.dart';
+import 'genre_screen.dart';
 import 'reader_screen.dart';
+import 'series_screen.dart';
 
 /// Full-screen document info shown when the user taps a book in the library.
 class BookInfoScreen extends StatefulWidget {
@@ -150,7 +152,17 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                   // Series chip.
                   if (book.seriesName != null && book.seriesName!.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    _SeriesChip(book: book),
+                    _SeriesChip(
+                      book: book,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => SeriesScreen(
+                            series: book.seriesName!,
+                            library: widget.library,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 20),
                   // Format badge + progress chip row.
@@ -221,16 +233,27 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                       runSpacing: 8,
                       children: [
                         for (final g in book.genre!.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty))
-                          Chip(
-                            label: Text(g),
-                            backgroundColor: scheme.tertiaryContainer,
-                            labelStyle: TextStyle(
-                              color: scheme.onTertiaryContainer,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                          InkWell(
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => GenreScreen(
+                                  genre: g,
+                                  library: widget.library,
+                                ),
+                              ),
                             ),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Chip(
+                              label: Text(g),
+                              backgroundColor: scheme.tertiaryContainer,
+                              labelStyle: TextStyle(
+                                color: scheme.onTertiaryContainer,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
                           ),
                       ],
                     ),
@@ -465,9 +488,10 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _SeriesChip extends StatelessWidget {
-  const _SeriesChip({required this.book});
+  const _SeriesChip({required this.book, required this.onTap});
 
   final Book book;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -475,18 +499,22 @@ class _SeriesChip extends StatelessWidget {
     final label = book.seriesIndex != null
         ? '${book.seriesName} #${book.seriesIndex}'
         : book.seriesName!;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: Burrow.r(Burrow.shapeXs),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: scheme.onPrimaryContainer,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: Burrow.r(Burrow.shapeXs),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          borderRadius: Burrow.r(Burrow.shapeXs),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: scheme.onPrimaryContainer,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

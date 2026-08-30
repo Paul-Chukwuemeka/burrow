@@ -28,6 +28,7 @@ class LibraryService extends ChangeNotifier {
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
+  final Set<String> _pendingImports = {};
   final List<db.Collection> _collections = [];
   ReaderSettings settings = ReaderSettings();
   String libraryLayout = 'grid';
@@ -279,50 +280,55 @@ class LibraryService extends ChangeNotifier {
   /// Imports a document: parses metadata + cover in a background isolate.
   /// Returns the new book, or null if it was already in the library.
   Future<Book?> importFile(String path) async {
-    if (containsPath(path)) return null;
+    if (containsPath(path) || _pendingImports.contains(path)) return null;
+    _pendingImports.add(path);
 
-    final format = formatFromExtension(path);
-    ParsedDocument doc;
     try {
-      doc = await DocumentParser.parse(path, format);
-    } on FormatException {
-      rethrow;
-    } catch (_) {
-      throw const FormatException('Could not read this file');
+      final format = formatFromExtension(path);
+      ParsedDocument doc;
+      try {
+        doc = await DocumentParser.parse(path, format);
+      } on FormatException {
+        rethrow;
+      } catch (_) {
+        throw const FormatException('Could not read this file');
+      }
+
+      final book = Book(
+        id: _newId(),
+        title: doc.title,
+        author: doc.author,
+        path: path,
+        format: format,
+        addedAt: DateTime.now().millisecondsSinceEpoch,
+        coverPath: await _saveCover(doc.coverBytes),
+        description: doc.description,
+        annotation: doc.annotation,
+        genre: doc.genre,
+        seriesName: doc.seriesName,
+        seriesIndex: doc.seriesIndex,
+        publisher: doc.publisher,
+        isbn: doc.isbn,
+        language: doc.language,
+        publicationDate: doc.publicationDate,
+        rights: doc.rights,
+        type: doc.type,
+        source: doc.source,
+        titleSort: doc.titleSort,
+        authorSort: doc.authorSort,
+      );
+      _books.add(book);
+      if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
+      notifyListeners();
+
+      if (format == BookFormat.pdf && book.coverPath == null) {
+        _generatePdfCoverInBackground(book);
+      }
+
+      return book;
+    } finally {
+      _pendingImports.remove(path);
     }
-
-    final book = Book(
-      id: _newId(),
-      title: doc.title,
-      author: doc.author,
-      path: path,
-      format: format,
-      addedAt: DateTime.now().millisecondsSinceEpoch,
-      coverPath: await _saveCover(doc.coverBytes),
-      description: doc.description,
-      annotation: doc.annotation,
-      genre: doc.genre,
-      seriesName: doc.seriesName,
-      seriesIndex: doc.seriesIndex,
-      publisher: doc.publisher,
-      isbn: doc.isbn,
-      language: doc.language,
-      publicationDate: doc.publicationDate,
-      rights: doc.rights,
-      type: doc.type,
-      source: doc.source,
-      titleSort: doc.titleSort,
-      authorSort: doc.authorSort,
-    );
-    _books.add(book);
-    if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
-    notifyListeners();
-
-    if (format == BookFormat.pdf && book.coverPath == null) {
-      _generatePdfCoverInBackground(book);
-    }
-
-    return book;
   }
 
   /// Renders the first page of a PDF as its library thumbnail. The book is
@@ -374,8 +380,13 @@ class LibraryService extends ChangeNotifier {
     }
     if (deleteFile) {
       try {
-        await File(book.path).delete();
-      } catch (_) {}
+        final file = File(book.path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('Failed to delete book file: $e');
+      }
     }
     if (_db != null) await _db!.deleteBookById(id);
     notifyListeners();
@@ -612,8 +623,8 @@ class LibraryService extends ChangeNotifier {
   Future<void> reorderCollectionBook(
       String collectionId, List<String> bookIds) async {
     if (_db == null) return;
+    final links = await _db!.getBooksForCollection(collectionId);
     for (var i = 0; i < bookIds.length; i++) {
-      final links = await _db!.getBooksForCollection(collectionId);
       final link = links.where((l) => l.bookId == bookIds[i]).firstOrNull;
       if (link != null) {
         await _db!.updateCollectionBookSortPosition(link.id, i);
@@ -644,6 +655,66 @@ class LibraryService extends ChangeNotifier {
 
   /// Returns the number of books by a specific author.
   int authorBookCount(String author) => booksByAuthor(author).length;
+
+  // ---------------------------------------------------------------------------
+  // Series helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns a sorted list of unique series names from all books.
+  List<String> get uniqueSeries {
+    final series = <String>{};
+    for (final b in _books) {
+      if (b.seriesName != null && b.seriesName!.isNotEmpty) {
+        series.add(b.seriesName!);
+      }
+    }
+    final sorted = series.toList()..sort();
+    return sorted;
+  }
+
+  /// Returns books in a specific series (case-insensitive match).
+  List<Book> booksBySeries(String series) {
+    final lower = series.toLowerCase();
+    return _books.where((b) => b.seriesName?.toLowerCase() == lower).toList();
+  }
+
+  /// Returns the number of books in a specific series.
+  int seriesBookCount(String series) => booksBySeries(series).length;
+
+  // ---------------------------------------------------------------------------
+  // Genre helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns a sorted list of unique genre names from all books.
+  /// Genres are stored as comma-separated strings, so this splits them.
+  List<String> get uniqueGenres {
+    final genres = <String>{};
+    for (final b in _books) {
+      if (b.genre != null) {
+        for (final g in b.genre!.split(',')) {
+          final trimmed = g.trim();
+          if (trimmed.isNotEmpty) genres.add(trimmed);
+        }
+      }
+    }
+    final sorted = genres.toList()..sort();
+    return sorted;
+  }
+
+  /// Returns books that include [genre] in their comma-separated genre field.
+  List<Book> booksByGenre(String genre) {
+    final lower = genre.toLowerCase();
+    return _books.where((b) {
+      if (b.genre == null) return false;
+      for (final g in b.genre!.split(',')) {
+        if (g.trim().toLowerCase() == lower) return true;
+      }
+      return false;
+    }).toList();
+  }
+
+  /// Returns the number of books in a specific genre.
+  int genreBookCount(String genre) => booksByGenre(genre).length;
 
   // ---------------------------------------------------------------------------
   // Reading sessions
