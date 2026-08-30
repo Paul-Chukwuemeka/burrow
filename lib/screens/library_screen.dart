@@ -1766,7 +1766,7 @@ class _FilterIconButton extends StatelessWidget {
   }
 }
 
-class _FilterSheet extends StatelessWidget {
+class _FilterSheet extends StatefulWidget {
   const _FilterSheet({
     required this.statusFilter,
     required this.genreFilter,
@@ -1788,13 +1788,30 @@ class _FilterSheet extends StatelessWidget {
   final VoidCallback onClearAll;
 
   @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late _ReadingStatus _status;
+  late String? _genre;
+  late String? _series;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = widget.statusFilter;
+    _genre = widget.genreFilter;
+    _series = widget.seriesFilter;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
     // Collect unique genres.
     final genres = <String>{};
-    for (final b in books) {
+    for (final b in widget.books) {
       if (b.genre != null) {
         for (final g in b.genre!.split(',')) {
           final trimmed = g.trim();
@@ -1805,17 +1822,17 @@ class _FilterSheet extends StatelessWidget {
     final sortedGenres = genres.toList()..sort();
 
     // Collect unique series.
-    final series = <String>{};
-    for (final b in books) {
+    final seriesSet = <String>{};
+    for (final b in widget.books) {
       if (b.seriesName != null && b.seriesName!.isNotEmpty) {
-        series.add(b.seriesName!);
+        seriesSet.add(b.seriesName!);
       }
     }
-    final sortedSeries = series.toList()..sort();
+    final sortedSeries = seriesSet.toList()..sort();
 
-    final hasActive = statusFilter != _ReadingStatus.all ||
-        genreFilter != null ||
-        seriesFilter != null;
+    final hasActive = _status != _ReadingStatus.all ||
+        _genre != null ||
+        _series != null;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.5,
@@ -1850,7 +1867,7 @@ class _FilterSheet extends StatelessWidget {
                 if (hasActive)
                   TextButton(
                     onPressed: () {
-                      onClearAll();
+                      widget.onClearAll();
                       Navigator.of(context).pop();
                     },
                     child: const Text('Clear all'),
@@ -1878,23 +1895,35 @@ class _FilterSheet extends StatelessWidget {
                     children: [
                       _PillChip(
                         label: 'All',
-                        selected: statusFilter == _ReadingStatus.all,
-                        onTap: () => onStatusChanged(_ReadingStatus.all),
+                        selected: _status == _ReadingStatus.all,
+                        onTap: () => setState(() {
+                          _status = _ReadingStatus.all;
+                          widget.onStatusChanged(_status);
+                        }),
                       ),
                       _PillChip(
                         label: 'Reading',
-                        selected: statusFilter == _ReadingStatus.reading,
-                        onTap: () => onStatusChanged(_ReadingStatus.reading),
+                        selected: _status == _ReadingStatus.reading,
+                        onTap: () => setState(() {
+                          _status = _ReadingStatus.reading;
+                          widget.onStatusChanged(_status);
+                        }),
                       ),
                       _PillChip(
                         label: 'Finished',
-                        selected: statusFilter == _ReadingStatus.finished,
-                        onTap: () => onStatusChanged(_ReadingStatus.finished),
+                        selected: _status == _ReadingStatus.finished,
+                        onTap: () => setState(() {
+                          _status = _ReadingStatus.finished;
+                          widget.onStatusChanged(_status);
+                        }),
                       ),
                       _PillChip(
                         label: 'New',
-                        selected: statusFilter == _ReadingStatus.new_,
-                        onTap: () => onStatusChanged(_ReadingStatus.new_),
+                        selected: _status == _ReadingStatus.new_,
+                        onTap: () => setState(() {
+                          _status = _ReadingStatus.new_;
+                          widget.onStatusChanged(_status);
+                        }),
                       ),
                     ],
                   ),
@@ -1910,14 +1939,20 @@ class _FilterSheet extends StatelessWidget {
                       children: [
                         _PillChip(
                           label: 'All genres',
-                          selected: genreFilter == null,
-                          onTap: () => onGenreChanged(null),
+                          selected: _genre == null,
+                          onTap: () => setState(() {
+                            _genre = null;
+                            widget.onGenreChanged(null);
+                          }),
                         ),
                         for (final g in sortedGenres)
                           _PillChip(
                             label: g,
-                            selected: genreFilter?.toLowerCase() == g.toLowerCase(),
-                            onTap: () => onGenreChanged(g),
+                            selected: _genre?.toLowerCase() == g.toLowerCase(),
+                            onTap: () => setState(() {
+                              _genre = g;
+                              widget.onGenreChanged(g);
+                            }),
                           ),
                       ],
                     ),
@@ -1933,14 +1968,20 @@ class _FilterSheet extends StatelessWidget {
                       children: [
                         _PillChip(
                           label: 'All series',
-                          selected: seriesFilter == null,
-                          onTap: () => onSeriesChanged(null),
+                          selected: _series == null,
+                          onTap: () => setState(() {
+                            _series = null;
+                            widget.onSeriesChanged(null);
+                          }),
                         ),
                         for (final s in sortedSeries)
                           _PillChip(
                             label: s,
-                            selected: seriesFilter?.toLowerCase() == s.toLowerCase(),
-                            onTap: () => onSeriesChanged(s),
+                            selected: _series?.toLowerCase() == s.toLowerCase(),
+                            onTap: () => setState(() {
+                              _series = s;
+                              widget.onSeriesChanged(s);
+                            }),
                           ),
                       ],
                     ),
