@@ -1721,7 +1721,7 @@ class _FilterIconButton extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
