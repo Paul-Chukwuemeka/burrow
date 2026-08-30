@@ -1714,7 +1714,7 @@ class _FilterIconButton extends StatelessWidget {
           color: activeCount > 0 ? scheme.primary : Colors.transparent,
           shape: StadiumBorder(
             side: BorderSide(
-              color: activeCount > 0 ? scheme.primary : scheme.outlineVariant,
+               color: activeCount > 0 ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -2012,7 +2012,7 @@ class _PillChip extends StatelessWidget {
           color: selected ? scheme.primary : Colors.transparent,
           shape: StadiumBorder(
             side: BorderSide(
-              color: selected ? scheme.primary : scheme.outlineVariant,
+              color: selected ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -2235,7 +2235,7 @@ class _BookTile extends StatelessWidget {
               color: scheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
                 borderRadius: Burrow.r(Burrow.shapeMd),
-                side: BorderSide(color: scheme.outlineVariant),
+                side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -2343,7 +2343,7 @@ class _BookListTile extends StatelessWidget {
               color: scheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
                 borderRadius: Burrow.r(Burrow.shapeMd),
-                side: BorderSide(color: scheme.outlineVariant),
+                side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(

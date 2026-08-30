@@ -59,7 +59,7 @@ class BookCover extends StatelessWidget {
         DecoratedBox(
           decoration: ShapeDecoration(
             shape: RoundedSuperellipseBorder(
-              side: BorderSide(color: Colors.black.withValues(alpha: 0.14)),
+              side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
               borderRadius: BorderRadius.circular(borderRadius),
             ),
           ),

@@ -160,7 +160,7 @@ class _ThemeGrid extends StatelessWidget {
           color: scheme.surfaceContainerLow,
           borderRadius: Burrow.r(18),
           border: Border.all(
-            color: isSel ? scheme.primary : scheme.outlineVariant,
+            color: isSel ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
             width: isSel ? 2 : 1,
           ),
         ),

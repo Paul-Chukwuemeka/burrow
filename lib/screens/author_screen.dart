@@ -279,7 +279,7 @@ class _PillChip extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         shape: StadiumBorder(
-          side: BorderSide(color: scheme.outlineVariant),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(

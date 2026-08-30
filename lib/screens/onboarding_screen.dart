@@ -425,7 +425,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           color: scheme.surfaceContainerLow,
           borderRadius: Burrow.r(18),
           border: Border.all(
-            color: selected ? scheme.primary : scheme.outlineVariant,
+            color: selected ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
             width: selected ? 2 : 1,
           ),
         ),
@@ -693,7 +693,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 height: 8,
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
-                  color: i == _current ? scheme.primary : scheme.outlineVariant,
+                  color: i == _current ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
@@ -768,7 +768,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           minimumSize: const Size(260, 50),
           shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
           foregroundColor: scheme.onSurfaceVariant,
-          side: BorderSide(color: scheme.outlineVariant),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
       _CtaVariant.text => TextButton.styleFrom(
@@ -938,7 +938,7 @@ class _FanInPagesState extends State<_FanInPages>
                       decoration: BoxDecoration(
                         color: widget.scheme.surfaceContainerHigh,
                         borderRadius: Burrow.r(6),
-                        border: Border.all(color: widget.scheme.outlineVariant),
+                        border: Border.all(color: widget.scheme.outlineVariant.withValues(alpha: 0.5)),
                       ),
                     ),
                   ),
