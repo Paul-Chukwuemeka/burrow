@@ -96,8 +96,8 @@ const _formatIcons = <BookFormat, IconData>{
   BookFormat.epub: Icons.menu_book_outlined,
   BookFormat.txt: Icons.article_outlined,
   BookFormat.pdf: Icons.picture_as_pdf_outlined,
-  BookFormat.cbz: Icons.comic_bubble_outlined,
-  BookFormat.cbr: Icons.comic_bubble_outlined,
+  BookFormat.cbz: Icons.image_outlined,
+  BookFormat.cbr: Icons.image_outlined,
 };
 
 class _PlaceholderCover extends StatelessWidget {
