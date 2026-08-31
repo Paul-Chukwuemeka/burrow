@@ -298,6 +298,11 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _dictionaryButtonEntry?.remove();
     _dictionaryButtonEntry = null;
     _selectedWordRange = null;
+    try {
+      _comicPageController.dispose();
+    } catch (_) {
+      // Controller was never initialized (non-comic book).
+    }
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -320,7 +325,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _sessionId = -2; // sentinel: session pending
     widget.library.startSession(_book.id).then(
       (id) {
-        if (mounted) _sessionId = id;
+        if (mounted) {
+          _sessionId = id;
+        } else {
+          // Widget disposed while session was pending — end it immediately.
+          widget.library.endSession(id, pages: 0);
+        }
       },
       onError: (_) {
         if (mounted) _sessionId = -1;
@@ -2018,6 +2028,7 @@ class _PageContent extends StatelessWidget {
       details.localPosition.dy - 28,
     );
     final textOffset = painter.getPositionForOffset(adjusted).offset;
+    painter.dispose();
     final bodyOffset = page.start + textOffset;
 
     if (bodyOffset < 0 || bodyOffset >= text.length) return;

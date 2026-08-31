@@ -104,7 +104,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   /// Books after applying search, format filter and local sorting.
   List<Book> get _visibleBooks {
-    final key = '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort';
+    final key = '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
       return _cachedVisibleBooks!;
     }
@@ -193,7 +193,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       );
-    } on FileSystemException {
+    } on IOException {
       if (mounted) {
         _snack('"${book.displayTitle}" could not be opened');
       }
@@ -326,7 +326,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   void _runFromFab(Future<void> Function() action) {
     setState(() => _fabOpen = false);
-    action();
+    action().catchError((e) {
+      debugPrint('FAB action failed: $e');
+    });
   }
 
   void _showBookActions(Book book) {
@@ -1177,10 +1179,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.words,
-              onSubmitted: (_) {
+              onSubmitted: (_) async {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
-                  widget.library.createCollection(name);
+                  await widget.library.createCollection(name);
                   Navigator.pop(sheetContext);
                 }
               },
@@ -1197,10 +1199,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: () {
+                    onPressed: () async {
                       final name = controller.text.trim();
                       if (name.isNotEmpty) {
-                        widget.library.createCollection(name);
+                        await widget.library.createCollection(name);
                         Navigator.pop(sheetContext);
                       }
                     },
@@ -1296,10 +1298,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.words,
-              onSubmitted: (_) {
+              onSubmitted: (_) async {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
-                  widget.library.renameCollection(collection.id, name);
+                  await widget.library.renameCollection(collection.id, name);
                   Navigator.pop(sheetContext);
                 }
               },
@@ -1316,10 +1318,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: () {
+                    onPressed: () async {
                       final name = controller.text.trim();
                       if (name.isNotEmpty) {
-                        widget.library.renameCollection(collection.id, name);
+                        await widget.library.renameCollection(collection.id, name);
                         Navigator.pop(sheetContext);
                       }
                     },

@@ -567,7 +567,9 @@ class LibraryService extends ChangeNotifier {
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
     await _db!.insertCollection(collection);
-    _collections.addAll(await _db!.getAllCollections());
+    _collections
+      ..clear()
+      ..addAll(await _db!.getAllCollections());
     notifyListeners();
     return id;
   }

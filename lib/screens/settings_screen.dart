@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/reader_settings.dart';
@@ -42,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _dictProgress = 0;
   String? _dictError;
   bool _dictReady = false;
+  String _dictStatus = '';
 
   @override
   void initState() {
@@ -70,6 +74,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onProgress: (p) {
           if (mounted) setState(() => _dictProgress = p);
         },
+        onStatus: (status) {
+          if (mounted) setState(() => _dictStatus = status);
+        },
       );
       if (mounted) {
         setState(() {
@@ -82,11 +89,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         setState(() {
           _dictDownloading = false;
-          if (e.toString().contains('TimeoutException')) {
+          if (e is TimeoutException) {
             _dictError = 'Download timed out. Please check your connection.';
-          } else if (e.toString().contains('HttpException')) {
+          } else if (e is HttpException) {
             _dictError = 'Download failed. Please try again later.';
-          } else if (e.toString().contains('SocketException')) {
+          } else if (e is SocketException) {
             _dictError = 'No internet connection. Please check your network.';
           } else {
             _dictError = 'Something went wrong. Please try again.';
@@ -191,9 +198,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   )
                 : _dictDownloading
                     ? Text(
-                        _dictProgress > 0
-                            ? 'Downloading… ${(_dictProgress * 100).toStringAsFixed(0)}%'
-                            : 'Connecting…',
+                        _dictStatus.isNotEmpty
+                            ? _dictStatus
+                            : _dictProgress > 0
+                                ? 'Downloading… ${(_dictProgress * 100).toStringAsFixed(0)}%'
+                                : 'Connecting…',
                         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                       )
                     : Text(

@@ -96,6 +96,8 @@ class DictionaryService {
   void close() {
     _lexicor?.close();
     _lexicor = null;
+    _initializing = false;
+    _initCompleter = null;
   }
 
   // ---------------------------------------------------------------------------
