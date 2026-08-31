@@ -140,6 +140,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   bool get _isPdf => _book.format == BookFormat.pdf;
   bool get _isComic => _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
+  bool get _showSearch => !_isPdf && !_isComic;
+  bool get _showToc => !_isComic;
+  bool get _showBookmark => !_isPdf && !_isComic;
 
   @override
   void initState() {
@@ -1874,32 +1877,35 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     style: TextStyle(color: theme.text),
                   ),
                 ),
-                IconButton(
-                  icon: Icon(Icons.toc, color: theme.text),
-                  onPressed: _showTocSheet,
-                ),
-                IconButton(
-                  icon: Icon(Icons.search, color: theme.text),
-                  onPressed: _toggleSearch,
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isCurrentPageBookmarked
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
-                    color: _isCurrentPageBookmarked
-                        ? theme.accent
-                        : theme.text,
+                if (_showToc)
+                  IconButton(
+                    icon: Icon(Icons.toc, color: theme.text),
+                    onPressed: _showTocSheet,
                   ),
-                  onPressed: _toggleBookmark,
-                ),
+                if (_showSearch)
+                  IconButton(
+                    icon: Icon(Icons.search, color: theme.text),
+                    onPressed: _toggleSearch,
+                  ),
+                if (_showBookmark)
+                  IconButton(
+                    icon: Icon(
+                      _isCurrentPageBookmarked
+                          ? Icons.bookmark
+                          : Icons.bookmark_border,
+                      color: _isCurrentPageBookmarked
+                          ? theme.accent
+                          : theme.text,
+                    ),
+                    onPressed: _toggleBookmark,
+                  ),
                 IconButton(
                   icon: Icon(Icons.text_fields, color: theme.text),
                   onPressed: () => SettingsSheet.show(
                     context,
                     settings: _settings,
                     onChanged: _onSettingsChanged,
-                    isPdf: _isPdf,
+                    format: _book.format,
                   ),
                 ),
               ],
