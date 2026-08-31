@@ -152,7 +152,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _startSession();
     if (_isPdf) {
       _pdfController.addListener(_onPdfViewChanged);
-    } else {
+    } else if (!_isComic) {
       _loadDocument();
     }
     if (_isComic) {
@@ -1365,23 +1365,22 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   Widget _buildComicPaginated(ReaderTheme theme) {
     return Stack(
       children: [
-        PageView.builder(
-          controller: _comicPageController,
-          itemCount: _comicPages.length,
-          onPageChanged: (i) {
-            setState(() => _comicPage = i);
-            // Save comic page position.
-            widget.library.savePosition(
-              id: _book.id,
-              chapter: i,
-              offset: 0,
-              progress: _comicPages.isEmpty ? 0 : i / _comicPages.length,
-            );
-          },
-          itemBuilder: (context, i) => InteractiveViewer(
-            minScale: 1.0,
-            maxScale: 4.0,
-            child: Center(
+        GestureDetector(
+          onTap: () => setState(() => _chromeVisible = !_chromeVisible),
+          child: PageView.builder(
+            controller: _comicPageController,
+            itemCount: _comicPages.length,
+            onPageChanged: (i) {
+              setState(() => _comicPage = i);
+              // Save comic page position.
+              widget.library.savePosition(
+                id: _book.id,
+                chapter: i,
+                offset: 0,
+                progress: _comicPages.isEmpty ? 0 : i / _comicPages.length,
+              );
+            },
+            itemBuilder: (context, i) => Center(
               child: Image.memory(
                 _comicPages[i],
                 fit: BoxFit.contain,
@@ -1730,6 +1729,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       final target = _pdfPage + direction;
       if (target < 1 || target > _pdfPageCount) return;
       _pdfController.goToPage(pageNumber: target);
+      return;
+    }
+    if (_isComic) {
+      if (_comicPages.isEmpty) return;
+      final target = _comicPage + direction;
+      if (target < 0 || target >= _comicPages.length) return;
+      _comicPageController.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
       return;
     }
     final controller = _pageController;

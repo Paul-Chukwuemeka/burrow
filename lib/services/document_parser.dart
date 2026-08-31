@@ -5,7 +5,6 @@ import 'dart:math' as math;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
-import 'package:image/image.dart' as img;
 import 'package:rar/rar.dart';
 import 'package:xml/xml.dart';
 
@@ -839,10 +838,8 @@ class DocumentParser {
       final chapters = <Chapter>[];
       for (var i = 0; i < entryNames.length; i++) {
         final imageBytes = readEntry(entryNames[i]);
-        // Decode image to get dimensions.
-        final decoded = img.decodeImage(imageBytes);
-        final width = decoded?.width ?? 800;
-        final height = decoded?.height ?? 1200;
+        // Read dimensions from image headers (fast, no full decode).
+        final (width, height) = _RichTextBuilder._decodeImageDimensions(imageBytes);
         final pageName = _filenameWithoutExtension(entryNames[i]);
         // Body contains a single \uFFFC placeholder for the image.
         chapters.add(
