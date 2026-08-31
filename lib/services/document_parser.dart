@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
-import 'package:unrar/unrar.dart';
+import 'package:rar/rar.dart';
 import 'package:xml/xml.dart';
 
 import '../models/book.dart';
@@ -759,95 +759,122 @@ class DocumentParser {
     final format = formatFromExtension(path);
     List<String> entryNames;
     Uint8List Function(String entryName) readEntry;
+    Directory? cbrTempDir;
 
-    if (format == BookFormat.cbz) {
-      final Uint8List bytes;
-      try {
-        bytes = await File(path).readAsBytes();
-      } catch (_) {
-        throw const FormatException('Not a valid CBZ file');
-      }
-      final Archive archive;
-      try {
-        archive = ZipDecoder().decodeBytes(bytes);
-      } catch (_) {
-        throw const FormatException('Not a valid CBZ/ZIP archive');
-      }
-      entryNames = archive.files
-          .where((f) => f.isFile && _isImage(f.name))
-          .map((f) => f.name)
-          .toList();
-      readEntry = (name) {
-        final file = archive.files.firstWhere((f) => f.name == name);
-        return Uint8List.fromList(file.content as List<int>);
-      };
-    } else {
-      // CBR: use unrar to list and extract entries.
-      final UnrarExtractor extractor;
-      try {
-        extractor = UnrarExtractor();
-      } catch (_) {
-        throw const FormatException('Not a valid CBR file');
-      }
-      try {
-        final files = extractor.listFiles(path);
-        entryNames = files
-            .where((f) => _isImage(f.name))
+    try {
+      if (format == BookFormat.cbz) {
+        final Uint8List bytes;
+        try {
+          bytes = await File(path).readAsBytes();
+        } catch (_) {
+          throw const FormatException('Not a valid CBZ file');
+        }
+        final Archive archive;
+        try {
+          archive = ZipDecoder().decodeBytes(bytes);
+        } catch (_) {
+          throw const FormatException('Not a valid CBZ/ZIP archive');
+        }
+        entryNames = archive.files
+            .where((f) => f.isFile && _isImage(f.name))
             .map((f) => f.name)
             .toList();
         readEntry = (name) {
-          final data = extractor.extractFile(path, name);
-          return Uint8List.fromList(data);
+          final file = archive.files.firstWhere((f) => f.name == name);
+          return Uint8List.fromList(file.content as List<int>);
         };
-      } catch (_) {
-        throw const FormatException('Not a valid CBR/RAR archive');
+      } else {
+        // CBR: use rar package (libarchive) to list and extract entries.
+        final List<dynamic> allFiles;
+        try {
+          final listResult = await Rar.listRarContents(rarFilePath: path);
+          if (listResult['success'] != true) {
+            throw const FormatException('Not a valid CBR/RAR archive');
+          }
+          allFiles = listResult['files'] as List<dynamic>;
+        } catch (e) {
+          if (e is FormatException) rethrow;
+          throw const FormatException('Not a valid CBR/RAR archive');
+        }
+        entryNames = allFiles
+            .map((f) => f.toString())
+            .where((f) => _isImage(f))
+            .toList();
+
+        // Extract all to temp dir, then read images from disk.
+        try {
+          cbrTempDir = await Directory.systemTemp.createTemp('cbr_');
+          final extractResult = await Rar.extractRarFile(
+            rarFilePath: path,
+            destinationPath: cbrTempDir.path,
+          );
+          if (extractResult['success'] != true) {
+            throw const FormatException('Failed to extract CBR archive');
+          }
+
+          final tempDir = cbrTempDir;
+          readEntry = (name) {
+            final file = _findExtractedFile(tempDir, name);
+            if (file == null) {
+              throw FormatException('Entry not found: $name');
+            }
+            return Uint8List.fromList(file.readAsBytesSync());
+          };
+        } catch (e) {
+          cbrTempDir?.deleteSync(recursive: true);
+          cbrTempDir = null;
+          if (e is FormatException) rethrow;
+          throw const FormatException('Not a valid CBR/RAR archive');
+        }
       }
-    }
 
-    // Natural sort: "2.jpg" before "10.jpg".
-    entryNames.sort(_naturalCompare);
+      // Natural sort: "2.jpg" before "10.jpg".
+      entryNames.sort(_naturalCompare);
 
-    if (entryNames.isEmpty) {
-      throw const FormatException('No images found in comic archive');
-    }
+      if (entryNames.isEmpty) {
+        throw const FormatException('No images found in comic archive');
+      }
 
-    // Each image becomes a chapter with a single full-page ImageRun.
-    final chapters = <Chapter>[];
-    for (var i = 0; i < entryNames.length; i++) {
-      final imageBytes = readEntry(entryNames[i]);
-      // Decode image to get dimensions.
-      final decoded = img.decodeImage(imageBytes);
-      final width = decoded?.width ?? 800;
-      final height = decoded?.height ?? 1200;
-      final pageName = _filenameWithoutExtension(entryNames[i]);
-      // Body contains a single \uFFFC placeholder for the image.
-      chapters.add(
-        Chapter(
-          pageName.isNotEmpty ? pageName : 'Page ${i + 1}',
-          '\uFFFC',
-          const [],
-          [
-            ImageRun(
-              offset: 0,
-              bytes: imageBytes,
-              intrinsicWidth: width,
-              intrinsicHeight: height,
-              fullWidth: true,
-            ),
-          ],
-        ),
+      // Each image becomes a chapter with a single full-page ImageRun.
+      final chapters = <Chapter>[];
+      for (var i = 0; i < entryNames.length; i++) {
+        final imageBytes = readEntry(entryNames[i]);
+        // Decode image to get dimensions.
+        final decoded = img.decodeImage(imageBytes);
+        final width = decoded?.width ?? 800;
+        final height = decoded?.height ?? 1200;
+        final pageName = _filenameWithoutExtension(entryNames[i]);
+        // Body contains a single \uFFFC placeholder for the image.
+        chapters.add(
+          Chapter(
+            pageName.isNotEmpty ? pageName : 'Page ${i + 1}',
+            '\uFFFC',
+            const [],
+            [
+              ImageRun(
+                offset: 0,
+                bytes: imageBytes,
+                intrinsicWidth: width,
+                intrinsicHeight: height,
+                fullWidth: true,
+              ),
+            ],
+          ),
+        );
+      }
+
+      // First image as cover.
+      final coverBytes = readEntry(entryNames.first);
+
+      return ParsedDocument(
+        title: _titleFromFilename(path),
+        author: '',
+        chapters: chapters,
+        coverBytes: coverBytes,
       );
+    } finally {
+      cbrTempDir?.deleteSync(recursive: true);
     }
-
-    // First image as cover.
-    final coverBytes = readEntry(entryNames.first);
-
-    return ParsedDocument(
-      title: _titleFromFilename(path),
-      author: '',
-      chapters: chapters,
-      coverBytes: coverBytes,
-    );
   }
 
   static bool _isImage(String name) {
@@ -862,6 +889,19 @@ class DocumentParser {
     final name = path.split('/').last;
     final dotIndex = name.lastIndexOf('.');
     return dotIndex > 0 ? name.substring(0, dotIndex) : name;
+  }
+
+  /// Recursively finds a file by name inside [dir], tolerating subdirectory
+  /// paths from the RAR archive's internal structure.
+  static File? _findExtractedFile(Directory dir, String name) {
+    // Try flat path first (most comics have no subdirectories).
+    final flat = File('${dir.path}/$name');
+    if (flat.existsSync()) return flat;
+    // Recursive fallback.
+    for (final f in dir.listSync(recursive: true)) {
+      if (f is File && f.path.endsWith('/$name')) return f;
+    }
+    return null;
   }
 
   /// Natural sort comparator for filenames (handles numeric ordering).
