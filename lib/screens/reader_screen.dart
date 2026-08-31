@@ -1366,13 +1366,23 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     return Stack(
       children: [
         GestureDetector(
-          onTap: () => setState(() => _chromeVisible = !_chromeVisible),
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) {
+            final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
+            final dx = details.localPosition.dx;
+            if (dx < w * 0.3) {
+              _flip(-1);
+            } else if (dx > w * 0.7) {
+              _flip(1);
+            } else {
+              setState(() => _chromeVisible = !_chromeVisible);
+            }
+          },
           child: PageView.builder(
             controller: _comicPageController,
             itemCount: _comicPages.length,
             onPageChanged: (i) {
               setState(() => _comicPage = i);
-              // Save comic page position.
               widget.library.savePosition(
                 id: _book.id,
                 chapter: i,
