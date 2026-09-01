@@ -7,6 +7,7 @@ import '../models/book.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
+import '../utils/date_format.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/progress_bar.dart';
 import 'edit_book_screen.dart';
@@ -57,12 +58,6 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
-  String _formatDate(int ms) {
-    if (ms <= 0) return '';
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.day}/${d.month}/${d.year}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -72,9 +67,9 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
     final file = File(book.path);
     final fileSize =
         file.existsSync() ? _formatFileSize(file.lengthSync()) : 'Unknown';
-    final added = _formatDate(book.addedAt);
+    final added = formatDate(book.addedAt);
     final lastRead =
-        book.lastReadAt > 0 ? _formatDate(book.lastReadAt) : null;
+        book.lastReadAt > 0 ? formatDate(book.lastReadAt) : null;
 
     return Scaffold(
       body: CustomScrollView(

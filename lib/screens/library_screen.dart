@@ -12,6 +12,7 @@ import '../services/library_service.dart';
 import '../services/scan_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
+import '../utils/date_format.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/progress_bar.dart';
@@ -506,10 +507,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final fileSize = file.existsSync()
         ? _formatFileSize(file.lengthSync())
         : 'Unknown';
-    final addedDate = DateTime.fromMillisecondsSinceEpoch(book.addedAt);
-    final lastReadDate = book.lastReadAt > 0
-        ? DateTime.fromMillisecondsSinceEpoch(book.lastReadAt)
-        : null;
 
     showModalBottomSheet<void>(
       context: context,
@@ -541,14 +538,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
             _DetailRow(label: 'File size', value: fileSize),
             _DetailRow(
               label: 'Added',
-              value:
-                  '${addedDate.day}/${addedDate.month}/${addedDate.year}',
+              value: formatDate(book.addedAt),
             ),
-            if (lastReadDate != null)
+            if (book.lastReadAt > 0)
               _DetailRow(
                 label: 'Last read',
-                value:
-                    '${lastReadDate.day}/${lastReadDate.month}/${lastReadDate.year}',
+                value: formatDate(book.lastReadAt),
               ),
             _DetailRow(
               label: 'Progress',
