@@ -1972,6 +1972,78 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     return '${_flatPage + 1} / $_flatPageCount';
   }
 
+  void _showGoToPageDialog() {
+    final theme = _settings.colors;
+    final controller = TextEditingController();
+    final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPages.length : _flatPageCount);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.background,
+        title: Text('Go to page', style: TextStyle(color: theme.text)),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: TextStyle(color: theme.text),
+          decoration: InputDecoration(
+            hintText: '1–$maxPage',
+            hintStyle: TextStyle(color: theme.muted),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.muted),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.accent),
+            ),
+          ),
+          onSubmitted: (_) {
+            final page = int.tryParse(controller.text);
+            if (page != null && page >= 1 && page <= maxPage) {
+              Navigator.of(ctx).pop();
+              if (_isPdf) {
+                _jumpToPdfPage(page);
+              } else if (_isComic) {
+                _comicPageController.animateToPage(
+                  page - 1,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                );
+              } else {
+                _pageController?.jumpToPage(page - 1);
+              }
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: theme.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              final page = int.tryParse(controller.text);
+              if (page != null && page >= 1 && page <= maxPage) {
+                Navigator.of(ctx).pop();
+                if (_isPdf) {
+                  _jumpToPdfPage(page);
+                } else if (_isComic) {
+                  _comicPageController.animateToPage(
+                    page - 1,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                  );
+                } else {
+                  _pageController?.jumpToPage(page - 1);
+                }
+              }
+            },
+            child: Text('Go', style: TextStyle(color: theme.accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ------------------------------ Chrome -------------------------------------
 
   GestureTapUpCallback _handleTapZones({required VoidCallback onCenter}) {
@@ -2065,15 +2137,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  centerLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: theme.text,
+                GestureDetector(
+                  onTap: _showGoToPageDialog,
+                  child: Text(
+                    centerLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: theme.text,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 4),
