@@ -70,6 +70,9 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
     final added = formatDate(book.addedAt);
     final lastRead =
         book.lastReadAt > 0 ? formatDate(book.lastReadAt) : null;
+    final pubDate = book.publicationDate != null && book.publicationDate!.isNotEmpty
+        ? formatPublicationDate(book.publicationDate!)
+        : '';
 
     return Scaffold(
       body: CustomScrollView(
@@ -202,8 +205,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                   // Publication info.
                   if (book.publisher != null && book.publisher!.isNotEmpty)
                     _InfoRow(icon: Icons.business_outlined, label: 'Publisher', value: book.publisher!),
-                  if (book.publicationDate != null && book.publicationDate!.isNotEmpty)
-                    _InfoRow(icon: Icons.date_range_outlined, label: 'Published', value: book.publicationDate!),
+                  if (pubDate.isNotEmpty)
+                    _InfoRow(icon: Icons.date_range_outlined, label: 'Published', value: pubDate),
                   if (book.language != null && book.language!.isNotEmpty)
                     _InfoRow(icon: Icons.language_outlined, label: 'Language', value: book.language!),
                   // Genre chips.
