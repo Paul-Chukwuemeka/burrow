@@ -508,6 +508,39 @@ class _ThemedSheetState extends State<_ThemedSheet> {
               ],
             ),
           ],
+          // ── Image fit ─────────────────────────────────────────────
+          Row(
+            children: [
+              Icon(Icons.fit_screen, color: theme.muted, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Image fit',
+                  style: TextStyle(fontSize: 14, color: theme.text),
+                ),
+              ),
+              SegmentedButton<ComicFitMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: ComicFitMode.contain,
+                    label: Text('Fit'),
+                  ),
+                  ButtonSegment(
+                    value: ComicFitMode.fitWidth,
+                    label: Text('Width'),
+                  ),
+                  ButtonSegment(
+                    value: ComicFitMode.fitHeight,
+                    label: Text('Height'),
+                  ),
+                ],
+                selected: {settings.comicFitMode},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) =>
+                    _update(() => settings.comicFitMode = s.first),
+              ),
+            ],
+          ),
           _buildBrightness(theme),
           _buildMisc(theme),
         ],

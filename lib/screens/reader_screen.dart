@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../db/database.dart' as db;
@@ -147,11 +148,21 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool get _showToc => !_isComic;
   bool get _showBookmark => !_isComic;
 
+  BoxFit get _comicBoxFit => switch (_settings.comicFitMode) {
+        ComicFitMode.fitWidth => BoxFit.fitWidth,
+        ComicFitMode.fitHeight => BoxFit.fitHeight,
+        ComicFitMode.contain => BoxFit.contain,
+      };
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
     if (_settings.keepScreenOn) WakelockPlus.enable();
     BrightnessController.instance.apply(_settings.brightness);
     _loadBookmarks();
@@ -345,6 +356,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([]);
     super.dispose();
   }
 
@@ -1156,6 +1168,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                         },
                         theme: theme,
                       ),
+                      _toolbarDivider(theme: theme),
+                      _toolbarButton(
+                        label: 'Share',
+                        onTap: () {
+                          _dismissDictionaryButton();
+                          SharePlus.instance.share(ShareParams(text: word));
+                        },
+                        theme: theme,
+                      ),
                     ],
                   ),
                 ),
@@ -1508,7 +1529,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             itemBuilder: (context, i) => Center(
               child: Image.memory(
                 _comicPages[i],
-                fit: BoxFit.contain,
+                fit: _comicBoxFit,
               ),
             ),
           ),
@@ -1569,7 +1590,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             child: Center(
               child: Image.memory(
                 _comicPages[i],
-                fit: BoxFit.contain,
+                fit: _comicBoxFit,
               ),
             ),
           ),

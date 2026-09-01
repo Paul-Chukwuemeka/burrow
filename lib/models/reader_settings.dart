@@ -21,6 +21,9 @@ enum ComicReadingDirection { ltr, rtl }
 /// Text alignment for reflowable documents.
 enum TextJustification { left, justify }
 
+/// Image fit mode for comic pages.
+enum ComicFitMode { contain, fitWidth, fitHeight }
+
 /// App-level Material 3 brightness mapping.
 class AppTheme {
   const AppTheme._({required this.brightness});
@@ -159,6 +162,7 @@ class ReaderSettings {
     this.comicReadingDirection = ComicReadingDirection.ltr,
     this.textJustification = TextJustification.justify,
     this.horizontalMargin = 20,
+    this.comicFitMode = ComicFitMode.contain,
     this.uiFontFamily,
     this.uiTextScale = 1.0,
   });
@@ -181,6 +185,7 @@ class ReaderSettings {
   ComicReadingDirection comicReadingDirection;
   TextJustification textJustification;
   double horizontalMargin;
+  ComicFitMode comicFitMode;
 
   String? uiFontFamily;
   double uiTextScale;
@@ -211,6 +216,7 @@ class ReaderSettings {
         'comicReadingDirection': comicReadingDirection.name,
         'textJustification': textJustification.name,
         'horizontalMargin': horizontalMargin,
+        'comicFitMode': comicFitMode.name,
         'uiFontFamily': uiFontFamily,
         'uiTextScale': uiTextScale,
       };
@@ -274,6 +280,10 @@ class ReaderSettings {
           const (8.0, 40.0),
           (json['horizontalMargin'] as num?)?.toDouble() ?? 20,
           20,
+        ),
+        comicFitMode: ComicFitMode.values.firstWhere(
+          (m) => m.name == json['comicFitMode'],
+          orElse: () => ComicFitMode.contain,
         ),
         uiFontFamily: json['uiFontFamily'] as String?,
         uiTextScale: _clampTo(
