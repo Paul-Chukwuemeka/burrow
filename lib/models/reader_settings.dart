@@ -15,6 +15,9 @@ enum PdfLayoutDirection { vertical, horizontalLtr, horizontalRtl }
 /// Reading mode for image-based comics (CBR/CBZ).
 enum ComicReadingMode { paginated, vertical }
 
+/// Scroll direction for paginated comics (CBR/CBZ).
+enum ComicReadingDirection { ltr, rtl }
+
 /// App-level Material 3 brightness mapping.
 class AppTheme {
   const AppTheme._({required this.brightness});
@@ -150,6 +153,7 @@ class ReaderSettings {
     this.pdfLayoutDirection = PdfLayoutDirection.vertical,
     this.pdfContinuousScroll = true,
     this.comicReadingMode = ComicReadingMode.paginated,
+    this.comicReadingDirection = ComicReadingDirection.ltr,
     this.uiFontFamily,
     this.uiTextScale = 1.0,
   });
@@ -169,6 +173,7 @@ class ReaderSettings {
   PdfLayoutDirection pdfLayoutDirection;
   bool pdfContinuousScroll;
   ComicReadingMode comicReadingMode;
+  ComicReadingDirection comicReadingDirection;
 
   String? uiFontFamily;
   double uiTextScale;
@@ -196,6 +201,7 @@ class ReaderSettings {
         'pdfLayoutDirection': pdfLayoutDirection.name,
         'pdfContinuousScroll': pdfContinuousScroll,
         'comicReadingMode': comicReadingMode.name,
+        'comicReadingDirection': comicReadingDirection.name,
         'uiFontFamily': uiFontFamily,
         'uiTextScale': uiTextScale,
       };
@@ -246,6 +252,10 @@ class ReaderSettings {
         comicReadingMode: ComicReadingMode.values.firstWhere(
           (m) => m.name == json['comicReadingMode'],
           orElse: () => ComicReadingMode.paginated,
+        ),
+        comicReadingDirection: ComicReadingDirection.values.firstWhere(
+          (d) => d.name == json['comicReadingDirection'],
+          orElse: () => ComicReadingDirection.ltr,
         ),
         uiFontFamily: json['uiFontFamily'] as String?,
         uiTextScale: _clampTo(

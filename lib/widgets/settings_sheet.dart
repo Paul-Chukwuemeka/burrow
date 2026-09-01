@@ -385,6 +385,39 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                   v ? ComicReadingMode.paginated : ComicReadingMode.vertical,
             ),
           ),
+          // ── Scroll direction (paginated only) ───────────────────────
+          if (settings.comicReadingMode == ComicReadingMode.paginated) ...[
+            Row(
+              children: [
+                Icon(Icons.swap_horiz, color: theme.muted, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Scroll direction',
+                    style: TextStyle(fontSize: 14, color: theme.text),
+                  ),
+                ),
+                SegmentedButton<ComicReadingDirection>(
+                  segments: const [
+                    ButtonSegment(
+                      value: ComicReadingDirection.ltr,
+                      label: Text('\u2190'),
+                      icon: Icon(Icons.arrow_back, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: ComicReadingDirection.rtl,
+                      label: Text('\u2192'),
+                      icon: Icon(Icons.arrow_forward, size: 16),
+                    ),
+                  ],
+                  selected: {settings.comicReadingDirection},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) => _update(
+                      () => settings.comicReadingDirection = s.first),
+                ),
+              ],
+            ),
+          ],
           _buildBrightness(theme),
           _buildMisc(theme),
         ],

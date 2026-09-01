@@ -1366,6 +1366,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   Widget _buildComicPaginated(ReaderTheme theme) {
+    final rtl = _settings.comicReadingDirection == ComicReadingDirection.rtl;
     return Stack(
       children: [
         GestureDetector(
@@ -1373,15 +1374,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           onTapUp: (details) {
             final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
             final dx = details.localPosition.dx;
+            // In RTL mode, swap: left = forward, right = back.
             if (dx < w * 0.3) {
-              _flip(-1);
+              _flip(rtl ? 1 : -1);
             } else if (dx > w * 0.7) {
-              _flip(1);
+              _flip(rtl ? -1 : 1);
             } else {
               setState(() => _chromeVisible = !_chromeVisible);
             }
           },
           child: PageView.builder(
+            reverse: rtl,
             controller: _comicPageController,
             itemCount: _comicPages.length,
             onPageChanged: (i) {
@@ -1746,7 +1749,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
     if (_isComic) {
       if (_comicPages.isEmpty) return;
-      final target = _comicPage + direction;
+      // In RTL mode the PageView is reversed, so negate the direction.
+      final rtl =
+          _settings.comicReadingDirection == ComicReadingDirection.rtl;
+      final target = _comicPage + (rtl ? -direction : direction);
       if (target < 0 || target >= _comicPages.length) return;
       _comicPageController.animateToPage(
         target,
