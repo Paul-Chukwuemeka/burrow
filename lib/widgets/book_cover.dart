@@ -212,7 +212,7 @@ class _FittedTitle extends StatelessWidget {
               letterSpacing: 0.1,
             ),
           ),
-          if (author.isNotEmpty)
+          if (author.isNotEmpty && constraints.maxHeight > 40)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
