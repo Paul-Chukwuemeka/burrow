@@ -1837,7 +1837,6 @@ class _FilterSheetState extends State<_FilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
     // Collect unique genres.
@@ -1872,16 +1871,6 @@ class _FilterSheetState extends State<_FilterSheet> {
       expand: false,
       builder: (context, scrollController) => Column(
         children: [
-          // Handle bar.
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
           // Header.
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
