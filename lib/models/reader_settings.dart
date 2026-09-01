@@ -18,6 +18,9 @@ enum ComicReadingMode { paginated, vertical }
 /// Scroll direction for paginated comics (CBR/CBZ).
 enum ComicReadingDirection { ltr, rtl }
 
+/// Text alignment for reflowable documents.
+enum TextJustification { left, justify }
+
 /// App-level Material 3 brightness mapping.
 class AppTheme {
   const AppTheme._({required this.brightness});
@@ -154,6 +157,8 @@ class ReaderSettings {
     this.pdfContinuousScroll = true,
     this.comicReadingMode = ComicReadingMode.paginated,
     this.comicReadingDirection = ComicReadingDirection.ltr,
+    this.textJustification = TextJustification.justify,
+    this.horizontalMargin = 20,
     this.uiFontFamily,
     this.uiTextScale = 1.0,
   });
@@ -174,6 +179,8 @@ class ReaderSettings {
   bool pdfContinuousScroll;
   ComicReadingMode comicReadingMode;
   ComicReadingDirection comicReadingDirection;
+  TextJustification textJustification;
+  double horizontalMargin;
 
   String? uiFontFamily;
   double uiTextScale;
@@ -202,6 +209,8 @@ class ReaderSettings {
         'pdfContinuousScroll': pdfContinuousScroll,
         'comicReadingMode': comicReadingMode.name,
         'comicReadingDirection': comicReadingDirection.name,
+        'textJustification': textJustification.name,
+        'horizontalMargin': horizontalMargin,
         'uiFontFamily': uiFontFamily,
         'uiTextScale': uiTextScale,
       };
@@ -256,6 +265,15 @@ class ReaderSettings {
         comicReadingDirection: ComicReadingDirection.values.firstWhere(
           (d) => d.name == json['comicReadingDirection'],
           orElse: () => ComicReadingDirection.ltr,
+        ),
+        textJustification: TextJustification.values.firstWhere(
+          (j) => j.name == json['textJustification'],
+          orElse: () => TextJustification.justify,
+        ),
+        horizontalMargin: _clampTo(
+          const (8.0, 40.0),
+          (json['horizontalMargin'] as num?)?.toDouble() ?? 20,
+          20,
         ),
         uiFontFamily: json['uiFontFamily'] as String?,
         uiTextScale: _clampTo(

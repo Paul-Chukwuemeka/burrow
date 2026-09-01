@@ -308,6 +308,62 @@ class _ThemedSheetState extends State<_ThemedSheet> {
               ),
             ],
           ),
+          // ── Text justification ───────────────────────────────────
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.format_align_left, color: theme.muted, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Justification',
+                  style: TextStyle(fontSize: 14, color: theme.text),
+                ),
+              ),
+              SegmentedButton<TextJustification>(
+                segments: const [
+                  ButtonSegment(
+                    value: TextJustification.left,
+                    label: Text('Left'),
+                  ),
+                  ButtonSegment(
+                    value: TextJustification.justify,
+                    label: Text('Justify'),
+                  ),
+                ],
+                selected: {settings.textJustification},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) =>
+                    _update(() => settings.textJustification = s.first),
+              ),
+            ],
+          ),
+          // ── Horizontal margin ─────────────────────────────────────
+          Row(
+            children: [
+              Icon(Icons.swap_horiz, color: theme.muted, size: 20),
+              Expanded(
+                child: Slider(
+                  value: settings.horizontalMargin,
+                  min: 8,
+                  max: 40,
+                  divisions: 16,
+                  activeColor: theme.accent,
+                  label: '${settings.horizontalMargin.round()}px',
+                  onChanged: (v) =>
+                      _preview(() => settings.horizontalMargin = v),
+                  onChangeEnd: (_) => _commit(),
+                ),
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '${settings.horizontalMargin.round()}',
+                  style: TextStyle(color: theme.muted),
+                ),
+              ),
+            ],
+          ),
           _buildBrightness(theme),
           _buildMisc(theme),
         ],

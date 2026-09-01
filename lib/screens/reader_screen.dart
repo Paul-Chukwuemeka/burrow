@@ -446,7 +446,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   String _signatureFor(Size viewport, TextStyle style, TextScaler scaler) =>
       '${viewport.width}x${viewport.height}|${style.fontSize}|'
-      '${style.height}|${style.fontFamily}|${scaler.scale(10)}';
+      '${style.height}|${style.fontFamily}|${scaler.scale(10)}|'
+      '${_settings.textJustification.name}|${_settings.horizontalMargin}';
 
   Paginator _emptyPaginator() => Paginator.paginate(
         text: '',
@@ -472,7 +473,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       _paginators.fold(0, (sum, p) => sum + p.pages.length);
 
   Size _contentViewport(Size screen) =>
-      Size(screen.width - 40, screen.height - 56);
+      Size(screen.width - _settings.horizontalMargin * 2, screen.height - 56);
 
   /// Height of the chapter-title heading rendered on a chapter's first page
   /// (title + spacing), which pagination must reserve there.
@@ -1742,6 +1743,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     _showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
                   },
                   selectedWordRange: _selectedWordRange,
+                  textAlign: _settings.textJustification == TextJustification.justify
+                      ? TextAlign.justify
+                      : TextAlign.left,
+                  horizontalMargin: _settings.horizontalMargin,
                 );
               },
             ),
@@ -2196,6 +2201,8 @@ class _PageContent extends StatelessWidget {
     this.pageMaxHeight = double.infinity,
     this.onLongPressWord,
     this.selectedWordRange,
+    this.textAlign = TextAlign.justify,
+    this.horizontalMargin = 20,
   });
 
   final String chapterTitle;
@@ -2214,6 +2221,8 @@ class _PageContent extends StatelessWidget {
   final double pageMaxHeight;
   final void Function(String word, Offset globalPosition, int bodyStart, int bodyEnd)? onLongPressWord;
   final ({int start, int end})? selectedWordRange;
+  final TextAlign textAlign;
+  final double horizontalMargin;
 
   @override
   Widget build(BuildContext context) {
@@ -2234,16 +2243,17 @@ class _PageContent extends StatelessWidget {
           ? (details) => _handleLongPress(context, details)
           : null,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+        padding: EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
               child: Builder(
                 builder: (context) => RichText(
+                  textAlign: textAlign,
                   text: TextSpan(
                     style: style,
-                    children: _buildPageText(context, MediaQuery.sizeOf(context).width - 40),
+                    children: _buildPageText(context, MediaQuery.sizeOf(context).width - horizontalMargin * 2),
                   ),
                 ),
               ),
@@ -2257,7 +2267,7 @@ class _PageContent extends StatelessWidget {
   void _handleLongPress(BuildContext context, LongPressStartDetails details) {
     if (onLongPressWord == null) return;
 
-    final renderWidth = MediaQuery.sizeOf(context).width - 40;
+    final renderWidth = MediaQuery.sizeOf(context).width - horizontalMargin * 2;
     final spans = _buildPageText(context, renderWidth);
 
     final painter = TextPainter(
