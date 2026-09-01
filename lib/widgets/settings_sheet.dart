@@ -27,6 +27,8 @@ abstract final class SettingsSheet {
     required ReaderSettings settings,
     required VoidCallback onChanged,
     BookFormat format = BookFormat.epub,
+    VoidCallback? onPdfFitWidth,
+    VoidCallback? onPdfFitPage,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -36,6 +38,8 @@ abstract final class SettingsSheet {
         settings: settings,
         onChanged: onChanged,
         format: format,
+        onPdfFitWidth: onPdfFitWidth,
+        onPdfFitPage: onPdfFitPage,
       ),
     );
   }
@@ -46,10 +50,14 @@ class _ThemedSheet extends StatefulWidget {
     required this.settings,
     required this.onChanged,
     this.format = BookFormat.epub,
+    this.onPdfFitWidth,
+    this.onPdfFitPage,
   });
   final ReaderSettings settings;
   final VoidCallback onChanged;
   final BookFormat format;
+  final VoidCallback? onPdfFitWidth;
+  final VoidCallback? onPdfFitPage;
 
   @override
   State<_ThemedSheet> createState() => _ThemedSheetState();
@@ -419,6 +427,32 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             onChanged: (v) =>
                 _update(() => settings.pdfContinuousScroll = v),
           ),
+          // ── Zoom fit ───────────────────────────────────────────────
+          if (widget.onPdfFitWidth != null || widget.onPdfFitPage != null)
+            Row(
+              children: [
+                Icon(Icons.zoom_in, color: theme.muted, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Zoom fit',
+                    style: TextStyle(fontSize: 14, color: theme.text),
+                  ),
+                ),
+                if (widget.onPdfFitWidth != null)
+                  TextButton(
+                    onPressed: widget.onPdfFitWidth,
+                    child: Text('Width',
+                        style: TextStyle(color: theme.accent, fontSize: 13)),
+                  ),
+                if (widget.onPdfFitPage != null)
+                  TextButton(
+                    onPressed: widget.onPdfFitPage,
+                    child: Text('Page',
+                        style: TextStyle(color: theme.accent, fontSize: 13)),
+                  ),
+              ],
+            ),
           _buildBrightness(theme),
           _buildMisc(theme),
         ],

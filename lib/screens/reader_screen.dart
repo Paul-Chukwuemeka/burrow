@@ -2125,6 +2125,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     settings: _settings,
                     onChanged: _onSettingsChanged,
                     format: _book.format,
+                    onPdfFitWidth: _isPdf
+                        ? () => _pdfController.goToPage(
+                              pageNumber: _pdfPage,
+                              anchor: PdfPageAnchor.left,
+                            )
+                        : null,
+                    onPdfFitPage: _isPdf
+                        ? () => _pdfController.goToPage(
+                              pageNumber: _pdfPage,
+                              anchor: PdfPageAnchor.center,
+                            )
+                        : null,
                   ),
                 ),
               ],
