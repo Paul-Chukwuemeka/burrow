@@ -1825,6 +1825,7 @@ class _FilterSheetState extends State<_FilterSheet> {
   late _ReadingStatus _status;
   late String? _genre;
   late String? _series;
+  bool _genresExpanded = false;
 
   @override
   void initState() {
@@ -1963,26 +1964,53 @@ class _FilterSheetState extends State<_FilterSheet> {
                 if (sortedGenres.isNotEmpty)
                   _FilterSection(
                     label: 'Genre',
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _PillChip(
-                          label: 'All genres',
-                          selected: _genre == null,
-                          onTap: () => setState(() {
-                            _genre = null;
-                            widget.onGenreChanged(null);
-                          }),
+                        ClipRect(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: _genresExpanded ? double.infinity : 130,
+                            ),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _PillChip(
+                                  label: 'All genres',
+                                  selected: _genre == null,
+                                  onTap: () => setState(() {
+                                    _genre = null;
+                                    widget.onGenreChanged(null);
+                                  }),
+                                ),
+                                for (final g in sortedGenres)
+                                  _PillChip(
+                                    label: g,
+                                    selected: _genre?.toLowerCase() == g.toLowerCase(),
+                                    onTap: () => setState(() {
+                                      _genre = g;
+                                      widget.onGenreChanged(g);
+                                    }),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
-                        for (final g in sortedGenres)
-                          _PillChip(
-                            label: g,
-                            selected: _genre?.toLowerCase() == g.toLowerCase(),
-                            onTap: () => setState(() {
-                              _genre = g;
-                              widget.onGenreChanged(g);
-                            }),
+                        if (sortedGenres.length > 6)
+                          GestureDetector(
+                            onTap: () => setState(() => _genresExpanded = !_genresExpanded),
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                _genresExpanded ? 'Show less' : 'Show more',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            ),
                           ),
                       ],
                     ),
