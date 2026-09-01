@@ -115,6 +115,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   // Search state.
   BookSearch? _search;
+  PdfTextSearcher? _pdfSearcher;
   bool _searchOpen = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -142,7 +143,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   bool get _isPdf => _book.format == BookFormat.pdf;
   bool get _isComic => _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
-  bool get _showSearch => !_isPdf && !_isComic;
+  bool get _showSearch => !_isComic;
   bool get _showToc => !_isComic;
   bool get _showBookmark => !_isComic;
 
@@ -327,6 +328,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationCache.clear();
     if (_isPdf) _pdfController.removeListener(_onPdfViewChanged);
     _search?.dispose();
+    _pdfSearcher?.resetTextSearch();
+    _pdfSearcher = null;
     _searchController.dispose();
     _searchFocusNode.dispose();
     _dictionaryButtonEntry?.remove();
@@ -807,6 +810,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // ---------------------------------------------------------------------------
 
   void _initSearch() {
+    if (_isPdf) {
+      if (_pdfSearcher != null) return;
+      _pdfSearcher = PdfTextSearcher(_pdfController);
+      _pdfSearcher!.addListener(_onPdfSearchChanged);
+      return;
+    }
     if (_doc == null || _search != null) return;
     _search = BookSearch(
       chapters: _doc!.chapters,
@@ -826,11 +835,44 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     );
   }
 
+  void _onPdfSearchChanged() {
+    if (!mounted || _pdfSearcher == null) return;
+    final matches = _pdfSearcher!.matches;
+    setState(() {
+      _searchResults = [
+        for (var i = 0; i < matches.length; i++)
+          SearchResult(
+            chapter: matches[i].pageNumber,
+            offset: 0,
+            length: 0,
+            snippet: 'Page ${matches[i].pageNumber}',
+          ),
+      ];
+      _currentResultIndex = _pdfSearcher!.currentIndex ?? -1;
+      if (!_pdfSearcher!.isSearching) {
+        _searchDone = true;
+      }
+    });
+  }
+
   void _onSearchTextChanged() {
     final q = _searchController.text;
+    if (q.isEmpty) {
+      _pdfSearcher?.resetTextSearch();
+      setState(() {
+        _searchResults = [];
+        _currentResultIndex = -1;
+        _searchDone = false;
+      });
+      return;
+    }
     _initSearch();
     _searchDone = false;
-    _search?.search(q);
+    if (_isPdf) {
+      _pdfSearcher!.startTextSearch(q);
+    } else {
+      _search?.search(q);
+    }
     setState(() => _currentResultIndex = -1);
   }
 
@@ -838,11 +880,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final q = _searchController.text;
     _initSearch();
     _searchDone = false;
-    _search?.searchImmediate(q);
+    if (_isPdf) {
+      _pdfSearcher!.startTextSearch(q, searchImmediately: true);
+    } else {
+      _search?.searchImmediate(q);
+    }
   }
 
   void _toggleSearch() {
-    if (_isPdf) return;
     setState(() {
       _searchOpen = !_searchOpen;
       if (_searchOpen) {
@@ -854,18 +899,24 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _searchDone = false;
         _search?.dispose();
         _search = null;
+        _pdfSearcher?.resetTextSearch();
+        _pdfSearcher = null;
       }
     });
   }
 
   void _jumpToResult(int index) {
     if (index < 0 || index >= _searchResults.length) return;
-    final result = _searchResults[index];
-    final pag = _paginators[result.chapter];
-    final pageIndex = pag.pageIndexFor(result.offset);
-    final flat = _flatIndexForChapter(result.chapter) + pageIndex;
     setState(() => _currentResultIndex = index);
-    _pageController?.jumpToPage(flat);
+    if (_isPdf) {
+      _pdfSearcher?.goToMatchOfIndex(index);
+    } else {
+      final result = _searchResults[index];
+      final pag = _paginators[result.chapter];
+      final pageIndex = pag.pageIndexFor(result.offset);
+      final flat = _flatIndexForChapter(result.chapter) + pageIndex;
+      _pageController?.jumpToPage(flat);
+    }
     if (!_chromeVisible) {
       setState(() => _chromeVisible = true);
     }
@@ -873,6 +924,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _prevResult() {
     if (_searchResults.isEmpty) return;
+    if (_isPdf) {
+      _pdfSearcher?.goToPrevMatch();
+      return;
+    }
     final idx = _currentResultIndex <= 0
         ? _searchResults.length - 1
         : _currentResultIndex - 1;
@@ -881,6 +936,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _nextResult() {
     if (_searchResults.isEmpty) return;
+    if (_isPdf) {
+      _pdfSearcher?.goToNextMatch();
+      return;
+    }
     final idx = _currentResultIndex >= _searchResults.length - 1
         ? 0
         : _currentResultIndex + 1;
@@ -978,7 +1037,11 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   itemBuilder: (context, i) {
                     final r = _searchResults[i];
                     final isCurrent = i == _currentResultIndex;
-                    final chapterTitle = _doc?.chapters[r.chapter].title ?? '';
+                    final label = _isPdf
+                        ? 'Page ${r.chapter}'
+                        : (_doc?.chapters[r.chapter].title ?? '').isEmpty
+                            ? 'Chapter ${r.chapter + 1}'
+                            : _doc!.chapters[r.chapter].title;
                     return InkWell(
                       onTap: () => _jumpToResult(i),
                       child: Container(
@@ -991,9 +1054,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              chapterTitle.isEmpty
-                                  ? 'Chapter ${r.chapter + 1}'
-                                  : chapterTitle,
+                              label,
                               style: TextStyle(
                                 color: theme.muted,
                                 fontSize: 11,
@@ -1324,6 +1385,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               ),
             ),
           ),
+        ],
+        pagePaintCallbacks: [
+          if (_pdfSearcher != null)
+            _pdfSearcher!.pageTextMatchPaintCallback,
         ],
       ),
     );
