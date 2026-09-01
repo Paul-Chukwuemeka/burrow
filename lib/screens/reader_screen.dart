@@ -144,7 +144,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool get _isComic => _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
   bool get _showSearch => !_isPdf && !_isComic;
   bool get _showToc => !_isComic;
-  bool get _showBookmark => !_isPdf && !_isComic;
+  bool get _showBookmark => !_isComic;
 
   @override
   void initState() {
@@ -174,6 +174,13 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   void _checkBookmarkState() {
+    if (_isPdf) {
+      // For PDF, check if any bookmark matches the current page number.
+      final currentPdfPage = _pdfPage;
+      final found = _bookmarks.any((bm) => bm.chapter == currentPdfPage);
+      if (mounted) setState(() => _isCurrentPageBookmarked = found);
+      return;
+    }
     final ref = _refAt(_flatPage);
     if (ref == null || _doc == null) return;
     final offset = _paginators[ref.$1].pages[ref.$2].start;
@@ -192,6 +199,27 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   Future<void> _toggleBookmark() async {
+    if (_isPdf) {
+      // For PDF, store the page number in the chapter field.
+      final page = _pdfPage;
+      if (_isCurrentPageBookmarked) {
+        for (final bm in _bookmarks) {
+          if (bm.chapter == page) {
+            await widget.library.deleteBookmark(bm.id);
+            break;
+          }
+        }
+      } else {
+        await widget.library.addBookmark(
+          bookId: _book.id,
+          chapter: page,
+          offset: 0,
+          snippet: 'Page $page',
+        );
+      }
+      await _loadBookmarks();
+      return;
+    }
     final ref = _refAt(_flatPage);
     if (ref == null || _doc == null) return;
     final chapter = ref.$1;
@@ -231,6 +259,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _pdfPageCount = count;
       });
       _onPositionChanged(page - 1, 0);
+      _checkBookmarkState();
     }
   }
 

@@ -181,7 +181,10 @@ class _TocSheetContentState extends State<_TocSheetContent>
                         chapters: const [],
                         theme: theme,
                         scrollController: scrollController,
-                        onJump: (_) {},
+                        onJump: (pageNumber) {
+                          Navigator.of(context).pop();
+                          widget.onJumpPdf?.call(pageNumber);
+                        },
                         onDelete: widget.onDeleteBookmark,
                       ),
                     ],
