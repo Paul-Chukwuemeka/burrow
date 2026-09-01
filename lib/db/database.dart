@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
+import '../models/book_stats.dart';
 
 part 'database.g.dart';
 
@@ -273,6 +274,109 @@ class AppDatabase extends _$AppDatabase {
       day--;
     }
     return streak;
+  }
+
+  /// Returns reading time grouped by hour-of-day (0–23).
+  Future<Map<int, int>> getHourlyReadingTime() async {
+    final sessions = await getAllSessions();
+    final hourly = <int, int>{};
+    for (final s in sessions) {
+      if (s.endedAt <= 0) continue;
+      final hour = DateTime.fromMillisecondsSinceEpoch(s.startedAt).hour;
+      hourly[hour] = (hourly[hour] ?? 0) + (s.endedAt - s.startedAt);
+    }
+    return hourly;
+  }
+
+  /// Returns reading time grouped by "YYYY-MM" key.
+  Future<Map<String, int>> getMonthlyReadingTime() async {
+    final sessions = await getAllSessions();
+    final monthly = <String, int>{};
+    for (final s in sessions) {
+      if (s.endedAt <= 0) continue;
+      final d = DateTime.fromMillisecondsSinceEpoch(s.startedAt);
+      final key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
+      monthly[key] = (monthly[key] ?? 0) + (s.endedAt - s.startedAt);
+    }
+    return monthly;
+  }
+
+  /// Returns the longest single reading session in ms.
+  Future<int> getLongestSessionMs() async {
+    final sessions = await getAllSessions();
+    var longest = 0;
+    for (final s in sessions) {
+      if (s.endedAt <= 0) continue;
+      final dur = s.endedAt - s.startedAt;
+      if (dur > longest) longest = dur;
+    }
+    return longest;
+  }
+
+  /// Returns the average session duration in ms.
+  Future<int> getAverageSessionMs() async {
+    final sessions = await getAllSessions();
+    var total = 0;
+    var count = 0;
+    for (final s in sessions) {
+      if (s.endedAt <= 0) continue;
+      total += s.endedAt - s.startedAt;
+      count++;
+    }
+    return count > 0 ? total ~/ count : 0;
+  }
+
+  /// Returns total reading time in ms for today.
+  Future<int> getTodayReadingTimeMs() async {
+    final sessions = await getAllSessions();
+    final todayEpoch = (DateTime.now().millisecondsSinceEpoch / 86400000).floor();
+    var total = 0;
+    for (final s in sessions) {
+      if (s.endedAt <= 0) continue;
+      final day = (s.startedAt / 86400000).floor();
+      if (day == todayEpoch) total += s.endedAt - s.startedAt;
+    }
+    return total;
+  }
+
+  /// Returns total reading time in ms for the last 7 days.
+  Future<int> getThisWeekReadingTimeMs() async {
+    final sessions = await getAllSessions();
+    final now = DateTime.now();
+    final weekAgo = now.subtract(const Duration(days: 7)).millisecondsSinceEpoch;
+    var total = 0;
+    for (final s in sessions) {
+      if (s.endedAt <= 0) continue;
+      if (s.startedAt >= weekAgo) total += s.endedAt - s.startedAt;
+    }
+    return total;
+  }
+
+  /// Returns per-book reading stats for all started books, sorted by time desc.
+  Future<List<BookStats>> getPerBookStats(List<Book> books) async {
+    final results = <BookStats>[];
+    for (final book in books) {
+      if (!book.isStarted) continue;
+      final sessions = await getSessionsForBook(book.id);
+      var totalTime = 0;
+      var totalPages = 0;
+      var sessionCount = 0;
+      for (final s in sessions) {
+        if (s.endedAt > 0) {
+          totalTime += s.endedAt - s.startedAt;
+          sessionCount++;
+        }
+        totalPages += s.pages;
+      }
+      results.add(BookStats(
+        book: book,
+        totalTimeMs: totalTime,
+        totalPages: totalPages,
+        sessionCount: sessionCount,
+      ));
+    }
+    results.sort((a, b) => b.totalTimeMs.compareTo(a.totalTimeMs));
+    return results;
   }
 
   // -- Collections CRUD ------------------------------------------------------

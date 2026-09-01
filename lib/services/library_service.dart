@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/database.dart' as db;
 import '../models/book.dart';
+import '../models/book_stats.dart';
 import 'package:drift/drift.dart' show Value;
 import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
@@ -778,6 +779,41 @@ class LibraryService extends ChangeNotifier {
   Future<int> getReadingStreak() async {
     if (_db == null) return 0;
     return _db!.getReadingStreak();
+  }
+
+  Future<Map<int, int>> getHourlyReadingTime() async {
+    if (_db == null) return {};
+    return _db!.getHourlyReadingTime();
+  }
+
+  Future<Map<String, int>> getMonthlyReadingTime() async {
+    if (_db == null) return {};
+    return _db!.getMonthlyReadingTime();
+  }
+
+  Future<int> getLongestSessionMs() async {
+    if (_db == null) return 0;
+    return _db!.getLongestSessionMs();
+  }
+
+  Future<int> getAverageSessionMs() async {
+    if (_db == null) return 0;
+    return _db!.getAverageSessionMs();
+  }
+
+  Future<int> getTodayReadingTimeMs() async {
+    if (_db == null) return 0;
+    return _db!.getTodayReadingTimeMs();
+  }
+
+  Future<int> getThisWeekReadingTimeMs() async {
+    if (_db == null) return 0;
+    return _db!.getThisWeekReadingTimeMs();
+  }
+
+  Future<List<BookStats>> getPerBookStats() async {
+    if (_db == null) return [];
+    return _db!.getPerBookStats(books);
   }
 
   /// Validates that a book path from a backup is not obviously malicious.
