@@ -7,6 +7,7 @@ import '../models/book.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
+import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
 import 'book_info_screen.dart';
 import 'reader_screen.dart';
@@ -136,12 +137,10 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
           itemCount: books.length,
           itemBuilder: (context, i) {
             final book = books[i];
-            return _PressableScale(
-              child: _SmartBookTile(
-                book: book,
-                onTap: () => _openBookInfo(book),
-                onLongPress: () => _showBookActions(book),
-              ),
+            return BookCard(
+              book: book,
+              onTap: () => _openBookInfo(book),
+              onLongPress: () => _showBookActions(book),
             );
           },
         );
@@ -184,79 +183,6 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _PressableScale extends StatefulWidget {
-  const _PressableScale({required this.child});
-  final Widget child;
-
-  @override
-  State<_PressableScale> createState() => _PressableScaleState();
-}
-
-class _PressableScaleState extends State<_PressableScale> {
-  bool _down = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: (_) => setState(() => _down = true),
-      onPointerUp: (_) => setState(() => _down = false),
-      onPointerCancel: (_) => setState(() => _down = false),
-      child: AnimatedScale(
-        scale: _down ? 0.96 : 1,
-        duration: Duration(milliseconds: _down ? 90 : 220),
-        curve: _down ? Curves.easeOut : Curves.easeOutBack,
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-class _SmartBookTile extends StatelessWidget {
-  const _SmartBookTile({
-    required this.book,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  final Book book;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: BookCover(book: book, borderRadius: Burrow.shapeMd - 2),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          book.displayTitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: scheme.onSurface,
-            height: 1.15,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          book.progressLabel,
-          style: TextStyle(
-            fontSize: 11,
-            color: book.isStarted ? scheme.primary : scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 }
