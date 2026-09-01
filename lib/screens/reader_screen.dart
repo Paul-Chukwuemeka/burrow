@@ -133,6 +133,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   List<Uint8List> _comicPages = [];
   int _comicPage = 0;
   bool _comicLoading = true;
+  ScrollController? _comicVerticalScrollController;
+  bool _comicVerticalListenerAttached = false;
 
   // Dictionary state.
   OverlayEntry? _dictionaryButtonEntry;
@@ -306,6 +308,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     } catch (_) {
       // Controller was never initialized (non-comic book).
     }
+    _comicVerticalScrollController?.dispose();
+    _comicVerticalListenerAttached = false;
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -1343,6 +1347,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _comicPage = _book.lastChapter.clamp(0, pages.length - 1);
         _comicLoading = false;
       });
+      // Restore vertical scroll position after build.
+      if (_settings.comicReadingMode == ComicReadingMode.vertical) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _comicVerticalScrollController == null) return;
+          final viewportHeight = MediaQuery.sizeOf(context).height;
+          if (viewportHeight > 0) {
+            _comicVerticalScrollController!
+                .jumpTo(_comicPage * viewportHeight);
+          }
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1374,11 +1389,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           onTapUp: (details) {
             final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
             final dx = details.localPosition.dx;
-            // In RTL mode, swap: left = forward, right = back.
             if (dx < w * 0.3) {
-              _flip(rtl ? 1 : -1);
+              _flip(-1);
             } else if (dx > w * 0.7) {
-              _flip(rtl ? -1 : 1);
+              _flip(1);
             } else {
               setState(() => _chromeVisible = !_chromeVisible);
             }
@@ -1427,9 +1441,31 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   Widget _buildComicVertical(ReaderTheme theme) {
+    _comicVerticalScrollController ??= ScrollController();
+    final controller = _comicVerticalScrollController!;
+    if (!_comicVerticalListenerAttached) {
+      _comicVerticalListenerAttached = true;
+      controller.addListener(() {
+        if (!mounted || _comicPages.isEmpty) return;
+        final viewportHeight = MediaQuery.sizeOf(context).height;
+        if (viewportHeight <= 0) return;
+        final newIndex =
+            (controller.offset / viewportHeight).round().clamp(0, _comicPages.length - 1);
+        if (newIndex != _comicPage) {
+          setState(() => _comicPage = newIndex);
+          widget.library.savePosition(
+            id: _book.id,
+            chapter: newIndex,
+            offset: controller.offset.toInt(),
+            progress: newIndex / _comicPages.length,
+          );
+        }
+      });
+    }
     return Stack(
       children: [
         ListView.builder(
+          controller: controller,
           padding: EdgeInsets.zero,
           itemCount: _comicPages.length,
           itemBuilder: (context, i) => InteractiveViewer(
@@ -1457,7 +1493,13 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 ? '-/-'
                 : '${(((_comicPage + 1) / _comicPages.length) * 100).round()}%',
             onSliderChanged: (v) {
-              // For vertical mode, scroll to approximate position.
+              final viewportHeight = MediaQuery.sizeOf(context).height;
+              final targetOffset = (v - 1) * viewportHeight;
+              controller.animateTo(
+                targetOffset,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+              );
             },
           ),
         ),
