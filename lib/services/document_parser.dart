@@ -11,6 +11,7 @@ import 'package:xml/xml.dart';
 import '../models/book.dart';
 import '../models/style_run.dart';
 import '../utils/book_title.dart';
+import 'epub_css_parser.dart';
 
 class Chapter {
   const Chapter(this.title, this.body, [this.runs = const [], this.images = const []]);
@@ -402,6 +403,13 @@ class DocumentParser {
       (byFile[e.fileKey] ??= <TocEntry>[]).add(e);
     }
 
+    // Parse CSS stylesheets and build resolved rules per chapter.
+    final cssParser = EpubCssParser.parse(
+      manifest: manifest,
+      spinePaths: docPaths,
+      readEntry: (name) => entry(name) ?? Uint8List(0),
+    );
+
     // Convert each spine document to one or more chapters. A document that
     // several TOC entries point into is split at their anchors, so every
     // entry becomes a chapter of its own.
@@ -420,6 +428,13 @@ class DocumentParser {
             baseDir: docDir,
           );
       if (body.trim().isEmpty) continue;
+
+      // Merge CSS-derived styles into the runs.
+      final resolvedRules = cssParser.chapterStyles[_normalizeKey(p)] ?? const [];
+      if (resolvedRules.isNotEmpty) {
+        _mergeCssStyles(body, runs, resolvedRules);
+      }
+
       chapters.addAll(
         splitByAnchors(body, runs, anchors, byFile[_normalizeKey(p)] ?? const [], images),
       );
@@ -1047,8 +1062,7 @@ class DocumentParser {
   static final RegExp _nonContentRe = RegExp(
     r'<!--.*?-->'
     r'|<head\b[^>]*>.*?</head\s*>'
-    r'|<script\b[^>]*>.*?</script\s*>'
-    r'|<style\b[^>]*>.*?</style\s*>',
+    r'|<script\b[^>]*>.*?</script\s*>',
     dotAll: true,
     caseSensitive: false,
   );
@@ -1216,6 +1230,65 @@ class DocumentParser {
   static int naturalCompare(String a, String b) => _naturalCompare(a, b);
   static (int, int) decodeImageDimensions(Uint8List bytes) =>
       _RichTextBuilder._decodeImageDimensions(bytes);
+
+  static void _mergeCssStyles(
+    String body,
+    List<StyleRun> runs,
+    List<ResolvedCssRule> rules,
+  ) {
+    if (rules.isEmpty || runs.isEmpty) return;
+
+    for (final rule in rules) {
+      final element = rule.element;
+      final properties = rule.properties;
+
+      // Find the element's text range in the body by matching its plain text.
+      final elementText = element.text;
+      if (elementText.isEmpty) continue;
+
+      final bodyStart = body.indexOf(elementText);
+      if (bodyStart < 0) continue;
+      final bodyEnd = bodyStart + elementText.length;
+
+      // Find all runs that overlap this element's text range.
+      for (var i = 0; i < runs.length; i++) {
+        final run = runs[i];
+        final overlapStart = math.max(run.start, bodyStart);
+        final overlapEnd = math.min(run.end, bodyEnd);
+        if (overlapStart >= overlapEnd) continue;
+
+        // Build a CssStyle from the matched rule's properties.
+        final css = EpubCssParser.propsToCssStyle(properties);
+        if (css.isEmpty) continue;
+
+        // If the run exactly matches the element range, apply directly.
+        if (run.start == bodyStart && run.end == bodyEnd) {
+          runs[i] = StyleRun(
+            run.start,
+            run.end,
+            bold: run.bold,
+            italic: run.italic,
+            quote: run.quote,
+            css: run.css?.merge(css) ?? css,
+          );
+        } else {
+          // Split: before / during / after the element range.
+          final before = StyleRun(run.start, overlapStart,
+              bold: run.bold, italic: run.italic, quote: run.quote, css: run.css);
+          final during = StyleRun(overlapStart, overlapEnd,
+              bold: run.bold, italic: run.italic, quote: run.quote,
+              css: run.css?.merge(css) ?? css);
+          final after = StyleRun(overlapEnd, run.end,
+              bold: run.bold, italic: run.italic, quote: run.quote, css: run.css);
+
+          runs.removeAt(i);
+          if (before.start < before.end) runs.insert(i++, before);
+          runs.insert(i, during);
+          if (after.start < after.end) runs.insert(i + 1, after);
+        }
+      }
+    }
+  }
 }
 
 /// Incrementally builds plain text plus style runs from HTML events.

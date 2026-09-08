@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'css_style.dart';
+
 /// A styled range of a chapter's plain text.
 ///
 /// Runs use the same character offsets as the chapter body, so pagination
@@ -16,6 +18,7 @@ class StyleRun {
     this.bold = false,
     this.italic = false,
     this.quote = false,
+    this.css,
   });
 
   final int start;
@@ -23,6 +26,7 @@ class StyleRun {
   final bool bold;
   final bool italic;
   final bool quote;
+  final CssStyle? css;
 
   @override
   bool operator ==(Object other) =>
@@ -31,10 +35,11 @@ class StyleRun {
       other.end == end &&
       other.bold == bold &&
       other.italic == italic &&
-      other.quote == quote;
+      other.quote == quote &&
+      other.css == css;
 
   @override
-  int get hashCode => Object.hash(start, end, bold, italic, quote);
+  int get hashCode => Object.hash(start, end, bold, italic, quote, css);
 }
 
 /// An inline image embedded in the chapter text at [offset].

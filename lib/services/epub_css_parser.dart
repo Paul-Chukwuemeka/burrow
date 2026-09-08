@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:archive/archive.dart';
 import 'package:csslib/parser.dart' as css;
 import 'package:csslib/visitor.dart' as css_visitor;
 import 'package:cascadia/cascadia.dart' as cas;
@@ -30,7 +29,6 @@ class EpubCssParser {
 
   /// Parses CSS from an EPUB archive.
   static EpubCssParser parse({
-    required Archive archive,
     required List<String> spinePaths,
     required Map<String, String> manifest,
     required Uint8List Function(String) readEntry,
