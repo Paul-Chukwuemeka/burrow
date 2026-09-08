@@ -225,8 +225,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
         const mainSpacing = 14.0;
         const cardPadding = 6.0;
         const textBlock = 58.0;
+        const gridPadding = 20.0;
 
-        final width = constraints.maxWidth;
+        final width = constraints.maxWidth - gridPadding * 2;
         final columns = math.max(1, (width / maxTileExtent).ceil());
         final tileWidth = (width - crossSpacing * (columns - 1)) / columns;
         final coverWidth = tileWidth - cardPadding * 2;
@@ -234,7 +235,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
             cardPadding + coverWidth / Burrow.coverAspectRatio + textBlock;
 
         return GridView.builder(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(gridPadding),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             crossAxisSpacing: crossSpacing,
