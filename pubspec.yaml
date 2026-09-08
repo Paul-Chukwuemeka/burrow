@@ -49,6 +49,10 @@ dependencies:
   screen_brightness: ^2.1.11
   lexicor: ^0.2.0
 
+dependency_overrides:
+  lexicor:
+    path: vendor/lexicor
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

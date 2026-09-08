@@ -459,10 +459,9 @@ packages:
   lexicor:
     dependency: "direct main"
     description:
-      name: lexicor
-      sha256: "6ebb11032fb15232e2de97f8ff551c4b60ce363488470d5d0d91ed892f7130e3"
-      url: "https://pub.dev"
-    source: hosted
+      path: "vendor/lexicor"
+      relative: true
+    source: path
     version: "0.2.0"
   lints:
     dependency: transitive

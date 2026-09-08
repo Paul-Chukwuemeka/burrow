@@ -52,3 +52,5 @@ devtools_options.yaml
 
 
 .opencode
+# Local package overrides
+vendor/
