@@ -18,6 +18,23 @@ import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import 'document_parser.dart';
 
+/// Status event for metadata extraction.
+class MetadataStatus {
+  const MetadataStatus({
+    required this.type,
+    this.total = 0,
+    this.completed = 0,
+    this.bookTitle,
+  });
+
+  final MetadataStatusType type;
+  final int total;
+  final int completed;
+  final String? bookTitle;
+}
+
+enum MetadataStatusType { started, progress, completed }
+
 /// Holds the user's library and reader settings.
 ///
 /// The book catalog is persisted to a drift/SQLite database; reader settings
@@ -40,6 +57,12 @@ class LibraryService extends ChangeNotifier {
   // Background metadata extraction queue.
   final Queue<String> _metadataQueue = Queue<String>();
   bool _metadataWorkerRunning = false;
+  
+  /// Stream controller for metadata extraction status events.
+  final _metadataStatusController = StreamController<MetadataStatus>.broadcast();
+  
+  /// Stream of metadata extraction status events.
+  Stream<MetadataStatus> get metadataStatus => _metadataStatusController.stream;
 
   /// Whether the first-run onboarding flow has been completed.
   bool onboardingComplete = false;
@@ -52,6 +75,7 @@ class LibraryService extends ChangeNotifier {
   /// Releases database resources. Call when the app is shutting down.
   @override
   void dispose() {
+    _metadataStatusController.close();
     _db?.close();
     _db = null;
     super.dispose();
@@ -346,10 +370,31 @@ class LibraryService extends ChangeNotifier {
 
   /// Processes the metadata extraction queue one book at a time.
   Future<void> _processMetadataQueue() async {
+    final totalToProcess = _metadataQueue.length;
+    var completed = 0;
+    
+    if (totalToProcess > 0) {
+      _metadataStatusController.add(MetadataStatus(
+        type: MetadataStatusType.started,
+        total: totalToProcess,
+        completed: 0,
+      ));
+    }
+    
     while (_metadataQueue.isNotEmpty) {
       final bookId = _metadataQueue.removeFirst();
       final book = _books.where((b) => b.id == bookId).firstOrNull;
-      if (book == null || book.metadataComplete) continue;
+      if (book == null || book.metadataComplete) {
+        completed++;
+        continue;
+      }
+
+      _metadataStatusController.add(MetadataStatus(
+        type: MetadataStatusType.progress,
+        total: totalToProcess,
+        completed: completed,
+        bookTitle: book.title,
+      ));
 
       try {
         final format = book.format;
@@ -358,8 +403,10 @@ class LibraryService extends ChangeNotifier {
           doc = await DocumentParser.parse(book.path, format);
         } on FormatException {
           // Skip books that can't be parsed.
+          completed++;
           continue;
         } catch (_) {
+          completed++;
           continue;
         }
 
@@ -400,6 +447,16 @@ class LibraryService extends ChangeNotifier {
       } catch (_) {
         // Skip books that fail during processing.
       }
+      
+      completed++;
+    }
+
+    if (totalToProcess > 0) {
+      _metadataStatusController.add(MetadataStatus(
+        type: MetadataStatusType.completed,
+        total: totalToProcess,
+        completed: totalToProcess,
+      ));
     }
 
     _metadataWorkerRunning = false;

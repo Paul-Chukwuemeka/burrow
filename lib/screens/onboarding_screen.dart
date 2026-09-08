@@ -51,7 +51,7 @@ enum _ScanStatus { none, running, done, error }
 enum _ScanKind { none, device, folder }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  static const _pageCount = 5;
+  static const _pageCount = 4;
 
   final PageController _page = PageController();
   int _current = 0;
@@ -157,6 +157,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _permissionDenied = false;
       _pendingScanKind = _ScanKind.none;
     });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Scanning for books...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    
     try {
       final (paths, added, failed) =
           await BookImporter.runScan(_lib, scan());
@@ -167,6 +177,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _added = added.length;
         _failed = failed;
       });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              paths.isEmpty
+                  ? 'No new books found'
+                  : 'Found ${added.length} book${added.length == 1 ? '' : 's'}'
+                      '${failed > 0 ? ', $failed unreadable' : ''}',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _scanStatus = _ScanStatus.error);
@@ -248,7 +272,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const Spacer(),
           if (_current < _pageCount - 1)
             TextButton(
-              onPressed: () => _goTo(_current == _pageCount - 2 ? _pageCount - 1 : 3),
+              onPressed: () => _goTo(3),
               child: const Text('Skip'),
             )
           else
@@ -295,7 +319,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             _ScanStatus.error => 'something went wrong',
             _ScanStatus.none => 'your den is waiting',
           },
-        _ => 'welcome home.',
+        _ => '',
       };
 
   String _subtitle(int i) => switch (i) {
@@ -309,7 +333,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             _ScanStatus.error => 'you can still add books one at a time.',
             _ScanStatus.none => 'add one book and make it yours.',
           },
-        _ => '${_lib.books.length} book${_lib.books.length == 1 ? '' : 's'}, all yours.',
+        _ => '',
       };
 
   Widget _headline(BuildContext context, int i) {
@@ -468,9 +492,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final scheme = Theme.of(context).colorScheme;
     switch (_scanStatus) {
       case _ScanStatus.running:
-        return _WavyProgress(track: scheme.primaryContainer, fill: scheme.primary);
+        return const SizedBox.shrink();
       case _ScanStatus.done:
-        return _FanInPages(count: (_added + _failed).clamp(1, 6), scheme: scheme);
+        return const SizedBox.shrink();
       case _ScanStatus.error:
       case _ScanStatus.none:
         if (_permissionDenied) {
@@ -506,14 +530,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             w: 152, h: 152, radius: 28,
             bg: s.primaryContainer, fg: s.onPrimaryContainer,
             icon: Icons.menu_book_rounded),
-        3 => _StageSpec(
+        _ => _StageSpec(
             w: 174, h: 152, radius: 30,
             bg: s.secondaryContainer, fg: s.onSecondaryContainer,
             icon: Icons.layers_outlined),
-        _ => _StageSpec(
-            w: 150, h: 150, radius: 46,
-            bg: s.primary, fg: s.onPrimary,
-            icon: Icons.check_rounded),
       };
 
   /// The shared-element "den": one container that morphs its size, shape and
@@ -536,23 +556,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          if (i == 4)
-            Positioned.fill(
-              child: AnimatedScale(
-                scale: _current == 4 ? 1 : 0.5,
-                duration: const Duration(milliseconds: 600),
-                curve: Easing.emphasizedDecelerate,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: scheme.primary.withValues(alpha: 0.25),
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           if (i == 0)
             _denGraphic(scheme)
           else
@@ -737,16 +740,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ],
           _ScanStatus.done ||
           _ScanStatus.error =>
-            [_cta('Continue', () => _goTo(4))],
+            [_cta('Open your burrow', _finish)],
           _ScanStatus.none => [
               _cta('Add your first book', _pickAndImport),
               const SizedBox(height: 6),
-              _cta('I\u2019ll do it later', () => _goTo(4), variant: _CtaVariant.text),
+              _cta('Open your burrow', _finish, variant: _CtaVariant.text),
             ],
         },
-      _ => [
-          _cta('Open your burrow', _finish),
-        ],
+      _ => [_cta('Open your burrow', _finish)],
     };
   }
 

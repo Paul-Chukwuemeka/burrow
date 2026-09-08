@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -59,6 +60,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String? _cacheKey;
 
   final _searchController = TextEditingController();
+  StreamSubscription<MetadataStatus>? _metadataSubscription;
 
   static const _allowedExtensions = ['epub', 'txt', 'pdf', 'cbz', 'cbr'];
 
@@ -67,6 +69,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.initState();
     final saved = widget.library.libraryLayout;
     _layout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
+    
+    // Listen to metadata extraction status events.
+    _metadataSubscription = widget.library.metadataStatus.listen((status) {
+      if (!mounted) return;
+      switch (status.type) {
+        case MetadataStatusType.started:
+          _snack('Extracting book metadata...');
+          break;
+        case MetadataStatusType.progress:
+          // Optionally show progress, but avoid spamming toasts
+          break;
+        case MetadataStatusType.completed:
+          _snack('Metadata extraction complete');
+          break;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _metadataSubscription?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   String get _sortLabel => switch (_sort) {
