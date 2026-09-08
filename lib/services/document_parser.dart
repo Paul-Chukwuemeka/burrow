@@ -46,6 +46,7 @@ class ParsedDocument {
     this.source,
     this.titleSort,
     this.authorSort,
+    this.fontFaces = const {},
   });
   final String title;
   final String author;
@@ -68,6 +69,9 @@ class ParsedDocument {
   final String? source;
   final String? titleSort;
   final String? authorSort;
+
+  /// Embedded fonts parsed from @font-face rules.
+  final Map<String, FontFaceInfo> fontFaces;
 }
 
 /// One table-of-contents entry, in document order.
@@ -462,6 +466,7 @@ class DocumentParser {
       source: source,
       titleSort: titleSort,
       authorSort: authorSort,
+      fontFaces: cssParser.fontFaces,
     );
   }
 

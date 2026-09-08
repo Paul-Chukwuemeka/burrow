@@ -16,6 +16,7 @@ import '../models/style_run.dart';
 import '../services/book_search.dart';
 import '../services/comic_page_provider.dart';
 import '../services/document_parser.dart';
+import '../services/epub_css_parser.dart';
 import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
@@ -309,6 +310,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   Future<void> _loadDocument() async {
     try {
       final doc = await DocumentParser.parse(_book.path, _book.format);
+      // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
+      if (doc.fontFaces.isNotEmpty) {
+        await EpubCssParser.loadEmbeddedFonts(doc.fontFaces);
+      }
       var cumulative = 0;
       _charsBefore.clear();
       for (final c in doc.chapters) {

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:flutter/services.dart';
 import 'package:csslib/parser.dart' as css;
 import 'package:csslib/visitor.dart' as css_visitor;
 import 'package:cascadia/cascadia.dart' as cas;
@@ -73,7 +74,7 @@ class EpubCssParser {
 
       final combinedCss = cssTexts.join('\n');
       if (combinedCss.isNotEmpty) {
-        _extractFontFacesFromCss(combinedCss, fontFaces);
+        _extractFontFacesFromCss(combinedCss, fontFaces, readEntry);
         final stylesheet = css.compile(combinedCss);
         rules.addAll(_resolveRules(stylesheet, doc, fontFaces));
       }
@@ -128,6 +129,7 @@ class EpubCssParser {
   static void _extractFontFacesFromCss(
     String cssText,
     Map<String, FontFaceInfo> fontFaces,
+    Uint8List Function(String) readEntry,
   ) {
     final ffPattern = RegExp(r'@font-face\s*\{([^}]+)\}', dotAll: true);
     final familyPattern = RegExp(r'font-family\s*:\s*([^;]+)');
@@ -140,9 +142,17 @@ class EpubCssParser {
 
       if (familyMatch != null && srcMatch != null) {
         final family = familyMatch.group(1)!.replaceAll(RegExp(r"['\u201C\u201D]"), '').trim();
-        final src = srcMatch.group(1)!;
+        var src = srcMatch.group(1)!;
         if (family.isNotEmpty && src.isNotEmpty) {
-          fontFaces[family] = FontFaceInfo(family: family, src: src);
+          // Resolve relative paths against archive root.
+          if (src.startsWith('../')) {
+            src = src.substring(3);
+          }
+          Uint8List? bytes;
+          try {
+            bytes = readEntry(src);
+          } catch (_) {}
+          fontFaces[family] = FontFaceInfo(family: family, src: src, bytes: bytes);
         }
       }
     }
@@ -369,6 +379,27 @@ class EpubCssParser {
     return null;
   }
 
+  /// Loads all embedded fonts from the EPUB into Flutter's font system.
+  ///
+  /// Call this once after [parse] to make EPUB-embedded fonts available for
+  /// rendering. Returns a list of loaded font family names for debugging.
+  static Future<List<String>> loadEmbeddedFonts(
+    Map<String, FontFaceInfo> fontFaces,
+  ) async {
+    final loaded = <String>[];
+    for (final entry in fontFaces.entries) {
+      final info = entry.value;
+      if (info.bytes == null || info.bytes!.isEmpty) continue;
+      try {
+        final fontLoader = FontLoader(info.family)
+          ..addFont(Future.value(ByteData.view(info.bytes!.buffer)));
+        await fontLoader.load();
+        loaded.add(info.family);
+      } catch (_) {}
+    }
+    return loaded;
+  }
+
   static double? _parseLineHeight(String? value) {
     if (value == null) return null;
     final v = value.trim().toLowerCase();
@@ -391,8 +422,12 @@ class ResolvedCssRule {
 }
 
 class FontFaceInfo {
-  const FontFaceInfo({required this.family, required this.src});
+  const FontFaceInfo({required this.family, required this.src, this.bytes});
 
   final String family;
   final String src;
+
+  /// Raw font file bytes, resolved from the EPUB archive.
+  /// Null if the font file could not be found.
+  final Uint8List? bytes;
 }
