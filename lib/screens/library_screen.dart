@@ -69,6 +69,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.initState();
     final saved = widget.library.libraryLayout;
     _layout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
+    widget.library.addListener(_onLibraryChanged);
     
     // Listen to metadata extraction status events.
     _metadataSubscription = widget.library.metadataStatus.listen((status) {
@@ -89,9 +90,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    widget.library.removeListener(_onLibraryChanged);
     _metadataSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onLibraryChanged() {
+    if (!mounted) return;
+    final saved = widget.library.libraryLayout;
+    final newLayout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
+    if (newLayout != _layout) {
+      setState(() => _layout = newLayout);
+    }
   }
 
   String get _sortLabel => switch (_sort) {
