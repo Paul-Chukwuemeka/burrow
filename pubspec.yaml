@@ -48,6 +48,9 @@ dependencies:
   share_plus: ^13.3.0
   screen_brightness: ^2.1.11
   lexicor: ^0.2.0
+  csslib: ^1.0.2
+  cascadia: ^0.8.0
+  html: ^0.15.6
 
 dependency_overrides:
   lexicor:
