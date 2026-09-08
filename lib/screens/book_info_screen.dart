@@ -75,302 +75,320 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
         : '';
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 320,
-            pinned: true,
-            surfaceTintColor: Colors.transparent,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => EditBookScreen(
-                        book: book,
-                        library: library,
+      body: Column(
+        children: [
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: 320,
+                  pinned: true,
+                  surfaceTintColor: Colors.transparent,
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => EditBookScreen(
+                              book: book,
+                              library: library,
+                            ),
+                          ),
+                        );
+                        if (context.mounted) setState(() {});
+                      },
+                      tooltip: 'Edit metadata',
+                    ),
+                  ],
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 40),
+                        child: SizedBox(
+                          width: 160,
+                          child: widget.heroTag != null
+                              ? Hero(
+                                  tag: widget.heroTag!,
+                                  child: BookCover(
+                                    book: book,
+                                    borderRadius: 12,
+                                  ),
+                                )
+                              : BookCover(
+                                  book: book,
+                                  borderRadius: 12,
+                                ),
+                        ),
                       ),
                     ),
-                  );
-                  if (context.mounted) setState(() {});
-                },
-                tooltip: 'Edit metadata',
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: SizedBox(
-                    width: 160,
-                    child: widget.heroTag != null
-                        ? Hero(
-                            tag: widget.heroTag!,
-                            child: BookCover(
-                              book: book,
-                              borderRadius: 12,
-                            ),
-                          )
-                        : BookCover(
-                            book: book,
-                            borderRadius: 12,
-                          ),
                   ),
                 ),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    book.displayTitle,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
-                  ),
-                  if (book.author.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      book.author,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                  // Series chip.
-                  if (book.seriesName != null && book.seriesName!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    _SeriesChip(
-                      book: book,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => SeriesScreen(
-                            series: book.seriesName!,
-                            library: widget.library,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  // Format badge + progress chip row.
-                  Row(
-                    children: [
-                      _FormatBadge(format: book.format),
-                      const SizedBox(width: 10),
-                      _ProgressChip(book: book),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  if (book.isStarted && book.progress > 0) ...[
-                    ClipRRect(
-                      borderRadius: Burrow.r(Burrow.shapeXs),
-                      child: SegmentedProgressBar(
-                        value: book.progress,
-                        track: scheme.primaryContainer,
-                        fill: scheme.primary,
-                        height: 6,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                  // Description.
-                  if (book.description != null && book.description!.isNotEmpty) ...[
-                    _ExpandableText(
-                      label: 'Description',
-                      text: book.description!,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  // Annotation (only if different from description).
-                  if (book.annotation != null &&
-                      book.annotation!.isNotEmpty &&
-                      book.annotation != book.description) ...[
-                    _ExpandableText(
-                      label: 'Annotation',
-                      text: book.annotation!,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  // Publication info.
-                  if (book.publisher != null && book.publisher!.isNotEmpty)
-                    _InfoRow(icon: Icons.business_outlined, label: 'Publisher', value: book.publisher!),
-                  if (pubDate.isNotEmpty)
-                    _InfoRow(icon: Icons.date_range_outlined, label: 'Published', value: pubDate),
-                  if (book.language != null && book.language!.isNotEmpty)
-                    _InfoRow(icon: Icons.language_outlined, label: 'Language', value: book.language!),
-                  // Genre chips.
-                  if (book.genre != null && book.genre!.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Row(
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.category_outlined, size: 18, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 12),
                         Text(
-                          'Genres',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: scheme.onSurfaceVariant,
+                          book.displayTitle,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final g in book.genre!.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty))
-                          InkWell(
+                        if (book.author.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            book.author,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        // Series chip.
+                        if (book.seriesName != null && book.seriesName!.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          _SeriesChip(
+                            book: book,
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
-                                builder: (_) => GenreScreen(
-                                  genre: g,
+                                builder: (_) => SeriesScreen(
+                                  series: book.seriesName!,
                                   library: widget.library,
                                 ),
                               ),
                             ),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Chip(
-                              label: Text(g),
-                              backgroundColor: scheme.tertiaryContainer,
-                              labelStyle: TextStyle(
-                                color: scheme.onTertiaryContainer,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        // Format badge + progress chip row.
+                        Row(
+                          children: [
+                            _FormatBadge(format: book.format),
+                            const SizedBox(width: 10),
+                            _ProgressChip(book: book),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        if (book.isStarted && book.progress > 0) ...[
+                          ClipRRect(
+                            borderRadius: Burrow.r(Burrow.shapeXs),
+                            child: SegmentedProgressBar(
+                              value: book.progress,
+                              track: scheme.primaryContainer,
+                              fill: scheme.primary,
+                              height: 6,
                             ),
                           ),
-                      ],
-                    ),
-                  ],
-                  // Metadata rows.
-                  _InfoRow(icon: Icons.folder_outlined, label: 'File size', value: fileSize),
-                  _InfoRow(icon: Icons.calendar_today_outlined, label: 'Added', value: added),
-                  if (lastRead != null)
-                    _InfoRow(
-                      icon: Icons.schedule_rounded,
-                      label: 'Last read',
-                      value: lastRead,
-                    ),
-                  // Details sub-section.
-                  if (book.isbn != null && book.isbn!.isNotEmpty ||
-                      book.type != null && book.type!.isNotEmpty ||
-                      book.rights != null && book.rights!.isNotEmpty ||
-                      book.source != null && book.source!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Details',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    if (book.isbn != null && book.isbn!.isNotEmpty)
-                      _InfoRow(icon: Icons.qr_code_outlined, label: 'ISBN', value: book.isbn!),
-                    if (book.type != null && book.type!.isNotEmpty)
-                      _InfoRow(icon: Icons.label_outlined, label: 'Type', value: book.type!),
-                    if (book.rights != null && book.rights!.isNotEmpty)
-                      _InfoRow(icon: Icons.gavel_outlined, label: 'Rights', value: book.rights!, maxLines: 2),
-                    if (book.source != null && book.source!.isNotEmpty)
-                      _InfoRow(icon: Icons.link_outlined, label: 'Source', value: book.source!, maxLines: 2),
-                  ],
-                  _InfoRow(
-                    icon: Icons.insert_drive_file_outlined,
-                    label: 'Path',
-                    value: book.path,
-                    maxLines: 2,
-                  ),
-                  // Collections section.
-                  if (_collections.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Icon(Icons.collections_bookmark_outlined,
-                            size: 18, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Collections',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: scheme.onSurfaceVariant,
+                          const SizedBox(height: 20),
+                        ],
+                        // Description.
+                        if (book.description != null && book.description!.isNotEmpty) ...[
+                          _ExpandableText(
+                            label: 'Description',
+                            text: book.description!,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final c in _collections)
-                          Chip(
-                            label: Text(c.name),
-                            backgroundColor: scheme.secondaryContainer,
-                            labelStyle: TextStyle(
-                              color: scheme.onSecondaryContainer,
-                              fontSize: 12,
+                          const SizedBox(height: 16),
+                        ],
+                        // Annotation (only if different from description).
+                        if (book.annotation != null &&
+                            book.annotation!.isNotEmpty &&
+                            book.annotation != book.description) ...[
+                          _ExpandableText(
+                            label: 'Annotation',
+                            text: book.annotation!,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        // Publication info.
+                        if (book.publisher != null && book.publisher!.isNotEmpty)
+                          _InfoRow(icon: Icons.business_outlined, label: 'Publisher', value: book.publisher!),
+                        if (pubDate.isNotEmpty)
+                          _InfoRow(icon: Icons.date_range_outlined, label: 'Published', value: pubDate),
+                        if (book.language != null && book.language!.isNotEmpty)
+                          _InfoRow(icon: Icons.language_outlined, label: 'Language', value: book.language!),
+                        // Genre chips.
+                        if (book.genre != null && book.genre!.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(Icons.category_outlined, size: 18, color: scheme.onSurfaceVariant),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Genres',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final g in book.genre!.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty))
+                                InkWell(
+                                  onTap: () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => GenreScreen(
+                                        genre: g,
+                                        library: widget.library,
+                                      ),
+                                    ),
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Chip(
+                                    label: Text(g),
+                                    backgroundColor: scheme.tertiaryContainer,
+                                    labelStyle: TextStyle(
+                                      color: scheme.onTertiaryContainer,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                        // Metadata rows.
+                        _InfoRow(icon: Icons.folder_outlined, label: 'File size', value: fileSize),
+                        _InfoRow(icon: Icons.calendar_today_outlined, label: 'Added', value: added),
+                        if (lastRead != null)
+                          _InfoRow(
+                            icon: Icons.schedule_rounded,
+                            label: 'Last read',
+                            value: lastRead,
+                          ),
+                        // Details sub-section.
+                        if (book.isbn != null && book.isbn!.isNotEmpty ||
+                            book.type != null && book.type!.isNotEmpty ||
+                            book.rights != null && book.rights!.isNotEmpty ||
+                            book.source != null && book.source!.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Details',
+                            style: TextStyle(
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
+                              color: scheme.onSurfaceVariant,
                             ),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
                           ),
+                          const SizedBox(height: 4),
+                          if (book.isbn != null && book.isbn!.isNotEmpty)
+                            _InfoRow(icon: Icons.qr_code_outlined, label: 'ISBN', value: book.isbn!),
+                          if (book.type != null && book.type!.isNotEmpty)
+                            _InfoRow(icon: Icons.label_outlined, label: 'Type', value: book.type!),
+                          if (book.rights != null && book.rights!.isNotEmpty)
+                            _InfoRow(icon: Icons.gavel_outlined, label: 'Rights', value: book.rights!, maxLines: 2),
+                          if (book.source != null && book.source!.isNotEmpty)
+                            _InfoRow(icon: Icons.link_outlined, label: 'Source', value: book.source!, maxLines: 2),
+                        ],
+                        _InfoRow(
+                          icon: Icons.insert_drive_file_outlined,
+                          label: 'Path',
+                          value: book.path,
+                          maxLines: 2,
+                        ),
+                        // Collections section.
+                        if (_collections.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Icon(Icons.collections_bookmark_outlined,
+                                  size: 18, color: scheme.onSurfaceVariant),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Collections',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final c in _collections)
+                                Chip(
+                                  label: Text(c.name),
+                                  backgroundColor: scheme.secondaryContainer,
+                                  labelStyle: TextStyle(
+                                    color: scheme.onSecondaryContainer,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 24),
                       ],
                     ),
-                  ],
-                  const SizedBox(height: 28),
-                  // Read button.
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        if (!await File(book.path).exists()) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                '"${book.displayTitle}" is no longer on this device',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                        if (!context.mounted) return;
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => ReaderScreen(
-                              book: book,
-                              library: library,
-                              heroTag: widget.heroTag,
-                            ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Fixed Read button at bottom.
+          Container(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              border: Border(
+                top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    if (!await File(book.path).exists()) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '"${book.displayTitle}" is no longer on this device',
                           ),
-                        );
-                      },
-                      icon: const Icon(Icons.menu_book_outlined, size: 22),
-                      label: const Text('Read'),
-                      style: FilledButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: Burrow.r(Burrow.shapeSm),
+                        ),
+                      );
+                      return;
+                    }
+                    if (!context.mounted) return;
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ReaderScreen(
+                          book: book,
+                          library: library,
+                          heroTag: widget.heroTag,
                         ),
                       ),
+                    );
+                  },
+                  icon: const Icon(Icons.menu_book_outlined, size: 22),
+                  label: const Text('Read'),
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: Burrow.r(Burrow.shapeSm),
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
