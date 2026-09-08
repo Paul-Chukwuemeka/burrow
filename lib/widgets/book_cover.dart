@@ -42,19 +42,6 @@ class BookCover extends StatelessWidget {
           )
         else
           _PlaceholderCover(book: book),
-        if (!book.metadataComplete)
-          const Positioned(
-            right: 4,
-            bottom: 4,
-            child: SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: Colors.white70,
-              ),
-            ),
-          ),
         if (spine)
           const DecoratedBox(
             decoration: BoxDecoration(

@@ -33,7 +33,7 @@ enum _LibraryTab { books, authors, collections }
 
 enum _ReadingStatus { all, reading, finished, new_ }
 
-enum _StatusType { scanning, importing, extracting }
+enum _StatusType { scanning, importing, extracting, completed }
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key, required this.library});
@@ -62,6 +62,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _statusCompleted = 0;
   int _statusTotal = 0;
   String? _statusBookTitle;
+  String? _statusResult;
 
   // Cached visible books.
   List<Book>? _cachedVisibleBooks;
@@ -343,6 +344,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _statusCompleted = 0;
       _statusTotal = 0;
       _statusBookTitle = null;
+      _statusResult = null;
     });
     try {
       final (paths, added, failed) = await BookImporter.runScan(
@@ -367,24 +369,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
         },
       );
       if (!mounted) return;
+      final msg = paths.isEmpty
+          ? 'No new books found'
+          : 'Added ${added.length} book${added.length == 1 ? '' : 's'}'
+              '${failed > 0 ? ', $failed unreadable' : ''}';
       setState(() {
-        _activeStatus = null;
-        _statusBookTitle = null;
+        _activeStatus = _StatusType.completed;
+        _statusResult = msg;
       });
-      _snack(
-        paths.isEmpty
-            ? 'No new books found'
-            : 'Added ${added.length} book${added.length == 1 ? '' : 's'}'
-                '${failed > 0 ? ', $failed unreadable' : ''}',
-      );
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        setState(() {
+          _activeStatus = null;
+          _statusResult = null;
+        });
+      }
     } catch (e) {
       debugPrint('Scan failed: $e');
       if (mounted) {
         setState(() {
-          _activeStatus = null;
-          _statusBookTitle = null;
+          _activeStatus = _StatusType.completed;
+          _statusResult = 'Scan failed. Please try again.';
         });
-        _snack('Scan failed. Please try again.');
+        Future<void>.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            setState(() {
+              _activeStatus = null;
+              _statusResult = null;
+            });
+          }
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -942,6 +956,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   completed: _statusCompleted,
                   total: _statusTotal,
                   bookTitle: _statusBookTitle,
+                  result: _statusResult,
                 ),
               ),
           ],
@@ -2906,12 +2921,14 @@ class _StatusBanner extends StatelessWidget {
     required this.completed,
     required this.total,
     this.bookTitle,
+    this.result,
   });
 
   final _StatusType status;
   final int completed;
   final int total;
   final String? bookTitle;
+  final String? result;
 
   @override
   Widget build(BuildContext context) {
@@ -2926,6 +2943,7 @@ class _StatusBanner extends StatelessWidget {
         total > 0
             ? 'Extracting metadata… $completed / $total'
             : 'Extracting metadata…',
+      _StatusType.completed => result ?? 'Done',
     };
 
     return Container(
@@ -2946,13 +2964,15 @@ class _StatusBanner extends StatelessWidget {
                 SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: scheme.primary,
-                    value: (status != _StatusType.scanning && total > 0)
-                        ? completed / total
-                        : null,
-                  ),
+                  child: status == _StatusType.completed
+                      ? Icon(Icons.check_circle_rounded, size: 18, color: scheme.primary)
+                      : CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: scheme.primary,
+                          value: (status != _StatusType.scanning && total > 0)
+                              ? completed / total
+                              : null,
+                        ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
