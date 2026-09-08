@@ -107,6 +107,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool _chromeVisible = false;
   Timer? _saveDebounce;
 
+  // Comic preview slider.
+  bool _comicPreviewVisible = false;
+  final ScrollController _comicPreviewScrollController = ScrollController();
+
   // Reading session state.
   int _sessionId = -1;
   int _pagesFlipped = 0;
@@ -363,6 +367,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _comicVerticalListenerAttached = false;
     _comicPageProvider?.dispose();
     _comicPageProvider = null;
+    _comicPreviewScrollController.dispose();
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -1562,6 +1567,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 progress: _comicPageCount == 0 ? 0 : i / _comicPageCount,
               );
               if (_comicLazy) _prefetchComicPages(i);
+              if (_comicPreviewVisible) _scrollToPreviewPage(i);
             },
             itemBuilder: (context, i) => Center(
               child: _comicLazy
@@ -1621,6 +1627,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             progress: newIndex / count,
           );
           if (_comicLazy) _prefetchComicPages(newIndex);
+          if (_comicPreviewVisible) _scrollToPreviewPage(newIndex);
         }
       });
     }
@@ -1690,6 +1697,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       });
     }
     provider.evictOutside(center, margin: 10);
+  }
+
+  void _scrollToPreviewPage(int page) {
+    if (!_comicPreviewScrollController.hasClients) return;
+    // Each thumbnail is 52 + 4 margin = 56 logical pixels.
+    final target = (page * 56.0) - 80.0;
+    _comicPreviewScrollController.jumpTo(
+      target.clamp(
+        0.0,
+        _comicPreviewScrollController.position.maxScrollExtent,
+      ),
+    );
   }
 
   late final PageController _comicPageController = PageController(
@@ -2208,6 +2227,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     ),
                     onPressed: _toggleBookmark,
                   ),
+                if (_isComic)
+                  IconButton(
+                    icon: Icon(
+                      _comicPreviewVisible
+                          ? Icons.view_carousel
+                          : Icons.view_carousel_outlined,
+                      color: _comicPreviewVisible ? theme.accent : theme.text,
+                    ),
+                    onPressed: () =>
+                        setState(() => _comicPreviewVisible = !_comicPreviewVisible),
+                  ),
                 IconButton(
                   icon: Icon(Icons.text_fields, color: theme.text),
                   onPressed: () => SettingsSheet.show(
@@ -2244,6 +2274,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_isComic && _comicPreviewVisible) ...[
+                  _buildComicPreviewStrip(theme),
+                  const SizedBox(height: 8),
+                ],
                 GestureDetector(
                   onTap: _showGoToPageDialog,
                   child: Text(
@@ -2280,6 +2314,85 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildComicPreviewStrip(ReaderTheme theme) {
+    final count = _comicPageCount;
+    if (count == 0) return const SizedBox.shrink();
+    // Scroll to center the current page when the strip first appears.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToPreviewPage(_comicPage);
+    });
+    return SizedBox(
+      height: 80,
+      child: ListView.builder(
+        controller: _comicPreviewScrollController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        itemCount: count,
+        itemBuilder: (context, i) {
+          final isCurrent = i == _comicPage;
+          return GestureDetector(
+            onTap: () {
+              if (_comicLazy) {
+                _comicPageController.jumpToPage(i);
+              } else if (_settings.comicReadingMode == ComicReadingMode.vertical) {
+                final vh = MediaQuery.sizeOf(context).height;
+                _comicVerticalScrollController?.animateTo(
+                  i * vh,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                );
+              } else {
+                _comicPageController.jumpToPage(i);
+              }
+            },
+            child: Container(
+              width: 52,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: isCurrent
+                              ? theme.accent
+                              : theme.muted.withValues(alpha: 0.3),
+                          width: isCurrent ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _comicLazy
+                          ? _LazyComicPageWidget(
+                              provider: _comicPageProvider!,
+                              pageIndex: i,
+                              fit: BoxFit.cover,
+                            )
+                          : (i < _comicPages.length
+                              ? Image.memory(_comicPages[i], fit: BoxFit.cover)
+                              : Container(color: theme.muted.withValues(alpha: 0.2))),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${i + 1}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: isCurrent ? theme.accent : theme.muted,
+                      fontWeight:
+                          isCurrent ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
