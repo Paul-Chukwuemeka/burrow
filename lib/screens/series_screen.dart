@@ -14,6 +14,8 @@ import 'reader_screen.dart';
 
 enum _SortMode { order, title, recent, added }
 
+enum _LayoutMode { grid, list }
+
 class SeriesScreen extends StatefulWidget {
   const SeriesScreen({
     super.key,
@@ -30,6 +32,15 @@ class SeriesScreen extends StatefulWidget {
 
 class _SeriesScreenState extends State<SeriesScreen> {
   _SortMode _sort = _SortMode.order;
+  late _LayoutMode _layout;
+
+  @override
+  void initState() {
+    super.initState();
+    _layout = widget.library.libraryLayout == 'list'
+        ? _LayoutMode.list
+        : _LayoutMode.grid;
+  }
 
   String _sortLabel(_SortMode m) => switch (m) {
         _SortMode.order => 'Order',
@@ -105,6 +116,19 @@ class _SeriesScreenState extends State<SeriesScreen> {
             }),
           ),
           const SizedBox(width: 8),
+          _PillChip(
+            label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
+            icon: _layout == _LayoutMode.grid
+                ? Icons.grid_view_rounded
+                : Icons.view_list_rounded,
+            onTap: () {
+              final next = _LayoutMode
+                  .values[(_layout.index + 1) % _LayoutMode.values.length];
+              setState(() => _layout = next);
+              widget.library.saveLibraryLayout(next.name);
+            },
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: books.isEmpty
@@ -114,7 +138,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
                 style: TextStyle(color: scheme.onSurfaceVariant),
               ),
             )
-          : _bookGrid(context, books),
+          : _layout == _LayoutMode.grid
+              ? _bookGrid(context, books)
+              : _bookList(books),
     );
   }
 
@@ -152,6 +178,21 @@ class _SeriesScreenState extends State<SeriesScreen> {
               subtitle: book.seriesIndex != null ? '#${book.seriesIndex}' : null,
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _bookList(List<Book> books) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: books.length,
+      itemBuilder: (context, i) {
+        final book = books[i];
+        return BookListCard(
+          book: book,
+          onTap: () => _openBookInfo(book),
+          onLongPress: () => _showBookActions(book),
         );
       },
     );

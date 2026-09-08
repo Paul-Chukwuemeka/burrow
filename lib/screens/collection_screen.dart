@@ -13,6 +13,8 @@ import 'book_info_screen.dart';
 
 enum _SortMode { manual, title, recent }
 
+enum _LayoutMode { grid, list }
+
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({
     super.key,
@@ -29,6 +31,7 @@ class CollectionScreen extends StatefulWidget {
 
 class _CollectionScreenState extends State<CollectionScreen> {
   late _SortMode _sort;
+  late _LayoutMode _layout;
   List<Book> _books = [];
   bool _reorderMode = false;
 
@@ -36,6 +39,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
   void initState() {
     super.initState();
     _sort = _SortMode.values[widget.collection.sortType.clamp(0, 2)];
+    _layout = widget.library.libraryLayout == 'list'
+        ? _LayoutMode.list
+        : _LayoutMode.grid;
     _loadBooks();
   }
 
@@ -179,6 +185,21 @@ class _CollectionScreenState extends State<CollectionScreen> {
             }),
           ),
           const SizedBox(width: 8),
+          if (!_reorderMode) ...[
+            _PillChip(
+              label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
+              icon: _layout == _LayoutMode.grid
+                  ? Icons.grid_view_rounded
+                  : Icons.view_list_rounded,
+              onTap: () {
+                final next = _LayoutMode
+                    .values[(_layout.index + 1) % _LayoutMode.values.length];
+                setState(() => _layout = next);
+                widget.library.saveLibraryLayout(next.name);
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
         ],
       ),
       body: _books.isEmpty
@@ -190,7 +211,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
             )
           : _reorderMode
               ? _reorderableList(context)
-              : _bookGrid(context),
+              : _layout == _LayoutMode.grid
+                  ? _bookGrid(context)
+                  : _bookList(),
     );
   }
 
@@ -227,6 +250,21 @@ class _CollectionScreenState extends State<CollectionScreen> {
               onLongPress: () => _showRemoveBook(book),
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _bookList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: _books.length,
+      itemBuilder: (context, i) {
+        final book = _books[i];
+        return BookListCard(
+          book: book,
+          onTap: () => _openBookInfo(book),
+          onLongPress: () => _showRemoveBook(book),
         );
       },
     );

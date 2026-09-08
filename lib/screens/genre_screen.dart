@@ -14,6 +14,8 @@ import 'reader_screen.dart';
 
 enum _SortMode { title, recent, added }
 
+enum _LayoutMode { grid, list }
+
 class GenreScreen extends StatefulWidget {
   const GenreScreen({
     super.key,
@@ -30,6 +32,15 @@ class GenreScreen extends StatefulWidget {
 
 class _GenreScreenState extends State<GenreScreen> {
   _SortMode _sort = _SortMode.title;
+  late _LayoutMode _layout;
+
+  @override
+  void initState() {
+    super.initState();
+    _layout = widget.library.libraryLayout == 'list'
+        ? _LayoutMode.list
+        : _LayoutMode.grid;
+  }
 
   String _sortLabel(_SortMode m) => switch (m) {
         _SortMode.title => 'A\u2013Z',
@@ -95,6 +106,19 @@ class _GenreScreenState extends State<GenreScreen> {
             }),
           ),
           const SizedBox(width: 8),
+          _PillChip(
+            label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
+            icon: _layout == _LayoutMode.grid
+                ? Icons.grid_view_rounded
+                : Icons.view_list_rounded,
+            onTap: () {
+              final next = _LayoutMode
+                  .values[(_layout.index + 1) % _LayoutMode.values.length];
+              setState(() => _layout = next);
+              widget.library.saveLibraryLayout(next.name);
+            },
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: books.isEmpty
@@ -104,7 +128,9 @@ class _GenreScreenState extends State<GenreScreen> {
                 style: TextStyle(color: scheme.onSurfaceVariant),
               ),
             )
-          : _bookGrid(context, books),
+          : _layout == _LayoutMode.grid
+              ? _bookGrid(context, books)
+              : _bookList(books),
     );
   }
 
@@ -141,6 +167,21 @@ class _GenreScreenState extends State<GenreScreen> {
               onLongPress: () => _showBookActions(book),
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _bookList(List<Book> books) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: books.length,
+      itemBuilder: (context, i) {
+        final book = books[i];
+        return BookListCard(
+          book: book,
+          onTap: () => _openBookInfo(book),
+          onLongPress: () => _showBookActions(book),
         );
       },
     );
