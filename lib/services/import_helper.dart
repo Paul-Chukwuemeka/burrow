@@ -15,12 +15,16 @@ abstract final class BookImporter {
     Iterable<String> paths, {
     void Function(FormatException error)? onFormatError,
     void Function(Object error)? onError,
+    void Function(int completed, int total)? onProgress,
   }) async {
     final added = <Book>[];
     var failed = 0;
-    for (final path in paths) {
+    final pathList = paths.toList();
+    final total = pathList.length;
+    for (var i = 0; i < total; i++) {
+      onProgress?.call(i, total);
       try {
-        final book = await library.importFile(path);
+        final book = await library.importFile(pathList[i]);
         if (book != null) added.add(book);
       } on FormatException catch (e) {
         onFormatError?.call(e);
@@ -30,6 +34,7 @@ abstract final class BookImporter {
         failed++;
       }
     }
+    onProgress?.call(total, total);
     return (added, failed);
   }
 
@@ -40,13 +45,17 @@ abstract final class BookImporter {
     Future<List<String>> scan, {
     void Function(FormatException error)? onFormatError,
     void Function(Object error)? onError,
+    void Function(int completed, int total)? onProgress,
+    void Function(int pathCount)? onScanComplete,
   }) async {
     final paths = await scan;
+    onScanComplete?.call(paths.length);
     final (added, failed) = await importPaths(
       library,
       paths,
       onFormatError: onFormatError,
       onError: onError,
+      onProgress: onProgress,
     );
     return (paths, added, failed);
   }

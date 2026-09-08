@@ -33,6 +33,8 @@ enum _LibraryTab { books, authors, collections }
 
 enum _ReadingStatus { all, reading, finished, new_ }
 
+enum _StatusType { scanning, importing, extracting }
+
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key, required this.library});
 
@@ -55,6 +57,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String? _genreFilter;
   String? _seriesFilter;
 
+  // Persistent status bar state.
+  _StatusType? _activeStatus;
+  int _statusCompleted = 0;
+  int _statusTotal = 0;
+  String? _statusBookTitle;
+
   // Cached visible books.
   List<Book>? _cachedVisibleBooks;
   String? _cacheKey;
@@ -74,17 +82,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // Listen to metadata extraction status events.
     _metadataSubscription = widget.library.metadataStatus.listen((status) {
       if (!mounted) return;
-      switch (status.type) {
-        case MetadataStatusType.started:
-          _snack('Extracting book metadata...');
-          break;
-        case MetadataStatusType.progress:
-          // Optionally show progress, but avoid spamming toasts
-          break;
-        case MetadataStatusType.completed:
-          _snack('Metadata extraction complete');
-          break;
-      }
+      setState(() {
+        switch (status.type) {
+          case MetadataStatusType.started:
+            _activeStatus = _StatusType.extracting;
+            _statusTotal = status.total;
+            _statusCompleted = status.completed;
+            _statusBookTitle = null;
+            break;
+          case MetadataStatusType.progress:
+            _activeStatus = _StatusType.extracting;
+            _statusTotal = status.total;
+            _statusCompleted = status.completed;
+            _statusBookTitle = status.bookTitle;
+            break;
+          case MetadataStatusType.completed:
+            _activeStatus = null;
+            _statusBookTitle = null;
+            break;
+        }
+      });
     });
   }
 
@@ -322,11 +339,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() {
       _busy = true;
       _fabOpen = false;
+      _activeStatus = _StatusType.scanning;
+      _statusCompleted = 0;
+      _statusTotal = 0;
+      _statusBookTitle = null;
     });
     try {
-      final (paths, added, failed) =
-          await BookImporter.runScan(widget.library, scan);
+      final (paths, added, failed) = await BookImporter.runScan(
+        widget.library,
+        scan,
+        onScanComplete: (pathCount) {
+          if (!mounted) return;
+          setState(() {
+            if (pathCount > 0) {
+              _activeStatus = _StatusType.importing;
+              _statusTotal = pathCount;
+              _statusCompleted = 0;
+            }
+          });
+        },
+        onProgress: (completed, total) {
+          if (!mounted) return;
+          setState(() {
+            _statusCompleted = completed;
+            _statusTotal = total;
+          });
+        },
+      );
       if (!mounted) return;
+      setState(() {
+        _activeStatus = null;
+        _statusBookTitle = null;
+      });
       _snack(
         paths.isEmpty
             ? 'No new books found'
@@ -335,7 +379,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
     } catch (e) {
       debugPrint('Scan failed: $e');
-      if (mounted) _snack('Scan failed. Please try again.');
+      if (mounted) {
+        setState(() {
+          _activeStatus = null;
+          _statusBookTitle = null;
+        });
+        _snack('Scan failed. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -881,6 +931,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
+            // Persistent status bar at the bottom.
+            if (_activeStatus != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _StatusBanner(
+                  status: _activeStatus!,
+                  completed: _statusCompleted,
+                  total: _statusTotal,
+                  bookTitle: _statusBookTitle,
+                ),
+              ),
           ],
         ),
         floatingActionButton: _tab == _LibraryTab.books ? _buildFab(context) : null,
@@ -2833,6 +2896,109 @@ class _CollectionPickerTile extends StatelessWidget {
           onTap: onToggle,
         );
       },
+    );
+  }
+}
+
+class _StatusBanner extends StatelessWidget {
+  const _StatusBanner({
+    required this.status,
+    required this.completed,
+    required this.total,
+    this.bookTitle,
+  });
+
+  final _StatusType status;
+  final int completed;
+  final int total;
+  final String? bookTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = switch (status) {
+      _StatusType.scanning => 'Scanning for books…',
+      _StatusType.importing =>
+        total > 0
+            ? 'Importing books… $completed / $total'
+            : 'Importing books…',
+      _StatusType.extracting =>
+        total > 0
+            ? 'Extracting metadata… $completed / $total'
+            : 'Extracting metadata…',
+    };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(
+          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: scheme.primary,
+                    value: (status != _StatusType.scanning && total > 0)
+                        ? completed / total
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        text,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      if (bookTitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          bookTitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (total > 0 && status != _StatusType.scanning) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: Burrow.r(Burrow.shapeXs),
+                child: LinearProgressIndicator(
+                  value: completed / total,
+                  minHeight: 4,
+                  backgroundColor: scheme.primaryContainer,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -63,6 +63,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _failed = 0;
   bool _permissionGranted = false;
   bool _permissionDenied = false;
+  int _scanProgress = 0;
+  int _scanTotal = 0;
 
   @override
   void dispose() {
@@ -156,44 +158,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _scanStatus = _ScanStatus.running;
       _permissionDenied = false;
       _pendingScanKind = _ScanKind.none;
+      _scanProgress = 0;
+      _scanTotal = 0;
     });
     
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Scanning for books...'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-    
     try {
-      final (paths, added, failed) =
-          await BookImporter.runScan(_lib, scan());
+      final (paths, added, failed) = await BookImporter.runScan(
+        _lib,
+        scan(),
+        onScanComplete: (pathCount) {
+          if (!mounted) return;
+          setState(() {
+            _scanTotal = pathCount;
+            _scanProgress = 0;
+          });
+        },
+        onProgress: (completed, total) {
+          if (!mounted) return;
+          setState(() {
+            _scanProgress = completed;
+            _scanTotal = total;
+          });
+        },
+      );
       if (!mounted) return;
       setState(() {
         _scanStatus = _ScanStatus.done;
         _scanPaths = paths;
         _added = added.length;
         _failed = failed;
+        _scanProgress = 0;
+        _scanTotal = 0;
       });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              paths.isEmpty
-                  ? 'No new books found'
-                  : 'Found ${added.length} book${added.length == 1 ? '' : 's'}'
-                      '${failed > 0 ? ', $failed unreadable' : ''}',
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
     } catch (_) {
       if (!mounted) return;
-      setState(() => _scanStatus = _ScanStatus.error);
+      setState(() {
+        _scanStatus = _ScanStatus.error;
+        _scanProgress = 0;
+        _scanTotal = 0;
+      });
     }
   }
 
@@ -246,6 +249,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 itemBuilder: (context, i) => _pageBody(context, i),
               ),
             ),
+            if (_scanStatus == _ScanStatus.running)
+              _ScanStatusBar(
+                completed: _scanProgress,
+                total: _scanTotal,
+              ),
             _controls(context, spec),
           ],
         ),
@@ -1030,4 +1038,73 @@ class _WavyPainter extends CustomPainter {
   @override
   bool shouldRepaint(_WavyPainter old) =>
       old.phase != phase || old.track != track || old.fill != fill;
+}
+
+class _ScanStatusBar extends StatelessWidget {
+  const _ScanStatusBar({
+    required this.completed,
+    required this.total,
+  });
+
+  final int completed;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = total > 0
+        ? 'Importing books… $completed / $total'
+        : 'Scanning for books…';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(
+          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: scheme.primary,
+                  value: total > 0 ? completed / total : null,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (total > 0) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(Burrow.shapeXs),
+              child: LinearProgressIndicator(
+                value: completed / total,
+                minHeight: 4,
+                backgroundColor: scheme.primaryContainer,
+                color: scheme.primary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
