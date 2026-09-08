@@ -165,6 +165,12 @@ class ReaderSettings {
     this.comicFitMode = ComicFitMode.contain,
     this.uiFontFamily,
     this.uiTextScale = 1.0,
+    this.respectCssStyles = true,
+    this.overrideCssFontSize = false,
+    this.overrideCssFontFamily = false,
+    this.overrideCssColor = false,
+    this.overrideCssTextAlign = false,
+    this.overrideCssMargin = false,
   });
 
   double fontSize;
@@ -189,6 +195,17 @@ class ReaderSettings {
 
   String? uiFontFamily;
   double uiTextScale;
+
+  /// Whether to apply CSS-derived styles from EPUB stylesheets.
+  bool respectCssStyles;
+
+  /// When [respectCssStyles] is true, these override specific CSS properties,
+  /// forcing the user's preference instead of the EPUB stylesheet value.
+  bool overrideCssFontSize;
+  bool overrideCssFontFamily;
+  bool overrideCssColor;
+  bool overrideCssTextAlign;
+  bool overrideCssMargin;
 
   ReaderTheme get colors => ReaderTheme.byMode(readerTheme);
 
@@ -219,6 +236,12 @@ class ReaderSettings {
         'comicFitMode': comicFitMode.name,
         'uiFontFamily': uiFontFamily,
         'uiTextScale': uiTextScale,
+        'respectCssStyles': respectCssStyles,
+        'overrideCssFontSize': overrideCssFontSize,
+        'overrideCssFontFamily': overrideCssFontFamily,
+        'overrideCssColor': overrideCssColor,
+        'overrideCssTextAlign': overrideCssTextAlign,
+        'overrideCssMargin': overrideCssMargin,
       };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
@@ -291,6 +314,12 @@ class ReaderSettings {
           (json['uiTextScale'] as num?)?.toDouble() ?? 1.0,
           1.0,
         ),
+        respectCssStyles: json['respectCssStyles'] as bool? ?? true,
+        overrideCssFontSize: json['overrideCssFontSize'] as bool? ?? false,
+        overrideCssFontFamily: json['overrideCssFontFamily'] as bool? ?? false,
+        overrideCssColor: json['overrideCssColor'] as bool? ?? false,
+        overrideCssTextAlign: json['overrideCssTextAlign'] as bool? ?? false,
+        overrideCssMargin: json['overrideCssMargin'] as bool? ?? false,
       );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.

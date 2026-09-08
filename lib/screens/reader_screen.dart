@@ -1830,6 +1830,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   page: page,
                   style: renderStyle,
                   theme: theme,
+                  settings: _settings,
                   onTapPrev: () {
                     _dismissDictionaryButton();
                     _flip(-1);
@@ -2473,6 +2474,7 @@ class _PageContent extends StatelessWidget {
     required this.page,
     required this.style,
     required this.theme,
+    required this.settings,
     required this.onTapPrev,
     required this.onTapNext,
     required this.onTapCenter,
@@ -2492,6 +2494,7 @@ class _PageContent extends StatelessWidget {
   final TextPage page;
   final TextStyle style;
   final ReaderTheme theme;
+  final ReaderSettings settings;
   final VoidCallback onTapPrev;
   final VoidCallback onTapNext;
   final VoidCallback onTapCenter;
@@ -2616,6 +2619,7 @@ class _PageContent extends StatelessWidget {
       end: page.end,
       base: style,
       theme: theme,
+      settings: settings,
       runs: runs,
       images: tappedImages,
       renderWidth: renderWidth,

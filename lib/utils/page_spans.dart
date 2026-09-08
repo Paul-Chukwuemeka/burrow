@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/book_search.dart';
@@ -19,6 +20,7 @@ List<InlineSpan> buildPageSpans({
   required int end,
   required TextStyle base,
   required ReaderTheme theme,
+  required ReaderSettings settings,
   List<StyleRun> runs = const [],
   List<ImageRun> images = const [],
   double renderWidth = 300,
@@ -143,6 +145,12 @@ List<InlineSpan> buildPageSpans({
         fontStyle: run.italic || run.quote ? FontStyle.italic : null,
         color: run.quote ? theme.muted : null,
       );
+
+      // Apply CSS-derived styles when enabled.
+      if (settings.respectCssStyles && run.css != null) {
+        final css = run.css!;
+        segStyle = _applyCssStyle(segStyle, css, settings, theme);
+      }
     }
     if (match != null) {
       final isCurrent = match == currentMatch;
@@ -177,4 +185,49 @@ List<InlineSpan> buildPageSpans({
     return [TextSpan(text: slice, style: base)];
   }
   return children;
+}
+
+TextStyle _applyCssStyle(
+  TextStyle style,
+  CssStyle css,
+  ReaderSettings settings,
+  ReaderTheme theme,
+) {
+  var result = style;
+
+  // Font size: apply unless user overrides it.
+  if (css.fontSize != null && !settings.overrideCssFontSize) {
+    result = result.copyWith(fontSize: css.fontSize);
+  }
+
+  // Font family: apply unless user overrides it.
+  if (css.fontFamily != null && css.fontFamily!.isNotEmpty && !settings.overrideCssFontFamily) {
+    result = result.copyWith(fontFamily: css.fontFamily);
+  }
+
+  // Color: apply unless user overrides it.
+  if (css.color != null && !settings.overrideCssColor) {
+    result = result.copyWith(color: css.color);
+  }
+
+  // Text alignment: apply unless user overrides it.
+  // (Note: text alignment is typically set at the paragraph level, not per-run.
+  //  We store it but don't apply it here; it's used by the pagination engine.)
+  if (css.fontWeight != null) {
+    result = result.copyWith(fontWeight: css.fontWeight);
+  }
+  if (css.fontStyle != null) {
+    result = result.copyWith(fontStyle: css.fontStyle);
+  }
+  if (css.textDecoration != null) {
+    result = result.copyWith(decoration: css.textDecoration);
+  }
+  if (css.lineHeight != null) {
+    result = result.copyWith(height: css.lineHeight);
+  }
+  if (css.letterSpacing != null) {
+    result = result.copyWith(letterSpacing: css.letterSpacing);
+  }
+
+  return result;
 }

@@ -372,10 +372,71 @@ class _ThemedSheetState extends State<_ThemedSheet> {
               ),
             ],
           ),
+          // ── CSS style overrides ───────────────────────────────────────
+          _buildCssOverrides(theme),
           _buildBrightness(theme),
           _buildMisc(theme),
         ],
       );
+
+  Widget _buildCssOverrides(ReaderTheme theme) {
+    final settings = widget.settings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(Icons.code, color: theme.muted, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Respect EPUB styles',
+                style: TextStyle(color: theme.text, fontSize: 14),
+              ),
+            ),
+            Switch(
+              value: settings.respectCssStyles,
+              activeColor: theme.accent,
+              onChanged: (v) => _update(() => settings.respectCssStyles = v),
+            ),
+          ],
+        ),
+        if (settings.respectCssStyles) ...[
+          _CssOverrideToggle(
+            label: 'Override font size',
+            value: settings.overrideCssFontSize,
+            onChanged: (v) => _update(() => settings.overrideCssFontSize = v),
+            theme: theme,
+          ),
+          _CssOverrideToggle(
+            label: 'Override font family',
+            value: settings.overrideCssFontFamily,
+            onChanged: (v) => _update(() => settings.overrideCssFontFamily = v),
+            theme: theme,
+          ),
+          _CssOverrideToggle(
+            label: 'Override colors',
+            value: settings.overrideCssColor,
+            onChanged: (v) => _update(() => settings.overrideCssColor = v),
+            theme: theme,
+          ),
+          _CssOverrideToggle(
+            label: 'Override text align',
+            value: settings.overrideCssTextAlign,
+            onChanged: (v) => _update(() => settings.overrideCssTextAlign = v),
+            theme: theme,
+          ),
+          _CssOverrideToggle(
+            label: 'Override margins',
+            value: settings.overrideCssMargin,
+            onChanged: (v) => _update(() => settings.overrideCssMargin = v),
+            theme: theme,
+          ),
+        ],
+      ],
+    );
+  }
 
   Widget _buildPdfPanel(ReaderTheme theme) => Column(
         mainAxisSize: MainAxisSize.min,
@@ -696,6 +757,42 @@ class _HoverableDropdownItemState extends State<_HoverableDropdownItem> {
             color: scheme.onSurface,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CssOverrideToggle extends StatelessWidget {
+  const _CssOverrideToggle({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    required this.theme,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final ReaderTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 30),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: theme.muted, fontSize: 13),
+            ),
+          ),
+          Switch(
+            value: value,
+            activeColor: theme.accent,
+            onChanged: onChanged,
+          ),
+        ],
       ),
     );
   }
