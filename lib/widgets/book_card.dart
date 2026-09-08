@@ -44,7 +44,7 @@ class BookCard extends StatelessWidget {
         child: PressableScale(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: Burrow.r(Burrow.shapeMd),
+              borderRadius: BorderRadius.circular(6),
               boxShadow: [
                 BoxShadow(
                   color: scheme.scrim.withValues(alpha: 0.06),
@@ -56,7 +56,7 @@ class BookCard extends StatelessWidget {
             child: Material(
               color: scheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
-                borderRadius: Burrow.r(Burrow.shapeMd),
+                borderRadius: BorderRadius.circular(6),
                 side: BorderSide(
                     color: scheme.outlineVariant.withValues(alpha: 0.5)),
               ),
@@ -160,7 +160,7 @@ class BookListCard extends StatelessWidget {
         child: PressableScale(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: Burrow.r(Burrow.shapeMd),
+              borderRadius: BorderRadius.circular(6),
               boxShadow: [
                 BoxShadow(
                   color: scheme.scrim.withValues(alpha: 0.06),
@@ -172,7 +172,7 @@ class BookListCard extends StatelessWidget {
             child: Material(
               color: scheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
-                borderRadius: Burrow.r(Burrow.shapeMd),
+                borderRadius: BorderRadius.circular(6),
                 side: BorderSide(
                     color: scheme.outlineVariant.withValues(alpha: 0.5)),
               ),
@@ -272,7 +272,7 @@ class _CoverArea extends StatelessWidget {
       children: [
         Hero(
           tag: 'tile-${book.id}',
-          child: BookCover(book: book, borderRadius: Burrow.shapeMd - 6),
+          child: BookCover(book: book, borderRadius: 4),
         ),
         if (started && showProgress)
           Positioned(
