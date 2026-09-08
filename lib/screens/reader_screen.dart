@@ -14,6 +14,7 @@ import '../models/book.dart';
 import '../models/reader_settings.dart';
 import '../models/style_run.dart';
 import '../services/book_search.dart';
+import '../services/comic_page_provider.dart';
 import '../services/document_parser.dart';
 import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
@@ -137,6 +138,13 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool _comicLoading = true;
   ScrollController? _comicVerticalScrollController;
   bool _comicVerticalListenerAttached = false;
+
+  // Lazy comic loading (CBZ only).
+  ComicPageProvider? _comicPageProvider;
+  final Set<int> _comicPagesLoading = {};
+  bool get _comicLazy => _comicPageProvider != null;
+  int get _comicPageCount =>
+      _comicLazy ? _comicPageProvider!.pageCount : _comicPages.length;
 
   // Dictionary state.
   OverlayEntry? _dictionaryButtonEntry;
@@ -353,6 +361,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
     _comicVerticalScrollController?.dispose();
     _comicVerticalListenerAttached = false;
+    _comicPageProvider?.dispose();
+    _comicPageProvider = null;
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -1450,6 +1460,29 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   Future<void> _loadComicPages() async {
     try {
+      // CBZ: lazy load via provider (fast open, pages on demand).
+      if (_book.format == BookFormat.cbz) {
+        final provider = await ComicPageProvider.open(_book.path);
+        if (!mounted) return;
+        _comicPageProvider = provider;
+        _comicPage = _book.lastChapter.clamp(0, provider.pageCount - 1);
+        // Load the current page synchronously so the reader is never blank.
+        final firstBytes = await provider.loadPage(_comicPage);
+        if (!mounted) return;
+        setState(() {
+          _comicPages = [firstBytes];
+          _comicLoading = false;
+        });
+        // Prefetch surrounding pages after the first frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _prefetchComicPages(_comicPage);
+          _restoreComicPosition();
+        });
+        return;
+      }
+
+      // CBR / fallback: load all pages up front (existing behaviour).
       final doc = await DocumentParser.parse(_book.path, _book.format);
       final pages = <Uint8List>[];
       for (final chapter in doc.chapters) {
@@ -1463,22 +1496,25 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _comicPage = _book.lastChapter.clamp(0, pages.length - 1);
         _comicLoading = false;
       });
-      // Restore vertical scroll position after build.
-      if (_settings.comicReadingMode == ComicReadingMode.vertical) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || _comicVerticalScrollController == null) return;
-          final viewportHeight = MediaQuery.sizeOf(context).height;
-          if (viewportHeight > 0) {
-            _comicVerticalScrollController!
-                .jumpTo(_comicPage * viewportHeight);
-          }
-        });
-      }
+      _restoreComicPosition();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load comic: $e';
         _comicLoading = false;
+      });
+    }
+  }
+
+  void _restoreComicPosition() {
+    if (_settings.comicReadingMode == ComicReadingMode.vertical) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _comicVerticalScrollController == null) return;
+        final viewportHeight = MediaQuery.sizeOf(context).height;
+        if (viewportHeight > 0) {
+          _comicVerticalScrollController!
+              .jumpTo(_comicPage * viewportHeight);
+        }
       });
     }
   }
@@ -1516,21 +1552,28 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           child: PageView.builder(
             reverse: rtl,
             controller: _comicPageController,
-            itemCount: _comicPages.length,
+            itemCount: _comicPageCount,
             onPageChanged: (i) {
               setState(() => _comicPage = i);
               widget.library.savePosition(
                 id: _book.id,
                 chapter: i,
                 offset: 0,
-                progress: _comicPages.isEmpty ? 0 : i / _comicPages.length,
+                progress: _comicPageCount == 0 ? 0 : i / _comicPageCount,
               );
+              if (_comicLazy) _prefetchComicPages(i);
             },
             itemBuilder: (context, i) => Center(
-              child: Image.memory(
-                _comicPages[i],
-                fit: _comicBoxFit,
-              ),
+              child: _comicLazy
+                  ? _LazyComicPageWidget(
+                      provider: _comicPageProvider!,
+                      pageIndex: i,
+                      fit: _comicBoxFit,
+                    )
+                  : Image.memory(
+                      _comicPages[i],
+                      fit: _comicBoxFit,
+                    ),
             ),
           ),
         ),
@@ -1538,15 +1581,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           ignoring: !_chromeVisible,
           child: _chrome(
             centerLabel:
-                'Page ${_comicPage + 1} of ${_comicPages.length}',
-            sliderMax: _comicPages.length > 1 ? _comicPages.length : 1,
+                'Page ${_comicPage + 1} of $_comicPageCount',
+            sliderMax: _comicPageCount > 1 ? _comicPageCount : 1,
             sliderValue: (_comicPage + 1).clamp(
               1,
-              _comicPages.length > 0 ? _comicPages.length : 1,
+              _comicPageCount > 0 ? _comicPageCount : 1,
             ),
-            sliderLabel: _comicPages.isEmpty
+            sliderLabel: _comicPageCount == 0
                 ? '-/-'
-                : '${(((_comicPage + 1) / _comicPages.length) * 100).round()}%',
+                : '${(((_comicPage + 1) / _comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
               _comicPageController.jumpToPage(v - 1);
             },
@@ -1562,19 +1605,22 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     if (!_comicVerticalListenerAttached) {
       _comicVerticalListenerAttached = true;
       controller.addListener(() {
-        if (!mounted || _comicPages.isEmpty) return;
+        if (!mounted) return;
+        final count = _comicPageCount;
+        if (count == 0) return;
         final viewportHeight = MediaQuery.sizeOf(context).height;
         if (viewportHeight <= 0) return;
         final newIndex =
-            (controller.offset / viewportHeight).round().clamp(0, _comicPages.length - 1);
+            (controller.offset / viewportHeight).round().clamp(0, count - 1);
         if (newIndex != _comicPage) {
           setState(() => _comicPage = newIndex);
           widget.library.savePosition(
             id: _book.id,
             chapter: newIndex,
             offset: controller.offset.toInt(),
-            progress: newIndex / _comicPages.length,
+            progress: newIndex / count,
           );
+          if (_comicLazy) _prefetchComicPages(newIndex);
         }
       });
     }
@@ -1583,15 +1629,21 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         ListView.builder(
           controller: controller,
           padding: EdgeInsets.zero,
-          itemCount: _comicPages.length,
+          itemCount: _comicPageCount,
           itemBuilder: (context, i) => InteractiveViewer(
             minScale: 1.0,
             maxScale: 4.0,
             child: Center(
-              child: Image.memory(
-                _comicPages[i],
-                fit: _comicBoxFit,
-              ),
+              child: _comicLazy
+                  ? _LazyComicPageWidget(
+                      provider: _comicPageProvider!,
+                      pageIndex: i,
+                      fit: _comicBoxFit,
+                    )
+                  : Image.memory(
+                      _comicPages[i],
+                      fit: _comicBoxFit,
+                    ),
             ),
           ),
         ),
@@ -1599,15 +1651,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           ignoring: !_chromeVisible,
           child: _chrome(
             centerLabel:
-                'Page ${_comicPage + 1} of ${_comicPages.length}',
-            sliderMax: _comicPages.length > 1 ? _comicPages.length : 1,
+                'Page ${_comicPage + 1} of $_comicPageCount',
+            sliderMax: _comicPageCount > 1 ? _comicPageCount : 1,
             sliderValue: (_comicPage + 1).clamp(
               1,
-              _comicPages.length > 0 ? _comicPages.length : 1,
+              _comicPageCount > 0 ? _comicPageCount : 1,
             ),
-            sliderLabel: _comicPages.isEmpty
+            sliderLabel: _comicPageCount == 0
                 ? '-/-'
-                : '${(((_comicPage + 1) / _comicPages.length) * 100).round()}%',
+                : '${(((_comicPage + 1) / _comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
               final viewportHeight = MediaQuery.sizeOf(context).height;
               final targetOffset = (v - 1) * viewportHeight;
@@ -1621,6 +1673,23 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         ),
       ],
     );
+  }
+
+  /// Prefetch pages within ±5 of [center] and evict those further out.
+  void _prefetchComicPages(int center) {
+    final provider = _comicPageProvider;
+    if (provider == null) return;
+    const buffer = 5;
+    for (var i = center - buffer; i <= center + buffer; i++) {
+      if (i < 0 || i >= provider.pageCount) continue;
+      if (provider.isCached(i) || _comicPagesLoading.contains(i)) continue;
+      _comicPagesLoading.add(i);
+      provider.loadPage(i).then((_) {
+        _comicPagesLoading.remove(i);
+        if (mounted) setState(() {});
+      });
+    }
+    provider.evictOutside(center, margin: 10);
   }
 
   late final PageController _comicPageController = PageController(
@@ -2212,6 +2281,73 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Displays a single comic page from a [ComicPageProvider], loading the
+/// image bytes on demand and showing a sized placeholder while loading.
+class _LazyComicPageWidget extends StatefulWidget {
+  const _LazyComicPageWidget({
+    required this.provider,
+    required this.pageIndex,
+    required this.fit,
+  });
+
+  final ComicPageProvider provider;
+  final int pageIndex;
+  final BoxFit fit;
+
+  @override
+  State<_LazyComicPageWidget> createState() => _LazyComicPageWidgetState();
+}
+
+class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
+  Uint8List? _bytes;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytes = widget.provider.peekPage(widget.pageIndex);
+    if (_bytes == null) _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LazyComicPageWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pageIndex != widget.pageIndex) {
+      _bytes = widget.provider.peekPage(widget.pageIndex);
+      if (_bytes == null && !_loading) _load();
+    }
+  }
+
+  Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
+    final bytes = await widget.provider.loadPage(widget.pageIndex);
+    if (!mounted) return;
+    setState(() {
+      _bytes = bytes;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_bytes != null) {
+      return Image.memory(_bytes!, fit: widget.fit);
+    }
+    final meta = widget.provider.pages[widget.pageIndex];
+    final screenW = MediaQuery.sizeOf(context).width;
+    final aspect = meta.intrinsicHeight > 0
+        ? meta.intrinsicWidth / meta.intrinsicHeight
+        : 0.67;
+    final h = screenW / aspect;
+    return Container(
+      width: screenW,
+      height: h,
+      color: const Color(0xFF1A1A2E),
     );
   }
 }

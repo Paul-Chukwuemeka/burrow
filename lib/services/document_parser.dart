@@ -1209,6 +1209,13 @@ class DocumentParser {
       return named[e] ?? m.group(0)!;
     });
   }
+
+  // --- Public utilities used by ComicPageProvider ---
+
+  static bool isImageEntry(String name) => _isImage(name);
+  static int naturalCompare(String a, String b) => _naturalCompare(a, b);
+  static (int, int) decodeImageDimensions(Uint8List bytes) =>
+      _RichTextBuilder._decodeImageDimensions(bytes);
 }
 
 /// Incrementally builds plain text plus style runs from HTML events.
