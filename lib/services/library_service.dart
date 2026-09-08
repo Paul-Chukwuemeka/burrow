@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -13,6 +15,7 @@ import '../models/book_stats.dart';
 import 'package:drift/drift.dart' show Value;
 import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
+import '../utils/book_title.dart';
 import 'document_parser.dart';
 
 /// Holds the user's library and reader settings.
@@ -33,6 +36,10 @@ class LibraryService extends ChangeNotifier {
   final List<db.Collection> _collections = [];
   ReaderSettings settings = ReaderSettings();
   String libraryLayout = 'grid';
+
+  // Background metadata extraction queue.
+  final Queue<String> _metadataQueue = Queue<String>();
+  bool _metadataWorkerRunning = false;
 
   /// Whether the first-run onboarding flow has been completed.
   bool onboardingComplete = false;
@@ -287,58 +294,124 @@ class LibraryService extends ChangeNotifier {
     return imported;
   }
 
-  /// Imports a document: parses metadata + cover in a background isolate.
+  /// Imports a document: creates a book with minimal metadata (from filename)
+  /// and queues metadata extraction for background processing.
   /// Returns the new book, or null if it was already in the library.
   Future<Book?> importFile(String path) async {
+    return importFileFast(path);
+  }
+
+  /// Fast import: creates a book with minimal metadata (from filename only).
+  /// Returns the new book, or null if it was already in the library.
+  /// The book is added to the library immediately, and metadata extraction
+  /// is queued for background processing.
+  Future<Book?> importFileFast(String path) async {
     if (containsPath(path) || _pendingImports.contains(path)) return null;
     _pendingImports.add(path);
 
     try {
       final format = formatFromExtension(path);
-      ParsedDocument doc;
-      try {
-        doc = await DocumentParser.parse(path, format);
-      } on FormatException {
-        rethrow;
-      } catch (_) {
-        throw const FormatException('Could not read this file');
-      }
-
+      final title = _titleFromFilename(path);
+      
       final book = Book(
         id: _newId(),
-        title: doc.title,
-        author: doc.author,
+        title: title,
+        author: '', // Will be filled in Phase 2
         path: path,
         format: format,
         addedAt: DateTime.now().millisecondsSinceEpoch,
-        coverPath: await _saveCover(doc.coverBytes),
-        description: doc.description,
-        annotation: doc.annotation,
-        genre: doc.genre,
-        seriesName: doc.seriesName,
-        seriesIndex: doc.seriesIndex,
-        publisher: doc.publisher,
-        isbn: doc.isbn,
-        language: doc.language,
-        publicationDate: doc.publicationDate,
-        rights: doc.rights,
-        type: doc.type,
-        source: doc.source,
-        titleSort: doc.titleSort,
-        authorSort: doc.authorSort,
+        metadataComplete: false,
       );
+      
       _books.add(book);
       if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
       notifyListeners();
 
-      if (format == BookFormat.pdf && book.coverPath == null) {
-        _generatePdfCoverInBackground(book);
-      }
+      // Queue metadata extraction for background processing.
+      _metadataQueue.add(book.id);
+      _startMetadataWorker();
 
       return book;
     } finally {
       _pendingImports.remove(path);
     }
+  }
+
+  /// Starts the background metadata extraction worker if not already running.
+  void _startMetadataWorker() {
+    if (_metadataWorkerRunning || _metadataQueue.isEmpty) return;
+    _metadataWorkerRunning = true;
+    _processMetadataQueue();
+  }
+
+  /// Processes the metadata extraction queue one book at a time.
+  Future<void> _processMetadataQueue() async {
+    while (_metadataQueue.isNotEmpty) {
+      final bookId = _metadataQueue.removeFirst();
+      final book = _books.where((b) => b.id == bookId).firstOrNull;
+      if (book == null || book.metadataComplete) continue;
+
+      try {
+        final format = book.format;
+        ParsedDocument doc;
+        try {
+          doc = await DocumentParser.parse(book.path, format);
+        } on FormatException {
+          // Skip books that can't be parsed.
+          continue;
+        } catch (_) {
+          continue;
+        }
+
+        // Update book with extracted metadata.
+        book.title = doc.title.isNotEmpty ? doc.title : book.title;
+        book.author = doc.author;
+        book.description = doc.description;
+        book.annotation = doc.annotation;
+        book.genre = doc.genre;
+        book.seriesName = doc.seriesName;
+        book.seriesIndex = doc.seriesIndex;
+        book.publisher = doc.publisher;
+        book.isbn = doc.isbn;
+        book.language = doc.language;
+        book.publicationDate = doc.publicationDate;
+        book.rights = doc.rights;
+        book.type = doc.type;
+        book.source = doc.source;
+        book.titleSort = doc.titleSort;
+        book.authorSort = doc.authorSort;
+        book.metadataComplete = true;
+
+        // Save cover if extracted.
+        final coverBytes = doc.coverBytes;
+        if (coverBytes != null && coverBytes.isNotEmpty) {
+          book.coverPath = await _saveCover(coverBytes);
+        }
+
+        if (_db != null) {
+          await _db!.updateBook(db.bookToCompanionForUpdate(book));
+        }
+        notifyListeners();
+
+        // For PDFs without covers, generate thumbnail in background.
+        if (format == BookFormat.pdf && book.coverPath == null) {
+          _generatePdfCoverInBackground(book);
+        }
+      } catch (_) {
+        // Skip books that fail during processing.
+      }
+    }
+
+    _metadataWorkerRunning = false;
+  }
+
+  /// Extracts title from filename, cleaning up common patterns.
+  static String _titleFromFilename(String path) {
+    final base = path.split(Platform.pathSeparator).last;
+    final dot = base.lastIndexOf('.');
+    final name = dot > 0 ? base.substring(0, dot) : base;
+    // Clean up common patterns like "OceanofPDF.com_Title_Author"
+    return cleanBookTitle(name);
   }
 
   /// Renders the first page of a PDF as its library thumbnail. The book is

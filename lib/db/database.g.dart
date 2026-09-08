@@ -277,6 +277,21 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _metadataCompleteMeta = const VerificationMeta(
+    'metadataComplete',
+  );
+  @override
+  late final GeneratedColumn<bool> metadataComplete = GeneratedColumn<bool>(
+    'metadata_complete',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("metadata_complete" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -305,6 +320,7 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     source,
     titleSort,
     authorSort,
+    metadataComplete,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -488,6 +504,15 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         authorSort.isAcceptableOrUnknown(data['author_sort']!, _authorSortMeta),
       );
     }
+    if (data.containsKey('metadata_complete')) {
+      context.handle(
+        _metadataCompleteMeta,
+        metadataComplete.isAcceptableOrUnknown(
+          data['metadata_complete']!,
+          _metadataCompleteMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -603,6 +628,10 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         DriftSqlType.string,
         data['${effectivePrefix}author_sort'],
       ),
+      metadataComplete: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}metadata_complete'],
+      )!,
     );
   }
 
@@ -642,6 +671,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   final String? source;
   final String? titleSort;
   final String? authorSort;
+  final bool metadataComplete;
   const BookRow({
     required this.id,
     required this.title,
@@ -669,6 +699,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     this.source,
     this.titleSort,
     this.authorSort,
+    required this.metadataComplete,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -733,6 +764,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     if (!nullToAbsent || authorSort != null) {
       map['author_sort'] = Variable<String>(authorSort);
     }
+    map['metadata_complete'] = Variable<bool>(metadataComplete);
     return map;
   }
 
@@ -792,6 +824,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       authorSort: authorSort == null && nullToAbsent
           ? const Value.absent()
           : Value(authorSort),
+      metadataComplete: Value(metadataComplete),
     );
   }
 
@@ -829,6 +862,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       source: serializer.fromJson<String?>(json['source']),
       titleSort: serializer.fromJson<String?>(json['titleSort']),
       authorSort: serializer.fromJson<String?>(json['authorSort']),
+      metadataComplete: serializer.fromJson<bool>(json['metadataComplete']),
     );
   }
   @override
@@ -863,6 +897,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       'source': serializer.toJson<String?>(source),
       'titleSort': serializer.toJson<String?>(titleSort),
       'authorSort': serializer.toJson<String?>(authorSort),
+      'metadataComplete': serializer.toJson<bool>(metadataComplete),
     };
   }
 
@@ -893,6 +928,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     Value<String?> source = const Value.absent(),
     Value<String?> titleSort = const Value.absent(),
     Value<String?> authorSort = const Value.absent(),
+    bool? metadataComplete,
   }) => BookRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -922,6 +958,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     source: source.present ? source.value : this.source,
     titleSort: titleSort.present ? titleSort.value : this.titleSort,
     authorSort: authorSort.present ? authorSort.value : this.authorSort,
+    metadataComplete: metadataComplete ?? this.metadataComplete,
   );
   BookRow copyWithCompanion(BooksCompanion data) {
     return BookRow(
@@ -969,6 +1006,9 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       authorSort: data.authorSort.present
           ? data.authorSort.value
           : this.authorSort,
+      metadataComplete: data.metadataComplete.present
+          ? data.metadataComplete.value
+          : this.metadataComplete,
     );
   }
 
@@ -1000,7 +1040,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           ..write('type: $type, ')
           ..write('source: $source, ')
           ..write('titleSort: $titleSort, ')
-          ..write('authorSort: $authorSort')
+          ..write('authorSort: $authorSort, ')
+          ..write('metadataComplete: $metadataComplete')
           ..write(')'))
         .toString();
   }
@@ -1033,6 +1074,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     source,
     titleSort,
     authorSort,
+    metadataComplete,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1063,7 +1105,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           other.type == this.type &&
           other.source == this.source &&
           other.titleSort == this.titleSort &&
-          other.authorSort == this.authorSort);
+          other.authorSort == this.authorSort &&
+          other.metadataComplete == this.metadataComplete);
 }
 
 class BooksCompanion extends UpdateCompanion<BookRow> {
@@ -1093,6 +1136,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   final Value<String?> source;
   final Value<String?> titleSort;
   final Value<String?> authorSort;
+  final Value<bool> metadataComplete;
   final Value<int> rowid;
   const BooksCompanion({
     this.id = const Value.absent(),
@@ -1121,6 +1165,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     this.source = const Value.absent(),
     this.titleSort = const Value.absent(),
     this.authorSort = const Value.absent(),
+    this.metadataComplete = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BooksCompanion.insert({
@@ -1150,6 +1195,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     this.source = const Value.absent(),
     this.titleSort = const Value.absent(),
     this.authorSort = const Value.absent(),
+    this.metadataComplete = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -1183,6 +1229,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     Expression<String>? source,
     Expression<String>? titleSort,
     Expression<String>? authorSort,
+    Expression<bool>? metadataComplete,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1212,6 +1259,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
       if (source != null) 'source': source,
       if (titleSort != null) 'title_sort': titleSort,
       if (authorSort != null) 'author_sort': authorSort,
+      if (metadataComplete != null) 'metadata_complete': metadataComplete,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1243,6 +1291,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     Value<String?>? source,
     Value<String?>? titleSort,
     Value<String?>? authorSort,
+    Value<bool>? metadataComplete,
     Value<int>? rowid,
   }) {
     return BooksCompanion(
@@ -1272,6 +1321,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
       source: source ?? this.source,
       titleSort: titleSort ?? this.titleSort,
       authorSort: authorSort ?? this.authorSort,
+      metadataComplete: metadataComplete ?? this.metadataComplete,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1359,6 +1409,9 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     if (authorSort.present) {
       map['author_sort'] = Variable<String>(authorSort.value);
     }
+    if (metadataComplete.present) {
+      map['metadata_complete'] = Variable<bool>(metadataComplete.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1394,6 +1447,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
           ..write('source: $source, ')
           ..write('titleSort: $titleSort, ')
           ..write('authorSort: $authorSort, ')
+          ..write('metadataComplete: $metadataComplete, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3079,6 +3133,7 @@ typedef $$BooksTableCreateCompanionBuilder =
       Value<String?> source,
       Value<String?> titleSort,
       Value<String?> authorSort,
+      Value<bool> metadataComplete,
       Value<int> rowid,
     });
 typedef $$BooksTableUpdateCompanionBuilder =
@@ -3109,6 +3164,7 @@ typedef $$BooksTableUpdateCompanionBuilder =
       Value<String?> source,
       Value<String?> titleSort,
       Value<String?> authorSort,
+      Value<bool> metadataComplete,
       Value<int> rowid,
     });
 
@@ -3119,7 +3175,7 @@ final class $$BooksTableReferences
   static MultiTypedResultKey<$BookmarksTable, List<Bookmark>>
   _bookmarksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.bookmarks,
-    aliasName: $_aliasNameGenerator(db.books.id, db.bookmarks.bookId),
+    aliasName: 'books__id__bookmarks__book_id',
   );
 
   $$BookmarksTableProcessedTableManager get bookmarksRefs {
@@ -3137,7 +3193,7 @@ final class $$BooksTableReferences
   static MultiTypedResultKey<$ReadingSessionsTable, List<ReadingSession>>
   _readingSessionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.readingSessions,
-    aliasName: $_aliasNameGenerator(db.books.id, db.readingSessions.bookId),
+    aliasName: 'books__id__reading_sessions__book_id',
   );
 
   $$ReadingSessionsTableProcessedTableManager get readingSessionsRefs {
@@ -3157,7 +3213,7 @@ final class $$BooksTableReferences
   static MultiTypedResultKey<$CollectionBooksTable, List<CollectionBook>>
   _collectionBooksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.collectionBooks,
-    aliasName: $_aliasNameGenerator(db.books.id, db.collectionBooks.bookId),
+    aliasName: 'books__id__collection_books__book_id',
   );
 
   $$CollectionBooksTableProcessedTableManager get collectionBooksRefs {
@@ -3311,6 +3367,11 @@ class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
 
   ColumnFilters<String> get authorSort => $composableBuilder(
     column: $table.authorSort,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get metadataComplete => $composableBuilder(
+    column: $table.metadataComplete,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3528,6 +3589,11 @@ class $$BooksTableOrderingComposer
     column: $table.authorSort,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get metadataComplete => $composableBuilder(
+    column: $table.metadataComplete,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BooksTableAnnotationComposer
@@ -3632,6 +3698,11 @@ class $$BooksTableAnnotationComposer
 
   GeneratedColumn<String> get authorSort => $composableBuilder(
     column: $table.authorSort,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get metadataComplete => $composableBuilder(
+    column: $table.metadataComplete,
     builder: (column) => column,
   );
 
@@ -3769,6 +3840,7 @@ class $$BooksTableTableManager
                 Value<String?> source = const Value.absent(),
                 Value<String?> titleSort = const Value.absent(),
                 Value<String?> authorSort = const Value.absent(),
+                Value<bool> metadataComplete = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BooksCompanion(
                 id: id,
@@ -3797,6 +3869,7 @@ class $$BooksTableTableManager
                 source: source,
                 titleSort: titleSort,
                 authorSort: authorSort,
+                metadataComplete: metadataComplete,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3827,6 +3900,7 @@ class $$BooksTableTableManager
                 Value<String?> source = const Value.absent(),
                 Value<String?> titleSort = const Value.absent(),
                 Value<String?> authorSort = const Value.absent(),
+                Value<bool> metadataComplete = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BooksCompanion.insert(
                 id: id,
@@ -3855,6 +3929,7 @@ class $$BooksTableTableManager
                 source: source,
                 titleSort: titleSort,
                 authorSort: authorSort,
+                metadataComplete: metadataComplete,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3993,9 +4068,8 @@ final class $$BookmarksTableReferences
     extends BaseReferences<_$AppDatabase, $BookmarksTable, Bookmark> {
   $$BookmarksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $BooksTable _bookIdTable(_$AppDatabase db) => db.books.createAlias(
-    $_aliasNameGenerator(db.bookmarks.bookId, db.books.id),
-  );
+  static $BooksTable _bookIdTable(_$AppDatabase db) =>
+      db.books.createAlias('bookmarks__book_id__books__id');
 
   $$BooksTableProcessedTableManager get bookId {
     final $_column = $_itemColumn<String>('book_id')!;
@@ -4331,9 +4405,8 @@ final class $$ReadingSessionsTableReferences
     super.$_typedResult,
   );
 
-  static $BooksTable _bookIdTable(_$AppDatabase db) => db.books.createAlias(
-    $_aliasNameGenerator(db.readingSessions.bookId, db.books.id),
-  );
+  static $BooksTable _bookIdTable(_$AppDatabase db) =>
+      db.books.createAlias('reading_sessions__book_id__books__id');
 
   $$BooksTableProcessedTableManager get bookId {
     final $_column = $_itemColumn<String>('book_id')!;
@@ -4777,10 +4850,7 @@ final class $$CollectionsTableReferences
   static MultiTypedResultKey<$CollectionBooksTable, List<CollectionBook>>
   _collectionBooksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.collectionBooks,
-    aliasName: $_aliasNameGenerator(
-      db.collections.id,
-      db.collectionBooks.collectionId,
-    ),
+    aliasName: 'collections__id__collection_books__collection_id',
   );
 
   $$CollectionBooksTableProcessedTableManager get collectionBooksRefs {
@@ -5070,13 +5140,9 @@ final class $$CollectionBooksTableReferences
     super.$_typedResult,
   );
 
-  static $CollectionsTable _collectionIdTable(_$AppDatabase db) =>
-      db.collections.createAlias(
-        $_aliasNameGenerator(
-          db.collectionBooks.collectionId,
-          db.collections.id,
-        ),
-      );
+  static $CollectionsTable _collectionIdTable(_$AppDatabase db) => db
+      .collections
+      .createAlias('collection_books__collection_id__collections__id');
 
   $$CollectionsTableProcessedTableManager get collectionId {
     final $_column = $_itemColumn<String>('collection_id')!;
@@ -5092,9 +5158,8 @@ final class $$CollectionBooksTableReferences
     );
   }
 
-  static $BooksTable _bookIdTable(_$AppDatabase db) => db.books.createAlias(
-    $_aliasNameGenerator(db.collectionBooks.bookId, db.books.id),
-  );
+  static $BooksTable _bookIdTable(_$AppDatabase db) =>
+      db.books.createAlias('collection_books__book_id__books__id');
 
   $$BooksTableProcessedTableManager get bookId {
     final $_column = $_itemColumn<String>('book_id')!;

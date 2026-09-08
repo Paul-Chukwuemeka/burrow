@@ -42,6 +42,7 @@ class Books extends Table {
   TextColumn? get source => text().nullable()();
   TextColumn? get titleSort => text().nullable()();
   TextColumn? get authorSort => text().nullable()();
+  BoolColumn get metadataComplete => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -107,7 +108,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -137,6 +138,9 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(books, books.source);
             await m.addColumn(books, books.titleSort);
             await m.addColumn(books, books.authorSort);
+          }
+          if (from < 5) {
+            await m.addColumn(books, books.metadataComplete);
           }
         },
       );
@@ -490,6 +494,7 @@ Book bookFromRow(BookRow row) => Book(
       source: row.source,
       titleSort: row.titleSort,
       authorSort: row.authorSort,
+      metadataComplete: row.metadataComplete,
     );
 
 BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
@@ -519,6 +524,7 @@ BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
       source: Value(book.source),
       titleSort: Value(book.titleSort),
       authorSort: Value(book.authorSort),
+      metadataComplete: Value(book.metadataComplete),
     );
 
 BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
@@ -548,6 +554,7 @@ BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
       source: Value(book.source),
       titleSort: Value(book.titleSort),
       authorSort: Value(book.authorSort),
+      metadataComplete: Value(book.metadataComplete),
     );
 
 BooksCompanion positionToUpdate({

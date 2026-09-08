@@ -44,6 +44,7 @@ class Book {
     this.source,
     this.titleSort,
     this.authorSort,
+    this.metadataComplete = false,
   });
 
   final String id;
@@ -86,6 +87,9 @@ class Book {
   String? source;
   String? titleSort;
   String? authorSort;
+  
+  /// Whether full metadata (author, description, cover, etc.) has been extracted.
+  bool metadataComplete;
 
   bool get isStarted => lastReadAt > 0;
   bool get isFinished => progress >= 0.999;
@@ -117,6 +121,7 @@ class Book {
         'source': source,
         'titleSort': titleSort,
         'authorSort': authorSort,
+        'metadataComplete': metadataComplete,
       };
 
   static Book fromJson(Map<String, dynamic> json) => Book(
@@ -146,6 +151,7 @@ class Book {
         source: json['source'] as String?,
         titleSort: json['titleSort'] as String?,
         authorSort: json['authorSort'] as String?,
+        metadataComplete: json['metadataComplete'] as bool? ?? false,
       );
 
   /// Pretty-printed progress, e.g. "42%" or "New".
