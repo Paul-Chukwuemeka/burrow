@@ -149,6 +149,7 @@ Issues: #1 → #4 → #5 → #10 → #9
 
 ### Agent B — `library_service.dart` + `database.dart`
 Issues: #6 → #7 → #8 → #2 → #12 → #3 → #11
+**Status: PARTIAL** (#6, #7, #8, #2 done in previous session; #3, #12, #11 remaining)
 
 | # | File | Lines | Effort |
 |---|------|-------|--------|
