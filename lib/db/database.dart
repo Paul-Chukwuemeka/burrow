@@ -120,7 +120,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -153,6 +153,10 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 5) {
             await m.addColumn(books, books.metadataComplete);
+          }
+          if (from < 6) {
+            await customStatement(
+                'CREATE INDEX idx_bookmarks_book_id ON bookmarks (bookId)');
           }
         },
       );
@@ -247,23 +251,20 @@ class AppDatabase extends _$AppDatabase {
           .get();
 
   Future<int> getTotalReadingTimeMs(String bookId) async {
-    final sessions = await getSessionsForBook(bookId);
-    var total = 0;
-    for (final s in sessions) {
-      if (s.endedAt > 0) {
-        total += s.endedAt - s.startedAt;
-      }
-    }
-    return total;
+    final result = await customSelect(
+      'SELECT SUM(endedAt - startedAt) AS total FROM reading_sessions '
+      'WHERE bookId = ? AND endedAt > 0',
+      variables: [Variable.withString(bookId)],
+    ).get();
+    return result.isNotEmpty ? result.first.read<int>('total') : 0;
   }
 
   Future<int> getTotalPagesRead(String bookId) async {
-    final sessions = await getSessionsForBook(bookId);
-    var total = 0;
-    for (final s in sessions) {
-      total += s.pages;
-    }
-    return total;
+    final result = await customSelect(
+      'SELECT SUM(pages) AS total FROM reading_sessions WHERE bookId = ?',
+      variables: [Variable.withString(bookId)],
+    ).get();
+    return result.isNotEmpty ? result.first.read<int>('total') : 0;
   }
 
   /// Returns sessions grouped by day (epoch day) with total time in ms.

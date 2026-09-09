@@ -235,7 +235,12 @@ class LibraryService extends ChangeNotifier {
   /// their annotations, so importing the same backup twice is a no-op.
   /// Returns the number of newly imported books.
   Future<int> importLibrary(String path) async {
-    final raw = await File(path).readAsString();
+    final file = File(path);
+    final size = await file.length();
+    if (size > 100 * 1024 * 1024) {
+      throw const FormatException('Backup file exceeds 100 MB limit');
+    }
+    final raw = await file.readAsString();
     final dynamic decoded;
     try {
       decoded = jsonDecode(raw);
@@ -302,7 +307,9 @@ class LibraryService extends ChangeNotifier {
         if (_db != null) {
           await _db!.insertCollection(db.collectionFromJson(m));
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to restore collection: $e');
+      }
     }
     // Restore collection-book links (skip duplicates).
     for (final item in collectionBooksJson) {
@@ -315,7 +322,9 @@ class LibraryService extends ChangeNotifier {
             await _db!.addBookToCollection(collectionId, bookId);
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to restore collection-book link: $e');
+      }
     }
     // Reload collections into memory.
     if (_db != null) {
@@ -412,10 +421,11 @@ class LibraryService extends ChangeNotifier {
         try {
           doc = await DocumentParser.parse(book.path, format);
         } on FormatException {
-          // Skip books that can't be parsed.
+          debugPrint('Metadata parse skip (format): ${book.title}');
           completed++;
           continue;
-        } catch (_) {
+        } catch (e) {
+          debugPrint('Metadata extraction failed for ${book.title}: $e');
           completed++;
           continue;
         }
@@ -454,8 +464,8 @@ class LibraryService extends ChangeNotifier {
         if (format == BookFormat.pdf && book.coverPath == null) {
           _generatePdfCoverInBackground(book);
         }
-      } catch (_) {
-        // Skip books that fail during processing.
+      } catch (e) {
+        debugPrint('Metadata queue processing failed for ${book.title}: $e');
       }
       
       completed++;
@@ -498,23 +508,9 @@ class LibraryService extends ChangeNotifier {
         await _db!.updateBook(db.bookToCompanionForUpdate(current));
       }
       notifyListeners();
-    } catch (_) {
-      // Thumbnail failure is non-fatal; placeholder stays.
+    } catch (e) {
+      debugPrint('PDF cover generation failed: $e');
     }
-  }
-
-  Future<void> deleteBook(String id) async {
-    final book = _books.where((b) => b.id == id).firstOrNull;
-    if (book == null) return;
-    _books.remove(book);
-    final cover = book.coverPath;
-    if (cover != null) {
-      try {
-        await File(cover).delete();
-      } catch (_) {}
-    }
-    if (_db != null) await _db!.deleteBookById(id);
-    notifyListeners();
   }
 
   /// Deletes a book and optionally its file from disk.
@@ -970,5 +966,7 @@ class LibraryService extends ChangeNotifier {
     return true;
   }
 
+  // Matches ".." not surrounded by word chars or slashes, so
+  // "/foo/../../../etc/passwd" matches but "/foo/The..Theory/book.epub" does not.
   static final _traversalPattern = RegExp(r'(?<![/\w])\.\.(?![/\w])');
 }
