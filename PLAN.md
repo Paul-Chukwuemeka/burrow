@@ -129,6 +129,113 @@ This keeps the document as a live status board, not just a static plan.
 
 ---
 
+## Review Round 2 — New Issues (from thorough code review)
+
+### Major Issues (Review Round 2)
+
+- [ ] **13. `_showGoToPageDialog` uses wrong page count for lazy CBZ**
+  - **File:** `lib/screens/reader_screen.dart:2104`
+  - **What:** `final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPages.length : _flatPageCount);` — uses `_comicPages.length` (always 1 for lazy CBZ) instead of `_comicPageCount`. The "Go to page" dialog shows "1–1" for multi-page CBZ files.
+  - **Fix:** Replace `_comicPages.length` with `_comicPageCount`:
+    ```dart
+    final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPageCount : _flatPageCount);
+    ```
+  - **Verify:** Open a multi-page CBZ, tap page label to open Go To Page, confirm page range is correct.
+
+- [ ] **14. `getTotalReadingTimeMs` / `getTotalPagesRead` load full session table into Dart**
+  - **File:** `lib/db/database.dart:249-267`
+  - **What:** Both methods call `getSessionsForBook()` which loads ALL sessions for a book into Dart memory, then iterates to sum. For a book with 1000 sessions, this is wasteful. Called from stats screen and potentially on every page save.
+  - **Fix:** Replace with SQL aggregation:
+    ```dart
+    Future<int> getTotalReadingTimeMs(String bookId) async {
+      final result = await customSelect(
+        'SELECT SUM(endedAt - startedAt) AS total FROM reading_sessions WHERE bookId = ? AND endedAt > 0',
+        variables: [Variable.withInt(/* bookId */)],
+      ).get();
+      return result.isNotEmpty ? result.first.read<int>('total') : 0;
+    }
+    ```
+  - **Verify:** Seed a book with 500+ sessions, measure stats screen load before/after.
+
+- [ ] **15. `_processMetadataQueue` silently swallows all extraction errors**
+  - **File:** `lib/services/library_service.dart:409-461`
+  - **What:** Inner `catch (_) { completed++; continue; }` (line 418) and outer `catch (_) {}` (line 457) discard all metadata extraction errors with no logging. If every book fails to parse, the user sees "Completed" with no indication nothing was extracted.
+  - **Fix:** At minimum `debugPrint` the error. Consider adding a failure count to `MetadataStatus.completed`:
+    ```dart
+    } catch (e) {
+      debugPrint('Metadata extraction failed for ${book.title}: $e');
+      completed++;
+      continue;
+    }
+    ```
+
+- [ ] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods**
+  - **File:** `lib/screens/reader_screen.dart:52-2411`
+  - **What:** Single state class manages reflowable pagination, PDF viewing, comic viewing, search, bookmarks, sessions, dictionary overlay, settings, chrome visibility, and word selection. Any change risks regressions in unrelated features.
+  - **Fix:** Extract into sub-controllers: `PdfReaderController`, `ComicReaderController`, `ReflowableReaderController`, `SearchController`. Each owns its state and disposal. The main state becomes a thin coordinator.
+  - **Note:** This is a large refactor. Defer to a dedicated PR.
+
+### Minor Issues (Review Round 2)
+
+- [ ] **17. `_restoreComicPosition` scroll offset incorrect for vertical comics**
+  - **File:** `lib/screens/reader_screen.dart:1526-1528`
+  - **What:** `_comicVerticalScrollController!.jumpTo(_comicPage * viewportHeight);` assumes each comic page exactly fills the viewport height. For tall pages in `fitWidth` mode, the image may be shorter than the viewport, making the restored position land mid-page.
+  - **Fix:** Track actual rendered page heights or save/restore the raw scroll offset. Judgment call — acceptable for `contain` mode.
+
+- [ ] **18. `_restoreComicPosition` called before `_comicVerticalScrollController` is attached**
+  - **File:** `lib/screens/reader_screen.dart:1520-1531`
+  - **What:** `_restoreComicPosition` is called from `_loadComicPages` after `setState`, but the scroll controller is lazily created in `_buildComicVertical`. If the first build is paginated mode, the controller is null and the restore silently does nothing. Switching to vertical mode later loses the position.
+  - **Fix:** Initialize the controller in `_loadComicPages` when `comicReadingMode == vertical`, or store the target offset and apply it in `_buildComicVertical`.
+
+- [ ] **19. `deleteBook` and `deleteBookWithFile` are near-identical**
+  - **File:** `lib/services/library_service.dart:506-543`
+  - **What:** `deleteBook` is a strict subset of `deleteBookWithFile` with `deleteFile: false`. Two methods to maintain for the same deletion logic.
+  - **Fix:** Remove `deleteBook` and have callers use `deleteBookWithFile(id)` (default `deleteFile: false`).
+
+- [ ] **20. `_generatePdfCoverInBackground` swallows errors without logging**
+  - **File:** `lib/services/library_service.dart:501`
+  - **What:** `catch (_) {}` with only a comment "Thumbnail failure is non-fatal; placeholder stays." No logging at all.
+  - **Fix:** `debugPrint('PDF cover generation failed: $e');`
+
+- [ ] **21. `importLibrary` collection restore silently drops errors**
+  - **File:** `lib/services/library_service.dart:305, 318`
+  - **What:** Both the collection import loop and the collection-book link loop use `catch (_) {}`. A single malformed collection entry is silently lost.
+  - **Fix:** `debugPrint('Failed to restore collection: $e');`
+
+- [ ] **22. No size limit on backup file import**
+  - **File:** `lib/services/library_service.dart:238`
+  - **What:** `importLibrary` reads the entire backup file into memory with `File(path).readAsString()`. A maliciously crafted multi-GB JSON file could cause OOM.
+  - **Fix:** Check file size before reading, reject files > 100MB.
+
+- [ ] **23. Missing index on `Bookmarks.bookId`**
+  - **File:** `lib/db/database.dart:51-61`
+  - **What:** `Bookmarks.bookId` has a foreign key reference but no explicit index. Queries like `getBookmarksForBook` filter on `bookId`. With thousands of bookmarks, this is a full table scan.
+  - **Fix:** Add an index: `@override List<Set<Column>> get uniqueKeys => [{id, bookId}];` or a standalone index in migration.
+
+- [ ] **24. No tests for comic reader, PDF viewer, or scan service**
+  - **File:** `test/`
+  - **What:** 14 test files cover core logic well, but comic reader (`_buildComicPaginated`, `_buildComicVertical`), PDF viewer integration, and `ScanService` have no tests. High-risk areas with complex state.
+  - **Fix:** Add integration tests for comic page flipping (lazy CBZ and eager CBR), PDF page navigation, and scan permission handling.
+
+### Nit Issues (Review Round 2)
+
+- [ ] **25. `_comicPageController` disposed via try/catch for non-comic books**
+  - **File:** `lib/screens/reader_screen.dart:367-371`
+  - **What:** `late final _comicPageController` throws `LateInitializationError` if accessed before initialization. The `try/catch` in `dispose` handles this, but it's a code smell.
+  - **Fix:** Make `PageController? _comicPageController` nullable, initialize in `_loadComicPages`, null-check in `dispose`/`_flip`.
+
+- [ ] **26. `_traversalPattern` regex edge case undocumented**
+  - **File:** `lib/services/library_service.dart:973`
+  - **What:** `RegExp(r'(?<![/\w])\.\.(?![/\w])')` — the `\w` in the lookbehind includes underscores and digits. Works correctly but the intent isn't obvious.
+  - **Fix:** Add a comment: "Matches `..` not surrounded by word chars or slashes, so `/foo/../../../etc/passwd` matches but `/foo/The..Theory/book.epub` does not."
+
+- [ ] **27. Legacy SharedPreferences key never cleared after migration**
+  - **File:** `lib/services/library_service.dart:124-141`
+  - **What:** After migrating to SQLite, the legacy key `burrow.library.v1` is kept as a "backup snapshot". It persists indefinitely, consuming SharedPreferences space.
+  - **Fix:** Judgment call — acceptable tradeoff for data safety. No change needed.
+
+---
+
 ## Coordination — Two-Agent Split
 
 Two agents work in parallel on separate file groups. Each agent works through
