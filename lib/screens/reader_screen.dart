@@ -136,6 +136,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   int _pdfPageCount = 0;
   List<PdfOutlineNode> _pdfOutline = [];
   bool _pdfLoading = true;
+  late final bool _pdfFileExists = File(_book.path).existsSync();
 
   // Comic state.
   List<Uint8List> _comicPages = [];
@@ -1334,7 +1335,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // ------------------------------- PDF ---------------------------------------
 
   Widget _buildPdf(ReaderTheme theme) {
-    if (!File(_book.path).existsSync()) {
+    if (!_pdfFileExists) {
       return const _ErrorView(message: 'File not found');
     }
     final viewer = PdfViewer.file(
@@ -1716,6 +1717,11 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     );
   }
 
+  /// Initialized on first access by [_flip] or [_buildComic].
+  /// Invariant: [_comicPages] must be loaded before first access (via
+  /// [_loadComicPages] in [initState]) so that the clamp uses the correct
+  /// page count. For lazy CBZ, [_comicPages] always has at least one entry
+  /// from the provider.
   late final PageController _comicPageController = PageController(
     initialPage: _book.lastChapter.clamp(0, math.max(0, _comicPages.length - 1)),
   );
@@ -2004,12 +2010,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       return;
     }
     if (_isComic) {
-      if (_comicPages.isEmpty) return;
+      if (_comicPageCount == 0) return;
       // In RTL mode the PageView is reversed, so negate the direction.
       final rtl =
           _settings.comicReadingDirection == ComicReadingDirection.rtl;
       final target = _comicPage + (rtl ? -direction : direction);
-      if (target < 0 || target >= _comicPages.length) return;
+      if (target < 0 || target >= _comicPageCount) return;
       _comicPageController.animateToPage(
         target,
         duration: const Duration(milliseconds: 220),

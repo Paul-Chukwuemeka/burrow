@@ -27,6 +27,14 @@ class ComicPageProvider {
   final LinkedHashMap<int, Uint8List> _cache = LinkedHashMap();
 
   /// Opens a CBZ archive and builds page metadata without reading image bytes.
+  ///
+  /// TODO(#9): Currently reads the entire archive into memory. For large CBZ
+  /// files this can be O(archive_size). Consider streaming the ZIP directory
+  /// to extract entry names and sizes without loading all image bytes, then
+  /// only read individual pages in [loadPage]. The `archive` package's
+  /// `ZipDecoder` does not support directory-only reads, so this may require
+  /// switching to a lower-level ZIP parser or using `io.File.openSync`
+  /// with random-access reads on the central directory.
   static Future<ComicPageProvider> open(String path) async {
     final bytes = await File(path).readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);

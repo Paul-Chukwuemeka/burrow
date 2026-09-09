@@ -134,8 +134,8 @@ class LibraryService extends ChangeNotifier {
             await _db!.insertBook(db.bookToCompanion(book));
           }
           // Legacy key kept intentionally as a backup snapshot.
-        } catch (_) {
-          // Corrupt legacy data: start fresh rather than crash.
+        } catch (e) {
+          debugPrint('Legacy library migration failed: $e');
         }
       }
     }
@@ -156,7 +156,9 @@ class LibraryService extends ChangeNotifier {
       try {
         settings =
             ReaderSettings.fromJson(jsonDecode(settingsRaw) as Map<String, dynamic>);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to load settings: $e');
+      }
     }
 
     // Library layout preference.
@@ -253,6 +255,19 @@ class LibraryService extends ChangeNotifier {
         (decoded['collectionBooks'] as List?) ?? const [];
 
     var imported = 0;
+
+    // Pre-build maps keyed by bookId to avoid O(n×m) scanning.
+    final bookmarksByBook = <String, List<dynamic>>{};
+    for (final bm in bookmarksJson) {
+      final m = bm as Map<String, dynamic>;
+      (bookmarksByBook[m['bookId'] as String] ??= []).add(m);
+    }
+    final sessionsByBook = <String, List<dynamic>>{};
+    for (final s in sessionsJson) {
+      final m = s as Map<String, dynamic>;
+      (sessionsByBook[m['bookId'] as String] ??= []).add(m);
+    }
+
     for (final item in booksJson) {
       try {
         final book = Book.fromJson(item as Map<String, dynamic>);
@@ -263,18 +278,13 @@ class LibraryService extends ChangeNotifier {
           await _db!.insertBook(db.bookToCompanion(book));
           // Annotations are restored only for newly imported books so
           // repeated imports never duplicate them.
-          for (final bm in bookmarksJson) {
-            final m = bm as Map<String, dynamic>;
-            if (m['bookId'] != book.id) continue;
+          for (final m in bookmarksByBook[book.id] ?? const []) {
             if (!await _db!.bookmarkExists(m['id'] as String)) {
               await _db!.insertBookmark(db.bookmarkFromJson(m));
             }
           }
-          for (final s in sessionsJson) {
-            final m = s as Map<String, dynamic>;
-            if (m['bookId'] == book.id) {
-              await _db!.insertSession(db.sessionFromJson(m));
-            }
+          for (final m in sessionsByBook[book.id] ?? const []) {
+            await _db!.insertSession(db.sessionFromJson(m));
           }
         }
         imported++;
@@ -954,8 +964,11 @@ class LibraryService extends ChangeNotifier {
     if (path.contains('\x00')) return false;
     // Reject paths that are just a filename with no directory component.
     if (!path.contains('/') && !path.contains('\\')) return false;
-    // Reject obvious traversal attempts.
-    if (path.contains('..')) return false;
+    // Reject path traversal (e.g. /foo/../../../etc/passwd) but allow
+    // directory names containing ".." (e.g. /foo/The..Theory/book.epub).
+    if (_traversalPattern.hasMatch(path)) return false;
     return true;
   }
+
+  static final _traversalPattern = RegExp(r'(?<![/\w])\.\.(?![/\w])');
 }
