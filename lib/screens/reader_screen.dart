@@ -364,11 +364,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _dictionaryButtonEntry?.remove();
     _dictionaryButtonEntry = null;
     _selectedWordRange = null;
-    try {
-      _comicPageController.dispose();
-    } catch (_) {
-      // Controller was never initialized (non-comic book).
-    }
+    _comicPageController?.dispose();
     _comicVerticalScrollController?.dispose();
     _comicVerticalListenerAttached = false;
     _comicPageProvider?.dispose();
@@ -1484,6 +1480,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           _comicPages = [firstBytes];
           _comicLoading = false;
         });
+        _comicPageController = PageController(
+          initialPage: _comicPage.clamp(0, math.max(0, _comicPageCount - 1)),
+        );
         // Prefetch surrounding pages after the first frame.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -1507,6 +1506,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _comicPage = _book.lastChapter.clamp(0, pages.length - 1);
         _comicLoading = false;
       });
+      _comicPageController = PageController(
+        initialPage: _comicPage.clamp(0, math.max(0, _comicPages.length - 1)),
+      );
       _restoreComicPosition();
     } catch (e) {
       if (!mounted) return;
@@ -1519,12 +1521,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _restoreComicPosition() {
     if (_settings.comicReadingMode == ComicReadingMode.vertical) {
+      _comicVerticalScrollController ??= ScrollController();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _comicVerticalScrollController == null) return;
-        final viewportHeight = MediaQuery.sizeOf(context).height;
-        if (viewportHeight > 0) {
-          _comicVerticalScrollController!
-              .jumpTo(_comicPage * viewportHeight);
+        final offset = _book.lastOffset;
+        if (offset > 0) {
+          _comicVerticalScrollController!.jumpTo(offset.toDouble());
         }
       });
     }
@@ -1562,7 +1564,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           },
           child: PageView.builder(
             reverse: rtl,
-            controller: _comicPageController,
+            controller: _comicPageController!,
             itemCount: _comicPageCount,
             onPageChanged: (i) {
               setState(() => _comicPage = i);
@@ -1603,7 +1605,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 ? '-/-'
                 : '${(((_comicPage + 1) / _comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              _comicPageController.jumpToPage(v - 1);
+              _comicPageController?.jumpToPage(v - 1);
             },
           ),
         ),
@@ -1721,10 +1723,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   /// Invariant: [_comicPages] must be loaded before first access (via
   /// [_loadComicPages] in [initState]) so that the clamp uses the correct
   /// page count. For lazy CBZ, [_comicPages] always has at least one entry
-  /// from the provider.
-  late final PageController _comicPageController = PageController(
-    initialPage: _book.lastChapter.clamp(0, math.max(0, _comicPages.length - 1)),
-  );
+  /// from the provider. Initialized in [_loadComicPages].
+  PageController? _comicPageController;
 
   // ---------------------------- Reflowable -----------------------------------
 
@@ -2016,7 +2016,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           _settings.comicReadingDirection == ComicReadingDirection.rtl;
       final target = _comicPage + (rtl ? -direction : direction);
       if (target < 0 || target >= _comicPageCount) return;
-      _comicPageController.animateToPage(
+      _comicPageController?.animateToPage(
         target,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
@@ -2101,7 +2101,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _showGoToPageDialog() {
     final theme = _settings.colors;
     final controller = TextEditingController();
-    final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPages.length : _flatPageCount);
+    final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPageCount : _flatPageCount);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2129,7 +2129,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               if (_isPdf) {
                 _jumpToPdfPage(page);
               } else if (_isComic) {
-                _comicPageController.animateToPage(
+                _comicPageController?.animateToPage(
                   page - 1,
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
@@ -2153,7 +2153,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 if (_isPdf) {
                   _jumpToPdfPage(page);
                 } else if (_isComic) {
-                  _comicPageController.animateToPage(
+      _comicPageController?.animateToPage(
                     page - 1,
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
@@ -2349,7 +2349,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           return GestureDetector(
             onTap: () {
               if (_comicLazy) {
-                _comicPageController.jumpToPage(i);
+                _comicPageController?.jumpToPage(i);
               } else if (_settings.comicReadingMode == ComicReadingMode.vertical) {
                 final vh = MediaQuery.sizeOf(context).height;
                 _comicVerticalScrollController?.animateTo(
@@ -2358,7 +2358,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   curve: Curves.easeOutCubic,
                 );
               } else {
-                _comicPageController.jumpToPage(i);
+                _comicPageController?.jumpToPage(i);
               }
             },
             child: Container(
