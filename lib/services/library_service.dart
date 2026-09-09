@@ -626,7 +626,7 @@ class LibraryService extends ChangeNotifier {
     try {
       final dir = await _ensureCoversDir();
       final file = File(
-        '${dir.path}/cover_${DateTime.now().microsecondsSinceEpoch}_${Random.secure().nextInt(1 << 32)}.img',
+        '${dir.path}/cover_${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(1 << 32)}.img',
       );
       await file.writeAsBytes(bytes);
       return file.path;
@@ -644,7 +644,7 @@ class LibraryService extends ChangeNotifier {
   }
 
   String _newId() =>
-      '${DateTime.now().microsecondsSinceEpoch}_${Random.secure().nextInt(1 << 32)}';
+      '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(1 << 32)}';
 
   // ---------------------------------------------------------------------------
   // Bookmarks

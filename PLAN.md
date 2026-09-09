@@ -57,7 +57,7 @@ This keeps the document as a live status board, not just a static plan.
     ```
   - **Verify:** Import a backup with 100+ books and time it before/after.
 
-- [ ] **3. N+1 and full-table-scan stat queries**
+- [x] **3. N+1 and full-table-scan stat queries**
   - **File:** `lib/db/database.dart:258-384`
   - **What:** Every stats method (`getDailyReadingTime`, `getHourlyReadingTime`, `getMonthlyReadingTime`, `getReadingStreak`, `getLongestSessionMs`, `getAverageSessionMs`, `getTodayReadingTimeMs`, `getThisWeekReadingTimeMs`) calls `getAllSessions()` which loads the entire `reading_sessions` table into Dart memory, then filters/aggregates in Dart. `getPerBookStats` compounds this with a per-book `getSessionsForBook` call (N+1).
   - **Fix:** Replace with SQL aggregation queries using Drift's `selectOnly` + `addColumns` + `groupColumns`. At minimum, add date-range `WHERE` clauses so Dart doesn't filter the full table. For `getPerBookStats`, use a single `GROUP BY bookId` query.
@@ -122,7 +122,7 @@ This keeps the document as a live status board, not just a static plan.
   - **What:** Two near-identical functions that differ only in `BooksCompanion.insert(...)` vs `BooksCompanion(...)` with `Value()`. Maintenance risk if `Book` fields change.
   - **Fix:** Acceptable tradeoff. No action needed unless a field is added — then update both.
 
-- [ ] **12. `Random.secure()` for ID generation**
+- [x] **12. `Random.secure()` for ID generation**
   - **File:** `lib/services/library_service.dart:636-637`
   - **What:** `Random.secure()` is overkill for local-only IDs. `Random()` is faster.
   - **Fix:** Cosmetic. No action needed.

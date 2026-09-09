@@ -96,6 +96,18 @@ class CollectionBooks extends Table {
   IntColumn get sortPosition => integer().withDefault(const Constant(0))();
 }
 
+class _PerBookAggregate {
+  final int totalTimeMs;
+  final int totalPages;
+  final int sessionCount;
+
+  const _PerBookAggregate({
+    required this.totalTimeMs,
+    required this.totalPages,
+    required this.sessionCount,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
@@ -256,14 +268,11 @@ class AppDatabase extends _$AppDatabase {
 
   /// Returns sessions grouped by day (epoch day) with total time in ms.
   Future<Map<int, int>> getDailyReadingTime() async {
-    final sessions = await getAllSessions();
-    final daily = <int, int>{};
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      final day = (s.startedAt / 86400000).floor();
-      daily[day] = (daily[day] ?? 0) + (s.endedAt - s.startedAt);
-    }
-    return daily;
+    final results = await customSelect(
+      'SELECT (startedAt / 86400000) AS day, SUM(endedAt - startedAt) AS total '
+      'FROM reading_sessions WHERE endedAt > 0 GROUP BY day',
+    ).get();
+    return {for (final r in results) r.read<int>('day'): r.read<int>('total')};
   }
 
   /// Returns the number of consecutive days with reading, ending today.
@@ -282,105 +291,95 @@ class AppDatabase extends _$AppDatabase {
 
   /// Returns reading time grouped by hour-of-day (0–23).
   Future<Map<int, int>> getHourlyReadingTime() async {
-    final sessions = await getAllSessions();
-    final hourly = <int, int>{};
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      final hour = DateTime.fromMillisecondsSinceEpoch(s.startedAt).hour;
-      hourly[hour] = (hourly[hour] ?? 0) + (s.endedAt - s.startedAt);
-    }
-    return hourly;
+    final results = await customSelect(
+      'SELECT (startedAt % 86400000) / 3600000 AS hour, SUM(endedAt - startedAt) AS total '
+      'FROM reading_sessions WHERE endedAt > 0 GROUP BY hour',
+    ).get();
+    return {for (final r in results) r.read<int>('hour'): r.read<int>('total')};
   }
 
   /// Returns reading time grouped by "YYYY-MM" key.
   Future<Map<String, int>> getMonthlyReadingTime() async {
-    final sessions = await getAllSessions();
-    final monthly = <String, int>{};
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      final d = DateTime.fromMillisecondsSinceEpoch(s.startedAt);
-      final key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
-      monthly[key] = (monthly[key] ?? 0) + (s.endedAt - s.startedAt);
-    }
-    return monthly;
+    final results = await customSelect(
+      "SELECT strftime('%Y-%m', startedAt / 1000, 'unixepoch') AS month, "
+      'SUM(endedAt - startedAt) AS total '
+      'FROM reading_sessions WHERE endedAt > 0 GROUP BY month',
+    ).get();
+    return {for (final r in results) r.read<String>('month'): r.read<int>('total')};
   }
 
   /// Returns the longest single reading session in ms.
   Future<int> getLongestSessionMs() async {
-    final sessions = await getAllSessions();
-    var longest = 0;
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      final dur = s.endedAt - s.startedAt;
-      if (dur > longest) longest = dur;
-    }
-    return longest;
+    final result = await customSelect(
+      'SELECT MAX(endedAt - startedAt) AS longest FROM reading_sessions WHERE endedAt > 0',
+    ).get();
+    return result.isNotEmpty ? result.first.read<int>('longest') : 0;
   }
 
   /// Returns the average session duration in ms.
   Future<int> getAverageSessionMs() async {
-    final sessions = await getAllSessions();
-    var total = 0;
-    var count = 0;
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      total += s.endedAt - s.startedAt;
-      count++;
-    }
-    return count > 0 ? total ~/ count : 0;
+    final result = await customSelect(
+      'SELECT AVG(endedAt - startedAt) AS avg FROM reading_sessions WHERE endedAt > 0',
+    ).get();
+    if (result.isEmpty) return 0;
+    final avg = result.first.read<double>('avg');
+    return avg.round();
   }
 
   /// Returns total reading time in ms for today.
   Future<int> getTodayReadingTimeMs() async {
-    final sessions = await getAllSessions();
     final todayEpoch = (DateTime.now().millisecondsSinceEpoch / 86400000).floor();
-    var total = 0;
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      final day = (s.startedAt / 86400000).floor();
-      if (day == todayEpoch) total += s.endedAt - s.startedAt;
-    }
-    return total;
+    final result = await customSelect(
+      'SELECT SUM(endedAt - startedAt) AS total '
+      'FROM reading_sessions '
+      'WHERE endedAt > 0 AND (startedAt / 86400000) = ?',
+      variables: [Variable.withInt(todayEpoch)],
+    ).get();
+    return result.isNotEmpty ? result.first.read<int>('total') : 0;
   }
 
   /// Returns total reading time in ms for the last 7 days.
   Future<int> getThisWeekReadingTimeMs() async {
-    final sessions = await getAllSessions();
-    final now = DateTime.now();
-    final weekAgo = now.subtract(const Duration(days: 7)).millisecondsSinceEpoch;
-    var total = 0;
-    for (final s in sessions) {
-      if (s.endedAt <= 0) continue;
-      if (s.startedAt >= weekAgo) total += s.endedAt - s.startedAt;
-    }
-    return total;
+    final weekAgo = DateTime.now()
+        .subtract(const Duration(days: 7))
+        .millisecondsSinceEpoch;
+    final result = await customSelect(
+      'SELECT SUM(endedAt - startedAt) AS total '
+      'FROM reading_sessions '
+      'WHERE endedAt > 0 AND startedAt >= ?',
+      variables: [Variable.withInt(weekAgo)],
+    ).get();
+    return result.isNotEmpty ? result.first.read<int>('total') : 0;
   }
 
   /// Returns per-book reading stats for all started books, sorted by time desc.
   Future<List<BookStats>> getPerBookStats(List<Book> books) async {
-    final results = <BookStats>[];
+    final results = await customSelect(
+      'SELECT bookId, SUM(endedAt - startedAt) AS totalTime, '
+      'SUM(pages) AS totalPages, COUNT(*) AS sessionCount '
+      'FROM reading_sessions WHERE endedAt > 0 GROUP BY bookId',
+    ).get();
+    final statsByBook = <String, _PerBookAggregate>{};
+    for (final r in results) {
+      statsByBook[r.read<String>('bookId')] = _PerBookAggregate(
+        totalTimeMs: r.read<int>('totalTime'),
+        totalPages: r.read<int>('totalPages'),
+        sessionCount: r.read<int>('sessionCount'),
+      );
+    }
+    final bookList = <BookStats>[];
     for (final book in books) {
       if (!book.isStarted) continue;
-      final sessions = await getSessionsForBook(book.id);
-      var totalTime = 0;
-      var totalPages = 0;
-      var sessionCount = 0;
-      for (final s in sessions) {
-        if (s.endedAt > 0) {
-          totalTime += s.endedAt - s.startedAt;
-          sessionCount++;
-        }
-        totalPages += s.pages;
-      }
-      results.add(BookStats(
+      final agg = statsByBook[book.id];
+      bookList.add(BookStats(
         book: book,
-        totalTimeMs: totalTime,
-        totalPages: totalPages,
-        sessionCount: sessionCount,
+        totalTimeMs: agg?.totalTimeMs ?? 0,
+        totalPages: agg?.totalPages ?? 0,
+        sessionCount: agg?.sessionCount ?? 0,
       ));
     }
-    results.sort((a, b) => b.totalTimeMs.compareTo(a.totalTimeMs));
-    return results;
+    bookList.sort((a, b) => b.totalTimeMs.compareTo(a.totalTimeMs));
+    return bookList;
   }
 
   // -- Collections CRUD ------------------------------------------------------
