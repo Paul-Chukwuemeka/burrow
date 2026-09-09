@@ -133,140 +133,190 @@ This keeps the document as a live status board, not just a static plan.
 
 ### Major Issues (Review Round 2)
 
-- [ ] **13. `_showGoToPageDialog` uses wrong page count for lazy CBZ**
+- [x] **13. `_showGoToPageDialog` uses wrong page count for lazy CBZ**
   - **File:** `lib/screens/reader_screen.dart:2104`
   - **What:** `final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPages.length : _flatPageCount);` — uses `_comicPages.length` (always 1 for lazy CBZ) instead of `_comicPageCount`. The "Go to page" dialog shows "1–1" for multi-page CBZ files.
-  - **Fix:** Replace `_comicPages.length` with `_comicPageCount`:
-    ```dart
-    final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPageCount : _flatPageCount);
-    ```
+  - **Fix:** Replace `_comicPages.length` with `_comicPageCount`.
   - **Verify:** Open a multi-page CBZ, tap page label to open Go To Page, confirm page range is correct.
 
 - [x] **14. `getTotalReadingTimeMs` / `getTotalPagesRead` load full session table into Dart**
   - **File:** `lib/db/database.dart:249-267`
-  - **What:** Both methods call `getSessionsForBook()` which loads ALL sessions for a book into Dart memory, then iterates to sum. For a book with 1000 sessions, this is wasteful. Called from stats screen and potentially on every page save.
-  - **Fix:** Replace with SQL aggregation:
-    ```dart
-    Future<int> getTotalReadingTimeMs(String bookId) async {
-      final result = await customSelect(
-        'SELECT SUM(endedAt - startedAt) AS total FROM reading_sessions WHERE bookId = ? AND endedAt > 0',
-        variables: [Variable.withInt(/* bookId */)],
-      ).get();
-      return result.isNotEmpty ? result.first.read<int>('total') : 0;
-    }
-    ```
-  - **Verify:** Seed a book with 500+ sessions, measure stats screen load before/after.
+  - **What:** Both methods call `getSessionsForBook()` which loads ALL sessions for a book into Dart memory, then iterates to sum.
+  - **Fix:** Replace with SQL aggregation.
 
 - [x] **15. `_processMetadataQueue` silently swallows all extraction errors**
   - **File:** `lib/services/library_service.dart:409-461`
-  - **What:** Inner `catch (_) { completed++; continue; }` (line 418) and outer `catch (_) {}` (line 457) discard all metadata extraction errors with no logging. If every book fails to parse, the user sees "Completed" with no indication nothing was extracted.
-  - **Fix:** At minimum `debugPrint` the error. Consider adding a failure count to `MetadataStatus.completed`:
-    ```dart
-    } catch (e) {
-      debugPrint('Metadata extraction failed for ${book.title}: $e');
-      completed++;
-      continue;
-    }
-    ```
+  - **What:** Inner and outer catch blocks discard all metadata extraction errors with no logging.
+  - **Fix:** Added `debugPrint` for both catch blocks.
 
-- [ ] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods**
+- [-] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — deferred to dedicated PR
   - **File:** `lib/screens/reader_screen.dart:52-2411`
-  - **What:** Single state class manages reflowable pagination, PDF viewing, comic viewing, search, bookmarks, sessions, dictionary overlay, settings, chrome visibility, and word selection. Any change risks regressions in unrelated features.
-  - **Fix:** Extract into sub-controllers: `PdfReaderController`, `ComicReaderController`, `ReflowableReaderController`, `SearchController`. Each owns its state and disposal. The main state becomes a thin coordinator.
-  - **Note:** This is a large refactor. Defer to a dedicated PR.
+  - **What:** Single state class manages reflowable pagination, PDF viewing, comic viewing, search, bookmarks, sessions, dictionary overlay, settings, chrome visibility, and word selection.
+  - **Fix:** Extract into sub-controllers. Defer to a dedicated PR.
 
 ### Minor Issues (Review Round 2)
 
-- [ ] **17. `_restoreComicPosition` scroll offset incorrect for vertical comics**
+- [x] **17. `_restoreComicPosition` scroll offset incorrect for vertical comics**
   - **File:** `lib/screens/reader_screen.dart:1526-1528`
-  - **What:** `_comicVerticalScrollController!.jumpTo(_comicPage * viewportHeight);` assumes each comic page exactly fills the viewport height. For tall pages in `fitWidth` mode, the image may be shorter than the viewport, making the restored position land mid-page.
-  - **Fix:** Track actual rendered page heights or save/restore the raw scroll offset. Judgment call — acceptable for `contain` mode.
+  - **What:** `_comicVerticalScrollController!.jumpTo(_comicPage * viewportHeight);` assumes each comic page exactly fills the viewport height.
+  - **Fix:** Use saved `_book.lastOffset` instead of recomputing.
 
-- [ ] **18. `_restoreComicPosition` called before `_comicVerticalScrollController` is attached**
+- [x] **18. `_restoreComicPosition` called before `_comicVerticalScrollController` is attached**
   - **File:** `lib/screens/reader_screen.dart:1520-1531`
-  - **What:** `_restoreComicPosition` is called from `_loadComicPages` after `setState`, but the scroll controller is lazily created in `_buildComicVertical`. If the first build is paginated mode, the controller is null and the restore silently does nothing. Switching to vertical mode later loses the position.
-  - **Fix:** Initialize the controller in `_loadComicPages` when `comicReadingMode == vertical`, or store the target offset and apply it in `_buildComicVertical`.
+  - **What:** `_restoreComicPosition` is called from `_loadComicPages` but the scroll controller is lazily created in `_buildComicVertical`.
+  - **Fix:** Initialize the controller eagerly in `_restoreComicPosition`.
 
 - [x] **19. `deleteBook` and `deleteBookWithFile` are near-identical**
   - **File:** `lib/services/library_service.dart:506-543`
-  - **What:** `deleteBook` is a strict subset of `deleteBookWithFile` with `deleteFile: false`. Two methods to maintain for the same deletion logic.
-  - **Fix:** Remove `deleteBook` and have callers use `deleteBookWithFile(id)` (default `deleteFile: false`).
+  - **Fix:** Removed `deleteBook`, callers use `deleteBookWithFile(id)`.
 
 - [x] **20. `_generatePdfCoverInBackground` swallows errors without logging**
   - **File:** `lib/services/library_service.dart:501`
-  - **What:** `catch (_) {}` with only a comment "Thumbnail failure is non-fatal; placeholder stays." No logging at all.
-  - **Fix:** `debugPrint('PDF cover generation failed: $e');`
+  - **Fix:** Added `debugPrint('PDF cover generation failed: $e');`.
 
 - [x] **21. `importLibrary` collection restore silently drops errors**
   - **File:** `lib/services/library_service.dart:305, 318`
-  - **What:** Both the collection import loop and the collection-book link loop use `catch (_) {}`. A single malformed collection entry is silently lost.
-  - **Fix:** `debugPrint('Failed to restore collection: $e');`
+  - **Fix:** Added `debugPrint` for both collection restore catch blocks.
 
 - [x] **22. No size limit on backup file import**
   - **File:** `lib/services/library_service.dart:238`
-  - **What:** `importLibrary` reads the entire backup file into memory with `File(path).readAsString()`. A maliciously crafted multi-GB JSON file could cause OOM.
-  - **Fix:** Check file size before reading, reject files > 100MB.
+  - **Fix:** Added 100MB file size check before reading.
 
 - [x] **23. Missing index on `Bookmarks.bookId`**
   - **File:** `lib/db/database.dart:51-61`
-  - **What:** `Bookmarks.bookId` has a foreign key reference but no explicit index. Queries like `getBookmarksForBook` filter on `bookId`. With thousands of bookmarks, this is a full table scan.
-  - **Fix:** Add an index: `@override List<Set<Column>> get uniqueKeys => [{id, bookId}];` or a standalone index in migration.
+  - **Fix:** Handled by v6 migration (`idx_bookmarks_book_id`).
 
-- [ ] **24. No tests for comic reader, PDF viewer, or scan service**
+- [~] **24. No tests for comic reader, PDF viewer, or scan service**
   - **File:** `test/`
-  - **What:** 14 test files cover core logic well, but comic reader (`_buildComicPaginated`, `_buildComicVertical`), PDF viewer integration, and `ScanService` have no tests. High-risk areas with complex state.
-  - **Fix:** Add integration tests for comic page flipping (lazy CBZ and eager CBR), PDF page navigation, and scan permission handling.
+  - **What:** Comic page provider tests added (7 tests). Comic reader widget tests, PDF viewer, and scan service tests still missing.
+  - **Fix:** `comic_page_provider_test.dart` added. Widget-level tests deferred.
 
 ### Nit Issues (Review Round 2)
 
-- [ ] **25. `_comicPageController` disposed via try/catch for non-comic books**
+- [x] **25. `_comicPageController` disposed via try/catch for non-comic books**
   - **File:** `lib/screens/reader_screen.dart:367-371`
-  - **What:** `late final _comicPageController` throws `LateInitializationError` if accessed before initialization. The `try/catch` in `dispose` handles this, but it's a code smell.
-  - **Fix:** Make `PageController? _comicPageController` nullable, initialize in `_loadComicPages`, null-check in `dispose`/`_flip`.
+  - **Fix:** Made nullable, initialized in `_loadComicPages`, null-check in `dispose`.
 
 - [x] **26. `_traversalPattern` regex edge case undocumented**
   - **File:** `lib/services/library_service.dart:973`
-  - **What:** `RegExp(r'(?<![/\w])\.\.(?![/\w])')` — the `\w` in the lookbehind includes underscores and digits. Works correctly but the intent isn't obvious.
-  - **Fix:** Add a comment: "Matches `..` not surrounded by word chars or slashes, so `/foo/../../../etc/passwd` matches but `/foo/The..Theory/book.epub` does not."
+  - **Fix:** Added comment explaining regex behavior.
 
 - [-] **27. Legacy SharedPreferences key never cleared after migration** — acceptable tradeoff for data safety
-  - **File:** `lib/services/library_service.dart:124-141`
-  - **What:** After migrating to SQLite, the legacy key `burrow.library.v1` is kept as a "backup snapshot". It persists indefinitely, consuming SharedPreferences space.
-  - **Fix:** Judgment call — acceptable tradeoff for data safety. No change needed.
+
+---
+
+## Review Round 3 — New Issues (from on-call mindset review)
+
+### Major Issues (Review Round 3)
+
+- [ ] **28. `updateBook` unconditionally nulls out fields when caller doesn't pass them**
+  - **File:** `lib/services/library_service.dart:562-585`
+  - **What:** The doc says "Pass null to leave unchanged," but the implementation always assigns. `book.description = description` sets it to `null` when the caller doesn't pass `description`. Every call to `updateBook(id, title: 'New Title')` silently wipes description, genre, series, ISBN, and all other nullable fields. This is a **data loss bug** — any metadata edit from the edit screen will destroy fields the user didn't explicitly re-enter.
+  - **Fix:** Use null-coalescing to preserve existing values:
+    ```dart
+    book.description = description ?? book.description;
+    book.annotation = annotation ?? book.annotation;
+    book.genre = genre ?? book.genre;
+    book.seriesName = seriesName ?? book.seriesName;
+    book.seriesIndex = seriesIndex ?? book.seriesIndex;
+    book.publisher = publisher ?? book.publisher;
+    book.isbn = isbn ?? book.isbn;
+    book.language = language ?? book.language;
+    book.review = review ?? book.review;
+    book.publicationDate = publicationDate ?? book.publicationDate;
+    book.rights = rights ?? book.rights;
+    book.type = type ?? book.type;
+    book.source = source ?? book.source;
+    book.titleSort = titleSort ?? book.titleSort;
+    book.authorSort = authorSort ?? book.authorSort;
+    ```
+  - **Verify:** Edit a book's title in the edit screen, confirm genre/ISBN/description are preserved.
+
+- [ ] **29. `importFileFast` theoretical double-add race**
+  - **File:** `lib/services/library_service.dart:351-381`
+  - **What:** `_pendingImports` is checked then added with no async lock. While Flutter's single-threaded event loop prevents true concurrency, two `importFileFast` calls from different microtasks (e.g., rapid scan + manual import) could both pass the `containsPath` check before either adds to `_pendingImports`. The `finally` block removes it, creating a window for duplicate adds.
+  - **Fix:** Move `_pendingImports.add(path)` before the `try` block (it already is). The real risk is that `containsPath` checks `_books` which is mutated by `_books.add(book)` at line 369 inside the `try`. If two calls interleave, both could pass `containsPath` before either does `_books.add`. Add a synchronous guard:
+    ```dart
+    if (containsPath(path) || _pendingImports.contains(path)) return null;
+    _pendingImports.add(path);
+    try {
+      // ... already correct
+    }
+    ```
+  - **Verdict:** Judgment call — theoretical risk, practically safe due to Flutter event loop. Track for future hardening.
+
+### Minor Issues (Review Round 3)
+
+- [ ] **30. `_PillChip` widget duplicated across 5 files**
+  - **Files:** `collection_screen.dart`, `author_screen.dart`, `genre_screen.dart`, `series_screen.dart`, `smart_group_screen.dart`
+  - **What:** Identical ~50-line widget copy-pasted in 5 files. Any change to its appearance requires editing 5 files.
+  - **Fix:** Extract to shared `lib/widgets/pill_chip.dart`.
+
+- [ ] **31. Grid layout code duplicated across 6 files**
+  - **Files:** `library_screen.dart`, `collection_screen.dart`, `author_screen.dart`, `genre_screen.dart`, `series_screen.dart`, `smart_group_screen.dart`
+  - **What:** `maxTileExtent`, `crossSpacing`, `mainSpacing`, `cardPadding`, `textBlock`, `gridPadding` are repeated verbatim.
+  - **Fix:** Extract to shared `lib/widgets/book_grid.dart` helper.
+
+- [ ] **32. `page_spans_test.dart` broken — 10 compilation errors**
+  - **File:** `test/page_spans_test.dart`
+  - **What:** Tests call `buildPageSpans()` without the `settings` parameter that was added to the function signature. These tests won't compile — search highlight logic is untested.
+  - **Fix:** Add `settings: const ReaderSettings()` to each test call, or generate the missing parameter.
+
+- [ ] **33. `_pdfFileExists` field is unused in any guard**
+  - **File:** `lib/screens/reader_screen.dart:139`
+  - **What:** `late final bool _pdfFileExists = File(_book.path).existsSync();` is computed but never referenced in the build method. Dead code.
+  - **Fix:** Remove the field, or use it to show an error view when the file is missing.
+
+- [ ] **34. `_WavyProgress` and `_FanInPages` are dead code**
+  - **File:** `lib/screens/onboarding_screen.dart:897-1041`
+  - **What:** Both widgets are defined (~145 lines total) but never instantiated in any `build` method.
+  - **Fix:** Remove, or mark with `TODO` if intended for future use.
+
+### Nit Issues (Review Round 3)
+
+- [ ] **35. `use_build_context_synchronously` warnings in `library_screen.dart`**
+  - **File:** `lib/screens/library_screen.dart:836, 859, 1296, 1316, 1415, 1435`
+  - **What:** 6 info-level analyzer warnings about using `BuildContext` after `await`. These are inside sheet callbacks where the context is still valid (sheet is mounted).
+  - **Fix:** Acceptable — suppress with `// ignore:` if noisy, or restructure to check `mounted` before using context.
 
 ---
 
 ## Coordination — Two-Agent Split
 
+### Round 1+2 Status
+
+| Agent | Issues | Status |
+|-------|--------|--------|
+| A | #1, #4, #5, #10, #9 | COMPLETE |
+| A (round 2) | #13, #17, #18, #25, #24 | COMPLETE |
+| B | #6, #7, #8, #2, #12, #3, #11 | COMPLETE |
+| B (round 2) | #14, #15, #19, #20, #21, #22, #23, #26, #27 | COMPLETE |
+
+### Round 3 Agent Split
+
 Two agents work in parallel on separate file groups. Each agent works through
 their list top-to-bottom. Within a file group, issues are ordered to avoid
-line-range conflicts (earlier issues don't shift lines that later issues depend on).
+line-range conflicts.
 
-### Agent A — `reader_screen.dart` + isolated files
-Issues: #1 → #4 → #5 → #10 → #9
-**Status: COMPLETE** (all 5 items done)
-
-| # | File | Lines | Effort |
-|---|------|-------|--------|
-| 1 | `android/app/build.gradle.kts` | 1 | trivial |
-| 4 | `lib/screens/reader_screen.dart` | 2006-2017 | small |
-| 5 | `lib/screens/reader_screen.dart` | 1337 | small |
-| 10 | `lib/screens/reader_screen.dart` | 1719-1721 | small |
-| 9 | `lib/services/comic_page_provider.dart` | 32 | trivial |
-
-### Agent B — `library_service.dart` + `database.dart`
-Issues: #6 → #7 → #8 → #2 → #12 → #3 → #11
-**Status: PARTIAL** (#6, #7, #8, #2 done in previous session; #3, #12, #11 remaining)
+#### Agent A — `reader_screen.dart` + test files
+Issues: #28 → #32 → #33 → #34
 
 | # | File | Lines | Effort |
 |---|------|-------|--------|
-| 6 | `lib/services/library_service.dart` | 155-159 | trivial |
-| 7 | `lib/services/library_service.dart` | 137-139 | trivial |
-| 8 | `lib/services/library_service.dart` | 260 | small |
-| 2 | `lib/services/library_service.dart` | 256-278 | medium |
-| 12 | `lib/services/library_service.dart` | 636-637 | trivial |
-| 3 | `lib/db/database.dart` | 258-384 | large |
-| 11 | `lib/db/database.dart` | 500-558 | skip (acceptable) |
+| 28 | `lib/services/library_service.dart` | 562-585 | small (data loss fix) |
+| 32 | `test/page_spans_test.dart` | all | small |
+| 33 | `lib/screens/reader_screen.dart` | 139 | trivial |
+| 34 | `lib/screens/onboarding_screen.dart` | 897-1041 | trivial |
+
+#### Agent B — `library_service.dart` + screen dedup
+Issues: #29 → #30 → #31 → #35
+
+| # | File | Lines | Effort |
+|---|------|-------|--------|
+| 29 | `lib/services/library_service.dart` | 351-381 | small (judgment call) |
+| 30 | 5 screen files | — | medium (dedup) |
+| 31 | 6 screen files | — | medium (dedup) |
+| 35 | `lib/screens/library_screen.dart` | 6 locations | trivial |
 
 ### Merge point
 
@@ -276,14 +326,3 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
-
-### Work Order Suggested (sequential fallback)
-
-1. Fix #1 (applicationId) — trivial, do first
-2. Fix #4 (comic flip bug) — user-facing bug, small fix
-3. Fix #6 + #7 (silent error logging) — quick wins, reduces on-call blind spots
-4. Fix #5 (sync file I/O) — small fix, prevents jank
-5. Fix #2 (import performance) — medium effort, high impact for heavy users
-6. Fix #3 (stat queries) — largest effort, but deferred since stats are non-critical path
-7. Fix #8 (path check) — judgment call, discuss with team
-8. Fix #9, #10, #11, #12 — low priority, do if time permits
