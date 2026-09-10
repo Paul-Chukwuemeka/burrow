@@ -11,6 +11,7 @@ import '../controllers/bookmark_helper.dart';
 import '../controllers/comic_controller.dart';
 import '../controllers/pdf_controller.dart';
 import '../controllers/reading_session.dart';
+import '../controllers/search_controller.dart';
 import '../services/brightness_controller.dart';
 import '../models/book.dart';
 import '../models/reader_settings.dart';
@@ -117,14 +118,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   late final BookmarkHelper _bookmarkCtrl;
 
   // Search state.
-  BookSearch? _search;
-  PdfTextSearcher? _pdfSearcher;
-  bool _searchOpen = false;
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
-  List<SearchResult> _searchResults = [];
-  int _currentResultIndex = -1;
-  bool _searchDone = false;
+  late final ReaderSearchController _searchCtrl;
 
   // PDF state.
   late final PdfReaderController _pdfCtrl;
@@ -178,6 +172,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _comicCtrl.addListener(() {
       if (mounted) setState(() {});
     });
+    _searchCtrl = ReaderSearchController(book: _book);
+    _searchCtrl.addListener(() {
+      if (mounted) setState(() {});
+    });
     _bookmarkCtrl.addListener(() {
       if (mounted) setState(() {});
     });
@@ -199,7 +197,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     if (_isComic) {
       _loadComicPages();
     }
-    _searchController.addListener(_onSearchTextChanged);
+    _searchCtrl.searchController.addListener(_searchCtrl.onSearchTextChanged);
   }
 
   Future<void> _loadPdfOutline(PdfDocument document) =>
@@ -262,9 +260,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationCache.clear();
     _pdfCtrl.dispose();
     _comicCtrl.dispose();
-    _search?.dispose();
-    _searchController.dispose();
-    _searchFocusNode.dispose();
+    _searchCtrl.dispose();
     _dictionaryButtonEntry?.remove();
     _dictionaryButtonEntry = null;
     _selectedWordRange = null;
@@ -711,107 +707,33 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _initSearch() {
     if (_isPdf) {
-      if (_pdfSearcher != null) return;
-      _pdfSearcher = PdfTextSearcher(_pdfCtrl.pdfController);
-      _pdfSearcher!.addListener(_onPdfSearchChanged);
+      _searchCtrl.initPdfSearch(_pdfCtrl.pdfController);
+      _searchCtrl.pdfSearcher?.addListener(_searchCtrl.onPdfSearchChanged);
       return;
     }
-    if (_doc == null || _search != null) return;
-    _search = BookSearch(
-      chapters: _doc!.chapters,
-      onResults: (results) {
-        if (!mounted) return;
-        setState(() {
-          _searchResults = results;
-          if (_currentResultIndex == -1 && results.isNotEmpty) {
-            _currentResultIndex = 0;
-          }
-        });
-      },
-      onDone: () {
-        if (!mounted) return;
-        setState(() => _searchDone = true);
-      },
-    );
+    if (_doc == null) return;
+    _searchCtrl.setChapters(_doc!.chapters);
   }
 
-  void _onPdfSearchChanged() {
-    if (!mounted || _pdfSearcher == null) return;
-    final matches = _pdfSearcher!.matches;
-    setState(() {
-      _searchResults = [
-        for (var i = 0; i < matches.length; i++)
-          SearchResult(
-            chapter: matches[i].pageNumber,
-            offset: 0,
-            length: 0,
-            snippet: 'Page ${matches[i].pageNumber}',
-          ),
-      ];
-      _currentResultIndex = _pdfSearcher!.currentIndex ?? -1;
-      if (!_pdfSearcher!.isSearching) {
-        _searchDone = true;
-      }
-    });
-  }
-
-  void _onSearchTextChanged() {
-    final q = _searchController.text;
-    if (q.isEmpty) {
-      _pdfSearcher?.resetTextSearch();
-      setState(() {
-        _searchResults = [];
-        _currentResultIndex = -1;
-        _searchDone = false;
-      });
-      return;
-    }
-    _initSearch();
-    _searchDone = false;
-    if (_isPdf) {
-      _pdfSearcher!.startTextSearch(q);
-    } else {
-      _search?.search(q);
-    }
-    setState(() => _currentResultIndex = -1);
-  }
+  void _onSearchTextChanged() => _searchCtrl.onSearchTextChanged();
 
   void _submitSearch() {
-    final q = _searchController.text;
     _initSearch();
-    _searchDone = false;
-    if (_isPdf) {
-      _pdfSearcher!.startTextSearch(q, searchImmediately: true);
-    } else {
-      _search?.searchImmediate(q);
-    }
+    _searchCtrl.submitSearch();
   }
 
   void _toggleSearch() {
-    setState(() {
-      _searchOpen = !_searchOpen;
-      if (_searchOpen) {
-        _searchFocusNode.requestFocus();
-      } else {
-        _searchController.clear();
-        _searchResults = [];
-        _currentResultIndex = -1;
-        _searchDone = false;
-        _search?.dispose();
-        _search = null;
-        _pdfSearcher?.resetTextSearch();
-        _pdfSearcher = null;
-      }
-    });
+    _searchCtrl.toggleSearch();
+    if (!_searchCtrl.searchOpen) {
+      // Re-init next time search is opened.
+    }
   }
 
   void _jumpToResult(int index) {
-    if (index < 0 || index >= _searchResults.length) return;
-    setState(() => _currentResultIndex = index);
-    if (_isPdf) {
-      _pdfSearcher?.goToMatchOfIndex(index);
-    } else {
-      final result = _searchResults[index];
+    if (index < 0 || index >= _searchCtrl.searchResults.length) return;
+    _searchCtrl.jumpToResult(index);
+    if (!_isPdf) {
+      final result = _searchCtrl.searchResults[index];
       final pag = _paginators[result.chapter];
       final pageIndex = pag.pageIndexFor(result.offset);
       final flat = _flatIndexForChapter(result.chapter) + pageIndex;
@@ -823,32 +745,26 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   void _prevResult() {
-    if (_searchResults.isEmpty) return;
+    if (_searchCtrl.searchResults.isEmpty) return;
     if (_isPdf) {
-      _pdfSearcher?.goToPrevMatch();
+      _searchCtrl.pdfSearcher?.goToPrevMatch();
       return;
     }
-    final idx = _currentResultIndex <= 0
-        ? _searchResults.length - 1
-        : _currentResultIndex - 1;
-    _jumpToResult(idx);
+    _searchCtrl.prevResult();
   }
 
   void _nextResult() {
-    if (_searchResults.isEmpty) return;
+    if (_searchCtrl.searchResults.isEmpty) return;
     if (_isPdf) {
-      _pdfSearcher?.goToNextMatch();
+      _searchCtrl.pdfSearcher?.goToNextMatch();
       return;
     }
-    final idx = _currentResultIndex >= _searchResults.length - 1
-        ? 0
-        : _currentResultIndex + 1;
-    _jumpToResult(idx);
+    _searchCtrl.nextResult();
   }
 
   Widget _buildSearchOverlay(ReaderTheme theme) {
-    final count = _searchResults.length;
-    final isDone = _searchDone;
+    final count = _searchCtrl.searchResults.length;
+    final isDone = _searchCtrl.searchDone;
     return Positioned(
       top: MediaQuery.paddingOf(context).top + 56,
       left: 8,
@@ -867,8 +783,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 children: [
                   Expanded(
                     child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
+                      controller: _searchCtrl.searchController,
+                      focusNode: _searchCtrl.searchFocusNode,
                       style: TextStyle(color: theme.text, fontSize: 15),
                       decoration: InputDecoration(
                         hintText: 'Search book…',
@@ -876,12 +792,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                         border: InputBorder.none,
                         prefixIcon:
                             Icon(Icons.search, color: theme.muted, size: 20),
-                        suffixIcon: _searchController.text.isNotEmpty
+                        suffixIcon: _searchCtrl.searchController.text.isNotEmpty
                             ? IconButton(
                                 icon:
                                     Icon(Icons.clear, color: theme.muted, size: 20),
                                 onPressed: () {
-                                  _searchController.clear();
+                                  _searchCtrl.searchController.clear();
                                   _onSearchTextChanged();
                                 },
                               )
@@ -935,8 +851,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   shrinkWrap: true,
                   itemCount: count,
                   itemBuilder: (context, i) {
-                    final r = _searchResults[i];
-                    final isCurrent = i == _currentResultIndex;
+                    final r = _searchCtrl.searchResults[i];
+                    final isCurrent = i == _searchCtrl.currentResultIndex;
                     final label = _isPdf
                         ? 'Page ${r.chapter}'
                         : (_doc?.chapters[r.chapter].title ?? '').isEmpty
@@ -1296,8 +1212,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           ),
         ],
         pagePaintCallbacks: [
-          if (_pdfSearcher != null)
-            _pdfSearcher!.pageTextMatchPaintCallback,
+          if (_searchCtrl.pdfSearcher != null)
+            _searchCtrl.pdfSearcher!.pageTextMatchPaintCallback,
         ],
       ),
     );
@@ -1605,8 +1521,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 final page = _paginators[chapter].pages[ref.$2];
                 // Compute highlights for this page.
                 List<SearchResult>? highlights;
-                if (_searchOpen && _search != null && _searchResults.isNotEmpty) {
-                  highlights = _search!.matchesForPage(
+                if (_searchCtrl.searchOpen && _searchCtrl.bookSearch != null && _searchCtrl.searchResults.isNotEmpty) {
+                  highlights = _searchCtrl.bookSearch!.matchesForPage(
                     chapter,
                     page.start,
                     page.end,
@@ -1643,9 +1559,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     setState(() => _chromeVisible = !_chromeVisible);
                   },
                   highlightMatches: highlights,
-                  currentMatch: _currentResultIndex >= 0 &&
-                          _currentResultIndex < _searchResults.length
-                      ? _searchResults[_currentResultIndex]
+                  currentMatch: _searchCtrl.currentResultIndex >= 0 &&
+                          _searchCtrl.currentResultIndex < _searchCtrl.searchResults.length
+                      ? _searchCtrl.searchResults[_searchCtrl.currentResultIndex]
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
                   onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
@@ -1671,7 +1587,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 },
               ),
             ),
-            if (_searchOpen) _buildSearchOverlay(theme),
+            if (_searchCtrl.searchOpen) _buildSearchOverlay(theme),
           ],
         );
       },
