@@ -13,6 +13,7 @@ import '../services/library_service.dart';
 import '../services/scan_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
+import '../widgets/pill_chip.dart';
 import '../utils/date_format.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
@@ -1033,7 +1034,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                 ),
-                _PillChip(
+                PillChip(
                   label: _sortLabel,
                   icon: Icons.sort_rounded,
                   onTap: () => setState(() {
@@ -1042,7 +1043,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   }),
                 ),
                 const SizedBox(width: 8),
-                _PillChip(
+                PillChip(
                   label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
                   icon: _layout == _LayoutMode.grid
                       ? Icons.grid_view_rounded
@@ -1773,7 +1774,7 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget chip(String label, BookFormat? value) {
-      return _PillChip(
+      return PillChip(
         label: label,
         selected: filter == value,
         onTap: () => onFilter(value),
@@ -1994,7 +1995,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _PillChip(
+                      PillChip(
                         label: 'All',
                         selected: _status == _ReadingStatus.all,
                         onTap: () => setState(() {
@@ -2002,7 +2003,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                           widget.onStatusChanged(_status);
                         }),
                       ),
-                      _PillChip(
+                      PillChip(
                         label: 'Reading',
                         selected: _status == _ReadingStatus.reading,
                         onTap: () => setState(() {
@@ -2010,7 +2011,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                           widget.onStatusChanged(_status);
                         }),
                       ),
-                      _PillChip(
+                      PillChip(
                         label: 'Finished',
                         selected: _status == _ReadingStatus.finished,
                         onTap: () => setState(() {
@@ -2018,7 +2019,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                           widget.onStatusChanged(_status);
                         }),
                       ),
-                      _PillChip(
+                      PillChip(
                         label: 'New',
                         selected: _status == _ReadingStatus.new_,
                         onTap: () => setState(() {
@@ -2046,7 +2047,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                               spacing: 8,
                               runSpacing: 8,
                               children: [
-                                _PillChip(
+                                PillChip(
                                   label: 'All genres',
                                   selected: _genre == null,
                                   onTap: () => setState(() {
@@ -2055,7 +2056,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                                   }),
                                 ),
                                 for (final g in sortedGenres)
-                                  _PillChip(
+                                  PillChip(
                                     label: g,
                                     selected: _genre?.toLowerCase() == g.toLowerCase(),
                                     onTap: () => setState(() {
@@ -2094,7 +2095,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        _PillChip(
+                        PillChip(
                           label: 'All series',
                           selected: _series == null,
                           onTap: () => setState(() {
@@ -2103,7 +2104,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                           }),
                         ),
                         for (final s in sortedSeries)
-                          _PillChip(
+                          PillChip(
                             label: s,
                             selected: _series?.toLowerCase() == s.toLowerCase(),
                             onTap: () => setState(() {
@@ -2152,70 +2153,6 @@ class _FilterSection extends StatelessWidget {
   }
 }
 
-/// Expressive filter pill: filled primary when selected, outlined when not.
-///
-/// Enforces the 48dp minimum interactive target at the widget level so the
-/// guarantee survives any ambient [ChipTheme].
-class _PillChip extends StatelessWidget {
-  const _PillChip({
-    required this.label,
-    required this.onTap,
-    this.selected = false,
-    this.icon,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final bool selected;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        child: Material(
-          color: selected ? scheme.primary : Colors.transparent,
-          shape: StadiumBorder(
-            side: BorderSide(
-              color: selected ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 18, color: scheme.primary),
-                    const SizedBox(width: 6),
-                  ],
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      letterSpacing: 0.15,
-                      color: selected
-                          ? scheme.onPrimary
-                          : scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// Hero "keep reading" card on a tonal primary surface. Large shape family,
 /// sharing the grid's corner-rounding direction so the hierarchy reads as

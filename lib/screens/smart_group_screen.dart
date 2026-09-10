@@ -9,6 +9,7 @@ import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/pill_chip.dart';
 import 'book_info_screen.dart';
 import 'reader_screen.dart';
 
@@ -100,7 +101,7 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
-          _PillChip(
+          PillChip(
             label: _sortLabel(_sort),
             icon: Icons.sort_rounded,
             onTap: () => setState(() {
@@ -108,7 +109,7 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
             }),
           ),
           const SizedBox(width: 8),
-          _PillChip(
+          PillChip(
             label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
             icon: _layout == _LayoutMode.grid
                 ? Icons.grid_view_rounded
@@ -229,53 +230,3 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
   }
 }
 
-class _PillChip extends StatelessWidget {
-  const _PillChip({
-    required this.label,
-    required this.onTap,
-    this.icon,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-      child: Material(
-        color: Colors.transparent,
-        shape: StadiumBorder(
-          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 18, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: 6),
-                ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    letterSpacing: 0.15,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
