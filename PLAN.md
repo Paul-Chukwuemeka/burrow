@@ -855,31 +855,31 @@ Percentage values (e.g., `width: 50%`) are relative to page content width.
 
 ### Implementation
 
-- [ ] **72. Extend `CssStyle` with image-sizing fields**
+- [x] **72. Extend `CssStyle` with image-sizing fields**
   - **File:** `lib/models/css_style.dart`
   - **What:** Add `width`, `height`, `maxWidth`, `maxHeight` fields (all `double?`). Update `merge()` and `isEmpty`.
 
-- [ ] **73. Map CSS image-sizing properties in `propsToCssStyle`**
+- [x] **73. Map CSS image-sizing properties in `propsToCssStyle`**
   - **File:** `lib/services/epub_css_parser.dart:223`
   - **What:** Parse `width`, `height`, `max-width`, `max-height` from the raw properties map. Support CSS units: `px` (default), `em`/`rem` (×16), `pt` (×1.333), `%` (relative to renderWidth). Reuse existing `_parseLength` helper.
 
-- [ ] **74. Add `CssStyle?` field to `ImageRun`**
+- [x] **74. Add `CssStyle?` field to `ImageRun`**
   - **File:** `lib/models/style_run.dart:50`
   - **What:** Add `this.css` optional field to `ImageRun`. This holds the CSS-derived sizing rules matched to the `<img>` element.
 
-- [ ] **75. Apply CSS rules to images during EPUB parsing**
+- [x] **75. Apply CSS rules to images during EPUB parsing**
   - **File:** `lib/services/document_parser.dart` (in `parseEpubBytes`, after CSS rules are resolved)
   - **What:** After `EpubCssParser` resolves rules, iterate `ImageRun` objects and match CSS rules to their corresponding `<img>` DOM elements. Merge matched `CssStyle` into `ImageRun.css`.
 
-- [ ] **76. Update `ImageRun.renderedSize()` to use CSS dimensions**
+- [x] **76. Update `ImageRun.renderedSize()` to use CSS dimensions**
   - **File:** `lib/models/style_run.dart:87`
   - **What:** When `css` is non-null, use CSS `width`/`height` as the primary size. Apply `maxWidth`/`maxHeight` as caps. Fall back to intrinsic dimensions when CSS values are absent. Handle `%` values relative to `renderWidth`.
 
-- [ ] **77. Read `width`/`height` HTML attributes from `<img>` tags**
+- [x] **77. Read `width`/`height` HTML attributes from `<img>` tags**
   - **File:** `lib/services/document_parser.dart:1197`
   - **What:** In the `<img>` tag handler, read `width` and `height` attributes. Pass to `_RichTextBuilder.image()` as fallback dimensions.
 
-- [ ] **78. Read `width`/`height` from OPF `<item>` manifest**
+- [x] **78. Read `width`/`height` from OPF `<item>` manifest**
   - **File:** `lib/services/document_parser.dart:355`
   - **What:** In OPF manifest parsing, read `width`/`height` attributes from `<item>` elements for images. Store in a lookup map. Use as fallback.
 
