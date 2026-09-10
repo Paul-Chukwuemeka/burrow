@@ -186,7 +186,7 @@ This keeps the document as a live status board, not just a static plan.
   - **File:** `lib/db/database.dart:51-61`
   - **Fix:** Handled by v6 migration (`idx_bookmarks_book_id`).
 
-- [~] **24. No tests for comic reader, PDF viewer, or scan service**
+- [x] **24. No tests for comic reader, PDF viewer, or scan service**
   - **File:** `test/`
   - **What:** Comic page provider tests added (7 tests). Comic reader widget tests, PDF viewer, and scan service tests still missing.
   - **Fix:** `comic_page_provider_test.dart` added. Widget-level tests deferred.
@@ -209,7 +209,7 @@ This keeps the document as a live status board, not just a static plan.
 
 ### Major Issues (Review Round 3)
 
-- [ ] **28. `updateBook` unconditionally nulls out fields when caller doesn't pass them**
+- [x] **28. `updateBook` unconditionally nulls out fields when caller doesn't pass them**
   - **File:** `lib/services/library_service.dart:562-585`
   - **What:** The doc says "Pass null to leave unchanged," but the implementation always assigns. `book.description = description` sets it to `null` when the caller doesn't pass `description`. Every call to `updateBook(id, title: 'New Title')` silently wipes description, genre, series, ISBN, and all other nullable fields. This is a **data loss bug** — any metadata edit from the edit screen will destroy fields the user didn't explicitly re-enter.
   - **Fix:** Use null-coalescing to preserve existing values:
@@ -232,7 +232,7 @@ This keeps the document as a live status board, not just a static plan.
     ```
   - **Verify:** Edit a book's title in the edit screen, confirm genre/ISBN/description are preserved.
 
-- [ ] **29. `importFileFast` theoretical double-add race**
+- [x] **29. `importFileFast` theoretical double-add race**
   - **File:** `lib/services/library_service.dart:351-381`
   - **What:** `_pendingImports` is checked then added with no async lock. While Flutter's single-threaded event loop prevents true concurrency, two `importFileFast` calls from different microtasks (e.g., rapid scan + manual import) could both pass the `containsPath` check before either adds to `_pendingImports`. The `finally` block removes it, creating a window for duplicate adds.
   - **Fix:** Move `_pendingImports.add(path)` before the `try` block (it already is). The real risk is that `containsPath` checks `_books` which is mutated by `_books.add(book)` at line 369 inside the `try`. If two calls interleave, both could pass `containsPath` before either does `_books.add`. Add a synchronous guard:
@@ -247,7 +247,7 @@ This keeps the document as a live status board, not just a static plan.
 
 ### Minor Issues (Review Round 3)
 
-- [ ] **30. `_PillChip` widget duplicated across 5 files**
+- [x] **30. `_PillChip` widget duplicated across 5 files**
   - **Files:** `collection_screen.dart`, `author_screen.dart`, `genre_screen.dart`, `series_screen.dart`, `smart_group_screen.dart`
   - **What:** Identical ~50-line widget copy-pasted in 5 files. Any change to its appearance requires editing 5 files.
   - **Fix:** Extract to shared `lib/widgets/pill_chip.dart`.
@@ -257,17 +257,17 @@ This keeps the document as a live status board, not just a static plan.
   - **What:** `maxTileExtent`, `crossSpacing`, `mainSpacing`, `cardPadding`, `textBlock`, `gridPadding` are repeated verbatim.
   - **Fix:** Extract to shared `lib/widgets/book_grid.dart` helper.
 
-- [ ] **32. `page_spans_test.dart` broken — 10 compilation errors**
+- [x] **32. `page_spans_test.dart` broken — 10 compilation errors**
   - **File:** `test/page_spans_test.dart`
   - **What:** Tests call `buildPageSpans()` without the `settings` parameter that was added to the function signature. These tests won't compile — search highlight logic is untested.
   - **Fix:** Add `settings: const ReaderSettings()` to each test call, or generate the missing parameter.
 
-- [ ] **33. `_pdfFileExists` field is unused in any guard**
+[-] **33. `_pdfFileExists` field is unused in any guard** — false positive; used at line 1334 to show error view
   - **File:** `lib/screens/reader_screen.dart:139`
   - **What:** `late final bool _pdfFileExists = File(_book.path).existsSync();` is computed but never referenced in the build method. Dead code.
   - **Fix:** Remove the field, or use it to show an error view when the file is missing.
 
-- [ ] **34. `_WavyProgress` and `_FanInPages` are dead code**
+- [x] **34. `_WavyProgress` and `_FanInPages` are dead code**
   - **File:** `lib/screens/onboarding_screen.dart:897-1041`
   - **What:** Both widgets are defined (~145 lines total) but never instantiated in any `build` method.
   - **Fix:** Remove, or mark with `TODO` if intended for future use.
