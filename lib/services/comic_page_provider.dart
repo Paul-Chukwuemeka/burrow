@@ -8,9 +8,13 @@ import 'document_parser.dart';
 
 /// Lazy provider for comic book pages from a CBZ archive.
 ///
-/// Keeps the archive structure in memory (lightweight) but only reads
-/// individual image bytes on demand. An LRU cache avoids re-reading
-/// pages the user is likely to revisit.
+/// Memory model: `ZipDecoder().decodeBytes()` decompresses all entries into
+/// the [_archive] object, which is held for the provider's lifetime. The raw
+/// file bytes are released after [open] returns. The LRU cache holds
+/// additional copies of recently viewed pages — keep it small to avoid
+/// doubling memory pressure. A full fix requires switching to a ZIP library
+/// that supports random-access reads (e.g. reading the central directory
+/// without decompressing all entries).
 class ComicPageProvider {
   ComicPageProvider._({
     required this.pageCount,
@@ -22,19 +26,18 @@ class ComicPageProvider {
   final List<ComicPageMeta> pages;
   final Archive _archive;
 
-  static const _maxCacheSize = 15;
+  /// Small cache: the archive already holds all decompressed data, so this
+  /// only avoids the per-read copy cost. Keep low to limit extra copies.
+  static const _maxCacheSize = 7;
 
   final LinkedHashMap<int, Uint8List> _cache = LinkedHashMap();
 
   /// Opens a CBZ archive and builds page metadata without reading image bytes.
   ///
-  /// TODO(#9): Currently reads the entire archive into memory. For large CBZ
-  /// files this can be O(archive_size). Consider streaming the ZIP directory
-  /// to extract entry names and sizes without loading all image bytes, then
-  /// only read individual pages in [loadPage]. The `archive` package's
-  /// `ZipDecoder` does not support directory-only reads, so this may require
-  /// switching to a lower-level ZIP parser or using `io.File.openSync`
-  /// with random-access reads on the central directory.
+  /// TODO(#38): `ZipDecoder().decodeBytes()` decompresses all entries into
+  /// memory upfront. For large CBZ files this is O(archive_size). A proper
+  /// fix would use a ZIP library that supports random-access reads of the
+  /// central directory, decompressing entries only on demand in [loadPage].
   static Future<ComicPageProvider> open(String path) async {
     final bytes = await File(path).readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);
@@ -78,7 +81,7 @@ class ComicPageProvider {
     }
 
     final entry = _archive.files.firstWhere((f) => f.name == pages[index].entryName);
-    final bytes = Uint8List.fromList(entry.content as List<int>);
+    final bytes = Uint8List.fromList(entry.content);
     _put(index, bytes);
     return bytes;
   }
@@ -97,7 +100,7 @@ class ComicPageProvider {
   }
 
   /// Evicts pages outside [center ± margin] from the cache.
-  void evictOutside(int center, {int margin = 10}) {
+  void evictOutside(int center, {int margin = 5}) {
     final keep = <int>{for (var i = center - margin; i <= center + margin; i++) i};
     _cache.removeWhere((key, _) => !keep.contains(key));
   }

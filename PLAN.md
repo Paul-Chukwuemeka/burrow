@@ -355,7 +355,7 @@ Review combined diff together before committing.
   - **What:** `totalToProcess` is set from `_metadataQueue.length` before the loop. When books are skipped (already `metadataComplete` or not found), `completed++` still increments. If you import 10 books and 3 are already complete, the progress starts at "7/10" and jumps to "10/10" at the end. The `MetadataStatus.progress` event fires for skipped books too, making the status bar unreliable.
   - **Fix:** Count only actually-processed books in `completed`, or pre-filter the queue to exclude already-complete books before emitting the `started` event.
 
-- [ ] **38. CBZ memory pressure — archive + decoded entries both live in memory**
+- [x] **38. CBZ memory pressure — archive + decoded entries both live in memory**
   - **File:** `lib/services/comic_page_provider.dart:38-68`
   - **What:** Issue #9 was marked complete but only added a TODO comment. The actual problem remains: `ZipDecoder().decodeBytes(bytes)` decompresses all entries into an `Archive` object kept alive for the provider's lifetime. The raw `bytes` `Uint8List` is also retained by the closure. For a 500-page comic this is ~2x the compressed size in memory simultaneously, and the decompressed images persist in the `Archive` until `dispose()`.
   - **Fix (minimum):** After building `pageMetas`, drop the reference to the raw `bytes` (it's a local, so it should be GC'd, but verify the `Archive` doesn't hold it). Long-term: switch to file-backed random-access ZIP reading.
