@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
@@ -144,9 +142,6 @@ class BookListCard extends StatelessWidget {
           fontSize: 12,
         );
 
-    final file = File(book.path);
-    final fileSize =
-        file.existsSync() ? _formatFileSize(file.lengthSync()) : '';
     final formatLabel = book.format.name.toUpperCase();
 
     return Padding(
@@ -218,9 +213,7 @@ class BookListCard extends StatelessWidget {
                                     ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    fileSize.isEmpty
-                                        ? formatLabel
-                                        : '$formatLabel, $fileSize',
+                                    formatLabel,
                                     style: metaStyle,
                                   ),
                                 ],
@@ -419,15 +412,6 @@ class _SubtitleLine extends StatelessWidget {
       ],
     );
   }
-}
-
-String _formatFileSize(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  if (bytes < 1024 * 1024 * 1024) {
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
 }
 
 /// Press-to-scale animation wrapper. Shrinks to 96 % on pointer-down and

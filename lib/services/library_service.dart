@@ -49,10 +49,13 @@ class LibraryService extends ChangeNotifier {
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
+  List<Book>? _sortedCache;
   final Set<String> _pendingImports = {};
   final List<db.Collection> _collections = [];
   ReaderSettings settings = ReaderSettings();
   String libraryLayout = 'grid';
+
+  void _invalidateSortCache() => _sortedCache = null;
 
   // Background metadata extraction queue.
   final Queue<String> _metadataQueue = Queue<String>();
@@ -89,10 +92,14 @@ class LibraryService extends ChangeNotifier {
 
   /// Test-only: injects books without touching the database.
   @visibleForTesting
-  void debugAddAll(Iterable<Book> books) => _books.addAll(books);
+  void debugAddAll(Iterable<Book> books) {
+    _books.addAll(books);
+    _invalidateSortCache();
+  }
 
   /// Books sorted for display: recently read first, then newest imports.
   List<Book> get sorted {
+    if (_sortedCache != null) return _sortedCache!;
     final list = [..._books];
     list.sort((a, b) {
       if ((a.lastReadAt > 0) != (b.lastReadAt > 0)) {
@@ -102,6 +109,7 @@ class LibraryService extends ChangeNotifier {
           ? b.lastReadAt.compareTo(a.lastReadAt)
           : b.addedAt.compareTo(a.addedAt);
     });
+    _sortedCache = list;
     return list;
   }
 
@@ -144,6 +152,7 @@ class LibraryService extends ChangeNotifier {
     _books
       ..clear()
       ..addAll(await _db!.getAllBooks());
+    _invalidateSortCache();
 
     // Load collections.
     _collections
@@ -300,6 +309,7 @@ class LibraryService extends ChangeNotifier {
         debugPrint('Skipping malformed backup entry: $e');
       }
     }
+    _invalidateSortCache();
 
     // Restore collections (skip duplicates by id).
     for (final item in collectionsJson) {
@@ -376,8 +386,10 @@ class LibraryService extends ChangeNotifier {
         if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
       } catch (e) {
         _books.removeWhere((b) => b.id == book.id);
+        _invalidateSortCache();
         rethrow;
       }
+      _invalidateSortCache();
       notifyListeners();
 
       // Queue metadata extraction for background processing.
@@ -539,6 +551,7 @@ class LibraryService extends ChangeNotifier {
     final book = _books.where((b) => b.id == id).firstOrNull;
     if (book == null) return;
     _books.remove(book);
+    _invalidateSortCache();
     final cover = book.coverPath;
     if (cover != null) {
       try {

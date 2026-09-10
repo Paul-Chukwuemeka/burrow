@@ -34,10 +34,11 @@ class BookCover extends StatelessWidget {
     Widget content = Stack(
       fit: StackFit.expand,
       children: [
-        if (book.coverPath != null && File(book.coverPath!).existsSync())
+        if (book.coverPath != null)
           Image.file(
             File(book.coverPath!),
             fit: BoxFit.cover,
+            gaplessPlayback: true,
             errorBuilder: (_, _, _) => _PlaceholderCover(book: book),
           )
         else
