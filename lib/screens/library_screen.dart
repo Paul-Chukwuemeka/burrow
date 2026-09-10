@@ -1468,14 +1468,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       itemCount: books.length,
       itemBuilder: (context, i) {
         final book = books[i];
-        return _Reveal(
-          key: ValueKey(book.id),
-          delay: Duration(milliseconds: 40 * (i.clamp(0, 11))),
-          child: BookCard(
-            book: book,
-            onTap: () => _openBookInfo(book, heroTag: 'tile-${book.id}'),
-            onLongPress: () => _showBookActions(book),
-          ),
+        return BookCard(
+          book: book,
+          onTap: () => _openBookInfo(book, heroTag: 'tile-${book.id}'),
+          onLongPress: () => _showBookActions(book),
         );
       },
     );
@@ -1486,14 +1482,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       itemCount: books.length,
       itemBuilder: (context, i) {
         final book = books[i];
-        return _Reveal(
-          key: ValueKey(book.id),
-          delay: Duration(milliseconds: 30 * (i.clamp(0, 11))),
-          child: BookListCard(
-            book: book,
-            onTap: () => _openBookInfo(book, heroTag: 'tile-${book.id}'),
-            onLongPress: () => _showBookActions(book),
-          ),
+        return BookListCard(
+          book: book,
+          onTap: () => _openBookInfo(book, heroTag: 'tile-${book.id}'),
+          onLongPress: () => _showBookActions(book),
         );
       },
     );
@@ -1658,56 +1650,6 @@ class _BurrowHeader extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// Staggered entrance: fades, slides and scales its child in once.
-class _Reveal extends StatefulWidget {
-  const _Reveal({super.key, required this.delay, required this.child});
-
-  final Duration delay;
-  final Widget child;
-
-  @override
-  State<_Reveal> createState() => _RevealState();
-}
-
-class _RevealState extends State<_Reveal> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 480),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(widget.delay, () {
-      if (mounted) _controller.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final animation = CurvedAnimation(
-      parent: _controller,
-      curve: Easing.emphasizedDecelerate,
-    );
-    return FadeTransition(
-      opacity: animation,
-      child: SlideTransition(
-        position: Tween(begin: const Offset(0, 0.08), end: Offset.zero)
-            .animate(animation),
-        child: ScaleTransition(
-          scale: Tween(begin: 0.94, end: 1.0).animate(animation),
-          child: widget.child,
-        ),
-      ),
-    );
-  }
-}
-
 class _SearchField extends StatelessWidget {
   const _SearchField({required this.controller, required this.onChanged});
 
