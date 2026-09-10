@@ -981,3 +981,15 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Library Performance Fixes (Round 10)
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 84 | Blocker | `lib/widgets/book_cover.dart:38` | `Image.file()` with no `cacheWidth`/`cacheHeight` — full-res bitmaps in memory | [x] |
+| 85 | Major | `lib/widgets/book_card.dart:61,174` | Double `Clip.antiAlias` per card — redundant offscreen buffers | [x] |
+| 86 | Major | `lib/utils/book_title.dart:83` | `displayTitle` runs 7 regexes per call, no cache | [x] |
+| 87 | Minor | `lib/services/library_service.dart:502` | `notifyListeners()` per book during metadata extraction | [x] |
+| 88 | Minor | `lib/screens/library_screen.dart:162-227` | `_visibleBooks` intermediate `.toList()` per filter step | [x] |
