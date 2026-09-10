@@ -168,7 +168,7 @@ class LibraryService extends ChangeNotifier {
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;
 
     // Clean up orphaned cover files (e.g. from interrupted imports).
-    _cleanupOrphanedCovers();
+    await _cleanupOrphanedCovers();
 
     notifyListeners();
   }
@@ -662,10 +662,10 @@ class LibraryService extends ChangeNotifier {
 
   /// Removes cover files in the covers directory that aren't referenced by
   /// any book. Runs once at startup; safe to call if the directory is missing.
-  void _cleanupOrphanedCovers() {
+  Future<void> _cleanupOrphanedCovers() async {
     try {
-      final dir = _coversDir;
-      if (dir == null || !dir.existsSync()) return;
+      final dir = await _ensureCoversDir();
+      if (!dir.existsSync()) return;
       final referenced = <String>{
         for (final b in _books)
           if (b.coverPath != null) b.coverPath!,
