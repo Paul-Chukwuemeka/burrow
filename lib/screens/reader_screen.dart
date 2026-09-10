@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/bookmark_helper.dart';
+import '../controllers/pdf_controller.dart';
 import '../controllers/reading_session.dart';
 import '../services/brightness_controller.dart';
 import '../models/book.dart';
@@ -130,12 +130,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool _searchDone = false;
 
   // PDF state.
-  final PdfViewerController _pdfController = PdfViewerController();
-  int _pdfPage = 1;
-  int _pdfPageCount = 0;
-  List<PdfOutlineNode> _pdfOutline = [];
-  bool _pdfLoading = true;
-  late final bool _pdfFileExists = File(_book.path).existsSync();
+  late final PdfReaderController _pdfCtrl;
 
   // Comic state.
   List<Uint8List> _comicPages = [];
@@ -180,7 +175,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       isPdf: _isPdf,
       getCurrentPosition: () {
         if (_isPdf) {
-          return (chapter: _pdfPage, offset: 0, snippet: 'Page $_pdfPage');
+          return (chapter: _pdfCtrl.pdfPage, offset: 0, snippet: 'Page ${_pdfCtrl.pdfPage}');
         }
         final ref = _refAt(_flatPage);
         if (ref == null || _doc == null) return null;
@@ -191,6 +186,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         return (chapter: ref.$1, offset: offset, snippet: snippet);
       },
     );
+    _pdfCtrl = PdfReaderController(book: _book, settings: _settings);
+    _pdfCtrl.addListener(() {
+      if (mounted) setState(() {});
+    });
     _bookmarkCtrl.addListener(() {
       if (mounted) setState(() {});
     });
@@ -205,7 +204,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _bookmarkCtrl.loadBookmarks();
     _sessionCtrl.startSession();
     if (_isPdf) {
-      _pdfController.addListener(_onPdfViewChanged);
+      _pdfCtrl.pdfController.addListener(_pdfCtrl.onPdfViewChanged);
     } else if (!_isComic) {
       _loadDocument();
     }
@@ -215,36 +214,11 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _searchController.addListener(_onSearchTextChanged);
   }
 
-  /// The controller is a `ValueListenable<Matrix4>`; poll page state on change.
-  void _onPdfViewChanged() {
-    if (!_pdfController.isReady) return;
-    final count = _pdfController.pageCount;
-    final page = _pdfController.pageNumber ?? 1;
-    if (count == 0) return;
-    if (page != _pdfPage || count != _pdfPageCount) {
-      setState(() {
-        _pdfPage = page;
-        _pdfPageCount = count;
-      });
-      _onPositionChanged(page - 1, 0);
-      _bookmarkCtrl.checkBookmarkState();
-    }
-  }
-
-  Future<void> _loadPdfOutline(PdfDocument document) async {
-    try {
-      final outline = await document.loadOutline();
-      if (!mounted) return;
-      setState(() => _pdfOutline = outline);
-    } catch (e) {
-      // Outline not available for this PDF.
-      debugPrint('Failed to load PDF outline: $e');
-    }
-  }
+  Future<void> _loadPdfOutline(PdfDocument document) =>
+      _pdfCtrl.loadPdfOutline(document);
 
   void _jumpToPdfPage(int pageNumber) {
-    if (!_pdfController.isReady) return;
-    _pdfController.goToPage(pageNumber: pageNumber);
+    _pdfCtrl.jumpToPdfPage(pageNumber);
     if (!_chromeVisible) {
       setState(() => _chromeVisible = true);
     }
@@ -298,10 +272,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
     _bgDrivers.clear();
     _paginationCache.clear();
-    if (_isPdf) _pdfController.removeListener(_onPdfViewChanged);
+    _pdfCtrl.dispose();
     _search?.dispose();
-    _pdfSearcher?.resetTextSearch();
-    _pdfSearcher = null;
     _searchController.dispose();
     _searchFocusNode.dispose();
     _dictionaryButtonEntry?.remove();
@@ -350,12 +322,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _flushSave() {
     if (_isPdf) {
-      if (_pdfPageCount > 0) {
+      if (_pdfCtrl.pdfPageCount > 0) {
         widget.library.savePosition(
           id: _book.id,
-          chapter: _pdfPage - 1,
+          chapter: _pdfCtrl.pdfPage - 1,
           offset: 0,
-          progress: _pdfPage / _pdfPageCount,
+          progress: _pdfCtrl.pdfPage / _pdfCtrl.pdfPageCount,
         );
       }
       return;
@@ -714,8 +686,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     // Apply hardware brightness.
     BrightnessController.instance.apply(_settings.brightness);
     // Relayout PDF when scroll direction changes.
-    if (_isPdf && _pdfController.isReady) {
-      _pdfController.invalidate();
+    if (_isPdf && _pdfCtrl.pdfController.isReady) {
+      _pdfCtrl.pdfController.invalidate();
     }
     // Repaginate only when the layout-affecting signature changed.
     final viewport = _lastViewport;
@@ -757,7 +729,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _initSearch() {
     if (_isPdf) {
       if (_pdfSearcher != null) return;
-      _pdfSearcher = PdfTextSearcher(_pdfController);
+      _pdfSearcher = PdfTextSearcher(_pdfCtrl.pdfController);
       _pdfSearcher!.addListener(_onPdfSearchChanged);
       return;
     }
@@ -1246,14 +1218,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // ------------------------------- PDF ---------------------------------------
 
   Widget _buildPdf(ReaderTheme theme) {
-    if (!_pdfFileExists) {
+    if (!_pdfCtrl.pdfFileExists) {
       return const _ErrorView(message: 'File not found');
     }
     final viewer = PdfViewer.file(
       _book.path,
       initialPageNumber:
           _book.lastChapter + 1 < 1 ? 1 : _book.lastChapter + 1,
-      controller: _pdfController,
+      controller: _pdfCtrl.pdfController,
         params: PdfViewerParams(
           backgroundColor: theme.background,
           textSelectionParams: PdfTextSelectionParams(
@@ -1326,7 +1298,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 },
           onDocumentChanged: (document) {
           if (document == null) return;
-          setState(() => _pdfLoading = false);
+          setState(() => _pdfCtrl.pdfLoading = false);
           _loadPdfOutline(document);
         },
         viewerOverlayBuilder: (context, size, handleLinkTap) => [
@@ -1350,7 +1322,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     return Stack(
       children: [
         Positioned.fill(child: viewer),
-        if (_pdfLoading)
+        if (_pdfCtrl.pdfLoading)
           Positioned.fill(
             child: Container(
               color: theme.background,
@@ -1363,14 +1335,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           ignoring: !_chromeVisible,
           child: _chrome(
             centerLabel:
-                _pdfPageCount == 0 ? '-/-' : 'Page $_pdfPage of $_pdfPageCount',
-            sliderMax: _pdfPageCount > 1 ? _pdfPageCount : 1,
-            sliderValue: _pdfPage.clamp(1, _pdfPageCount > 0 ? _pdfPageCount : 1),
-            sliderLabel: _pdfPageCount == 0
+                _pdfCtrl.pdfPageCount == 0 ? '-/-' : 'Page $_pdfCtrl.pdfPage of $_pdfCtrl.pdfPageCount',
+            sliderMax: _pdfCtrl.pdfPageCount > 1 ? _pdfCtrl.pdfPageCount : 1,
+            sliderValue: _pdfCtrl.pdfPage.clamp(1, _pdfCtrl.pdfPageCount > 0 ? _pdfCtrl.pdfPageCount : 1),
+            sliderLabel: _pdfCtrl.pdfPageCount == 0
                 ? '-/-'
-                : '${((_pdfPage / _pdfPageCount) * 100).round()}%',
+                : '${((_pdfCtrl.pdfPage / _pdfCtrl.pdfPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              if (_pdfController.isReady) _pdfController.goToPage(pageNumber: v);
+              if (_pdfCtrl.pdfController.isReady) _pdfCtrl.pdfController.goToPage(pageNumber: v);
             },
           ),
         ),
@@ -1918,10 +1890,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _flip(int direction) {
     if (_isPdf) {
-      if (!_pdfController.isReady) return;
-      final target = _pdfPage + direction;
-      if (target < 1 || target > _pdfPageCount) return;
-      _pdfController.goToPage(pageNumber: target);
+      if (!_pdfCtrl.pdfController.isReady) return;
+      final target = _pdfCtrl.pdfPage + direction;
+      if (target < 1 || target > _pdfCtrl.pdfPageCount) return;
+      _pdfCtrl.pdfController.goToPage(pageNumber: target);
       return;
     }
     if (_isComic) {
@@ -1969,12 +1941,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _showTocSheet() {
     if (_isPdf) {
       // PDF: show outline if available.
-      if (_pdfOutline.isEmpty) return;
+      if (_pdfCtrl.pdfOutline.isEmpty) return;
       TocSheet.showPdf(
         context,
         settings: _settings,
-        outline: _pdfOutline,
-        currentPage: _pdfPage,
+        outline: _pdfCtrl.pdfOutline,
+        currentPage: _pdfCtrl.pdfPage,
         onJump: _jumpToPdfPage,
         bookmarks: _bookmarkCtrl.bookmarks,
         onDeleteBookmark: (bm) async {
@@ -2016,7 +1988,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _showGoToPageDialog() {
     final theme = _settings.colors;
     final controller = TextEditingController();
-    final maxPage = _isPdf ? _pdfPageCount : (_isComic ? _comicPageCount : _flatPageCount);
+    final maxPage = _isPdf ? _pdfCtrl.pdfPageCount : (_isComic ? _comicPageCount : _flatPageCount);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2173,14 +2145,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     onChanged: _onSettingsChanged,
                     format: _book.format,
                     onPdfFitWidth: _isPdf
-                        ? () => _pdfController.goToPage(
-                              pageNumber: _pdfPage,
+                        ? () => _pdfCtrl.pdfController.goToPage(
+                              pageNumber: _pdfCtrl.pdfPage,
                               anchor: PdfPageAnchor.left,
                             )
                         : null,
                     onPdfFitPage: _isPdf
-                        ? () => _pdfController.goToPage(
-                              pageNumber: _pdfPage,
+                        ? () => _pdfCtrl.pdfController.goToPage(
+                              pageNumber: _pdfCtrl.pdfPage,
                               anchor: PdfPageAnchor.center,
                             )
                         : null,
