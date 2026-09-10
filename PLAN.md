@@ -718,7 +718,7 @@ Review combined diff together before committing.
 
 ### Major Issues (Review Round 9)
 
-- [ ] **61. `_onLibraryChanged` only rebuilds on layout change — all other mutations invisible**
+- [x] **61. `_onLibraryChanged` only rebuilds on layout change — all other mutations invisible**
   - **File:** `lib/screens/library_screen.dart:118-125`
   - **What:** The `LibraryService` listener only calls `setState` when the layout mode changes. Book deletion, collection changes, reading progress updates, and cover generation all call `notifyListeners()` but are silently dropped. The library screen doesn't update.
   - **Failure scenario:** User deletes a book. Book removed from `_books`, `notifyListeners()` fires. `_onLibraryChanged` doesn't rebuild (layout unchanged). Deleted book still appears until navigation.
@@ -754,7 +754,7 @@ Review combined diff together before committing.
 
 ### Minor Issues (Review Round 9)
 
-- [ ] **64. `_visibleBooks` cache not invalidated on library changes**
+- [x] **64. `_visibleBooks` cache not invalidated on library changes**
   - **File:** `lib/screens/library_screen.dart:164`
   - **What:** Cache key uses `books.length`. If metadata changes without count change, sorted order is stale.
   - **Fix:** Clear `_cacheKey` in `_onLibraryChanged` (combined with #61 fix).
@@ -764,12 +764,12 @@ Review combined diff together before committing.
   - **What:** Four separate `customStatement` calls. If any fails mid-way, DB is left inconsistent.
   - **Fix:** Wrap in `_db!.transaction()`.
 
-- [ ] **66. Synchronous file I/O in `_showBookDetailsSheet`**
+- [x] **66. Synchronous file I/O in `_showBookDetailsSheet`**
   - **File:** `lib/screens/library_screen.dart:608-609`
   - **What:** `existsSync()` and `lengthSync()` block UI thread on slow storage.
   - **Fix:** Compute file size asynchronously before showing sheet.
 
-- [ ] **67. `_CollectionPickerTile` recreates `FutureBuilder` futures on rebuild**
+- [x] **67. `_CollectionPickerTile` recreates `FutureBuilder` futures on rebuild**
   - **File:** `lib/screens/library_screen.dart:762`
   - **What:** Passing `Future<bool>` to `StatelessWidget`. On `setSheetState`, every tile's `FutureBuilder` restarts.
   - **Fix:** Resolve eagerly and pass `bool`, or make tile a `StatefulWidget`.
