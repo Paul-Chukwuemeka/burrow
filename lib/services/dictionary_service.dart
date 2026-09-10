@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:lexicor/lexicor.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -33,14 +32,10 @@ class DictionaryService {
 
   /// Initialises the cached path and checks download status. Call once at app start.
   Future<void> init() async {
-    try {
-      final file = await _dbFile;
-      _dbPath = file.path;
-      _isDownloaded = file.existsSync();
-      await _cleanupStaleTempFiles();
-    } catch (e) {
-      debugPrint('DictionaryService.init failed: $e');
-    }
+    final file = await _dbFile;
+    _dbPath = file.path;
+    _isDownloaded = file.existsSync();
+    await _cleanupStaleTempFiles();
   }
 
   /// Ensures the Lexicor engine is initialised. Downloads the DB on first use.

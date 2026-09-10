@@ -1,9 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/reader_settings.dart';
 import 'screens/library_screen.dart';
@@ -14,45 +10,10 @@ import 'theme/burrow_tokens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // PDF renderer — non-fatal if it fails; PDFs will be unavailable.
-  try {
-    await PdfrxEntryFunctions.instance.init();
-  } catch (e) {
-    debugPrint('Pdfrx init failed (PDFs unavailable): $e');
-  }
-
-  // Dictionary — non-fatal if it fails; lookups will be disabled.
-  try {
-    await DictionaryService.instance.init();
-  } catch (e) {
-    debugPrint('Dictionary init failed (lookups disabled): $e');
-  }
-
-  // Library — fatal on first attempt, but we try to recover from corrupted data.
-  var library = LibraryService();
-  try {
-    await library.load();
-  } catch (e) {
-    debugPrint('Library load failed, attempting recovery: $e');
-    library.dispose();
-    // Delete the corrupted database and clear corrupted SharedPreferences.
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final dbFile = File('${dir.path}/burrow.db');
-      if (await dbFile.exists()) await dbFile.delete();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-    } catch (_) {}
-    // Retry with a fresh database.
-    library = LibraryService();
-    try {
-      await library.load();
-    } catch (e2) {
-      debugPrint('Library load failed after recovery: $e2');
-    }
-  }
-
+  await PdfrxEntryFunctions.instance.init();
+  await DictionaryService.instance.init();
+  final library = LibraryService();
+  await library.load();
   runApp(BurrowApp(library: library));
 }
 

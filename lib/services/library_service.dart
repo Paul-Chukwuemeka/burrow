@@ -117,21 +117,7 @@ class LibraryService extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   Future<void> load() async {
-    SharedPreferences prefs;
-    try {
-      prefs = await SharedPreferences.getInstance();
-    } catch (e) {
-      debugPrint('SharedPreferences corrupted, clearing: $e');
-      // If prefs are corrupted, clear and retry.
-      try {
-        final fresh = await SharedPreferences.getInstance();
-        await fresh.clear();
-        prefs = fresh;
-      } catch (_) {
-        // Give up — proceed with defaults.
-        return;
-      }
-    }
+    final prefs = await SharedPreferences.getInstance();
 
     _db ??= db.AppDatabase();
 
