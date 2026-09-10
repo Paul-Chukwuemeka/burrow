@@ -596,3 +596,57 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Review Round 7 — On-Call Mindset Review
+
+### Major Issues (Review Round 7)
+
+- [ ] **55. `_cleanupOrphanedCovers` is dead code — never runs**
+  - **File:** `lib/services/library_service.dart:170-171` (call site) and `665-681` (implementation)
+  - **What:** `load()` calls `_cleanupOrphanedCovers()` at line 171. At this point, `_coversDir` is always `null` — it's only initialized in `_ensureCoversDir()` (line 658), which is called from `_saveCover()` (line 643). The cleanup method checks `if (dir == null || !dir.existsSync()) return;` and exits immediately. The orphaned cover cleanup from #51 never executes.
+  - **Failure scenario:** User imports 50 books, the app is killed mid-import 10 times. 10 orphaned cover files accumulate on disk forever. The cleanup function exists but is a no-op.
+  - **Fix:** Initialize the covers directory before calling cleanup. Either make `_cleanupOrphanedCovers` async and call `_ensureCoversDir()` internally, or use `_ensureCoversDir().then((_) => _cleanupOrphanedCovers())` at the call site.
+
+### Nit Issues (Review Round 7)
+
+- [ ] **56. `_showGoToPageDialog` uses `Navigator.of(context)` instead of `Navigator.of(ctx)`**
+  - **File:** `lib/screens/reader_screen.dart:1652`
+  - **What:** The `goToPage` function does `Navigator.of(context).pop()` using the State's context, not the dialog's builder context `ctx`. Both resolve to the same Navigator (dialog is pushed onto the same navigator), so this works. But it's less precise than the original `Navigator.of(ctx).pop()` — if the dialog were ever shown on a nested navigator, this would pop the wrong route.
+  - **Fix:** Change to `Navigator.of(ctx).pop()`. Since `goToPage` is defined outside the `builder` callback, it needs access to `ctx`. Either pass `ctx` as a parameter or move the function inside the builder.
+
+- [ ] **57. `deleteBookWithFile` removes book from `_books` before DB cascade deletes**
+  - **File:** `lib/services/library_service.dart:530-559`
+  - **What:** `_books.remove(book)` at line 533 happens before the DB deletes at lines 550-557. If any DB delete fails, the book is gone from memory but orphaned rows remain in the database. Judgment call — current order ensures UI updates immediately, and DB failures on local SQLite are extremely rare. But the inverse order would be more defensive.
+  - **Fix (judgment call):** Either leave as-is (UI responsiveness priority) or swap order to DB deletes first, then `_books.remove`.
+
+---
+
+## Coordination — Round 7 Agent Split
+
+### Agent A — Single fix
+
+Issues: #55
+
+| # | File | Effort |
+|---|------|--------|
+| 55 | `lib/services/library_service.dart` | small (fix _coversDir initialization) |
+
+### Agent B — Nits (optional, low priority)
+
+Issues: #56 → #57
+
+| # | File | Effort |
+|---|------|--------|
+| 56 | `lib/screens/reader_screen.dart` | trivial (pass ctx to goToPage) |
+| 57 | `lib/services/library_service.dart` | judgment call (reorder deletes) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
