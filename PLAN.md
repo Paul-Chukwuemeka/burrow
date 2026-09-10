@@ -938,15 +938,15 @@ EPUBs take 1.5–10 seconds to open. Three major bottlenecks:
   - **File:** `lib/services/epub_css_parser.dart:389-404`
   - **What:** Replace sequential `await fontLoader.load()` with `Future.wait()`.
 
-- [ ] **81. Lazy pagination — show reader after first chapters**
+[-] **81. Lazy pagination — show reader after first chapters** — already implemented via `_bgNextBatch`/`_lazyRunning` system
   - **File:** `lib/screens/reader_screen.dart:1448-1525`
   - **What:** Paginate first 2-3 chapters eagerly, show reader immediately, paginate rest in background.
 
-- [ ] **82. Cache parsed ParsedDocument to disk**
+- [x] **82. Cache parsed ParsedDocument to disk**
   - **File:** `lib/services/document_parser.dart`, `lib/screens/reader_screen.dart:209-236`
   - **What:** Serialize chapter text/runs/images to disk cache. Load from cache on subsequent opens. Cache key: book ID + file mtime.
 
-- [ ] **83. Background image decoding**
+[-] **83. Background image decoding** — Flutter already decodes images lazily during widget build; pre-decoding in isolate requires `image` package + `dart:ui` conversion, marginal benefit
   - **File:** `lib/services/document_parser.dart` (in `_parseIsolate`), `lib/models/style_run.dart`
   - **What:** Decode images in background isolate during parsing. Store decoded pixel data so main thread doesn't decode during widget build.
 

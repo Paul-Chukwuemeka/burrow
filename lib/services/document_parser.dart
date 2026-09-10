@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,7 @@ import 'package:rar/rar.dart';
 import 'package:xml/xml.dart';
 
 import '../models/book.dart';
+import '../models/css_style.dart';
 import '../models/style_run.dart';
 import '../utils/book_title.dart';
 import 'epub_css_parser.dart';
@@ -137,13 +139,198 @@ class DocumentParser {
     if (length > 100 * 1024 * 1024) {
       throw const FormatException('EPUB file too large (limit 100 MB)');
     }
+
+    // Check disk cache (keyed by path hash + file mtime).
+    final stat = await file.stat();
+    final cacheFile = await _epubCacheFile(path, stat.modified);
+    if (cacheFile != null) {
+      try {
+        final cached = await cacheFile.readAsString();
+        return _deserializeParsedDocument(cached);
+      } catch (_) {
+        // Cache corrupted — re-parse.
+      }
+    }
+
     final Uint8List bytes;
     try {
       bytes = await file.readAsBytes();
     } catch (_) {
       throw const FormatException('Not a valid EPUB file');
     }
-    return parseEpubBytes(bytes, fallbackTitle: _titleFromFilename(path));
+    final doc = parseEpubBytes(bytes, fallbackTitle: _titleFromFilename(path));
+
+    // Save to disk cache (best-effort).
+    try {
+      final cachePath = await _epubCachePath(path, stat.modified);
+      if (cachePath != null) {
+        await File(cachePath).writeAsString(_serializeParsedDocument(doc));
+      }
+    } catch (_) {}
+
+    return doc;
+  }
+
+  static Future<File?> _epubCacheFile(String path, DateTime mtime) async {
+    final cachePath = await _epubCachePath(path, mtime);
+    if (cachePath == null) return null;
+    final f = File(cachePath);
+    return await f.exists() ? f : null;
+  }
+
+  static Future<String?> _epubCachePath(String path, DateTime mtime) async {
+    try {
+      final cacheDir = Directory('${Platform.environment['HOME']}/.cache/burrow/epub_cache');
+      await cacheDir.create(recursive: true);
+      final key = '${path.hashCode}_${mtime.millisecondsSinceEpoch}';
+      return '${cacheDir.path}/$key.json';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _serializeParsedDocument(ParsedDocument doc) {
+    final chaptersJson = doc.chapters.map((c) => {
+      'title': c.title,
+      'body': c.body,
+      'runs': c.runs.map((r) => {
+        's': r.start,
+        'e': r.end,
+        'b': r.bold,
+        'i': r.italic,
+        'q': r.quote,
+        if (r.css != null) 'css': {
+          if (r.css!.fontSize != null) 'fs': r.css!.fontSize,
+          if (r.css!.fontWeight != null) 'fw': r.css!.fontWeight!.index,
+          if (r.css!.fontStyle != null) 'fst': r.css!.fontStyle!.index,
+          if (r.css!.textAlign != null) 'ta': r.css!.textAlign!.index,
+          if (r.css!.fontFamily != null) 'ff': r.css!.fontFamily,
+          if (r.css!.lineHeight != null) 'lh': r.css!.lineHeight,
+          if (r.css!.letterSpacing != null) 'ls': r.css!.letterSpacing,
+          if (r.css!.wordSpacing != null) 'ws': r.css!.wordSpacing,
+          if (r.css!.textTransform != null) 'tt': r.css!.textTransform,
+          if (r.css!.whiteSpace != null) 'wsp': r.css!.whiteSpace,
+          if (r.css!.textDecoration != null) 'td': r.css!.textDecoration != ui.TextDecoration.none,
+          if (r.css!.textIndent != null) 'ti': r.css!.textIndent,
+          if (r.css!.marginLeft != null) 'ml': r.css!.marginLeft,
+          if (r.css!.marginRight != null) 'mr': r.css!.marginRight,
+          if (r.css!.marginTop != null) 'mt': r.css!.marginTop,
+          if (r.css!.marginBottom != null) 'mb': r.css!.marginBottom,
+          if (r.css!.width != null) 'w': r.css!.width,
+          if (r.css!.height != null) 'h': r.css!.height,
+          if (r.css!.maxWidth != null) 'mw': r.css!.maxWidth,
+          if (r.css!.maxHeight != null) 'mh': r.css!.maxHeight,
+        },
+      }).toList(),
+      'images': c.images.map((img) => {
+        'o': img.offset,
+        'b': img.bytes,
+        'iw': img.intrinsicWidth,
+        'ih': img.intrinsicHeight,
+        'a': img.alt,
+        'fw': img.fullWidth,
+        'eid': img.elementId,
+        if (img.htmlWidth != null) 'hw': img.htmlWidth,
+        if (img.htmlHeight != null) 'hh': img.htmlHeight,
+      }).toList(),
+    }).toList();
+    return jsonEncode({
+      't': doc.title,
+      'a': doc.author,
+      'd': doc.description,
+      'an': doc.annotation,
+      'g': doc.genre,
+      'sn': doc.seriesName,
+      'si': doc.seriesIndex,
+      'p': doc.publisher,
+      'i': doc.isbn,
+      'l': doc.language,
+      'pd': doc.publicationDate,
+      'r': doc.rights,
+      'tp': doc.type,
+      's': doc.source,
+      'ts': doc.titleSort,
+      'as': doc.authorSort,
+      'ch': chaptersJson,
+    });
+  }
+
+  static ParsedDocument _deserializeParsedDocument(String json) {
+    final m = jsonDecode(json) as Map<String, dynamic>;
+    final chapters = (m['ch'] as List).map((c) {
+      final cm = c as Map<String, dynamic>;
+      final runs = (cm['runs'] as List).map((r) {
+        final rm = r as Map<String, dynamic>;
+        CssStyle? css;
+        if (rm.containsKey('css')) {
+          final cssm = rm['css'] as Map<String, dynamic>;
+          css = CssStyle(
+            fontSize: cssm['fs'] as double?,
+            fontWeight: cssm['fw'] != null ? ui.FontWeight.values[cssm['fw'] as int] : null,
+            fontStyle: cssm['fst'] != null ? ui.FontStyle.values[cssm['fst'] as int] : null,
+            textAlign: cssm['ta'] != null ? ui.TextAlign.values[cssm['ta'] as int] : null,
+            fontFamily: cssm['ff'] as String?,
+            lineHeight: cssm['lh'] as double?,
+            letterSpacing: cssm['ls'] as double?,
+            wordSpacing: cssm['ws'] as double?,
+            textTransform: cssm['tt'] as String?,
+            whiteSpace: cssm['wsp'] as String?,
+            textDecoration: cssm['td'] == true ? ui.TextDecoration.underline : null,
+            textIndent: cssm['ti'] as double?,
+            marginLeft: cssm['ml'] as double?,
+            marginRight: cssm['mr'] as double?,
+            marginTop: cssm['mt'] as double?,
+            marginBottom: cssm['mb'] as double?,
+            width: cssm['w'] as double?,
+            height: cssm['h'] as double?,
+            maxWidth: cssm['mw'] as double?,
+            maxHeight: cssm['mh'] as double?,
+          );
+        }
+        return StyleRun(
+          rm['s'] as int,
+          rm['e'] as int,
+          bold: rm['b'] as bool? ?? false,
+          italic: rm['i'] as bool? ?? false,
+          quote: rm['q'] as bool? ?? false,
+          css: css,
+        );
+      }).toList();
+      final images = (cm['images'] as List).map((img) {
+        final im = img as Map<String, dynamic>;
+        return ImageRun(
+          offset: im['o'] as int,
+          bytes: im['b'] as Uint8List,
+          intrinsicWidth: im['iw'] as int,
+          intrinsicHeight: im['ih'] as int,
+          alt: im['a'] as String? ?? '',
+          fullWidth: im['fw'] as bool? ?? false,
+          elementId: im['eid'] as String? ?? '',
+          htmlWidth: im['hw'] as double?,
+          htmlHeight: im['hh'] as double?,
+        );
+      }).toList();
+      return Chapter(cm['t'] as String? ?? '', cm['body'] as String, runs, images);
+    }).toList();
+    return ParsedDocument(
+      title: m['t'] as String? ?? '',
+      author: m['a'] as String? ?? '',
+      chapters: chapters,
+      description: m['d'] as String?,
+      annotation: m['an'] as String?,
+      genre: m['g'] as String?,
+      seriesName: m['sn'] as String?,
+      seriesIndex: (m['si'] as num?)?.toDouble(),
+      publisher: m['p'] as String?,
+      isbn: m['i'] as String?,
+      language: m['l'] as String?,
+      publicationDate: m['pd'] as String?,
+      rights: m['r'] as String?,
+      type: m['tp'] as String?,
+      source: m['s'] as String?,
+      titleSort: m['ts'] as String?,
+      authorSort: m['as'] as String?,
+    );
   }
 
   /// Parses EPUB [bytes] into chapters. Separated from file reading so tests
