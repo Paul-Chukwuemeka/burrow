@@ -1646,10 +1646,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final theme = _settings.colors;
     final controller = TextEditingController();
     final maxPage = _isPdf ? _pdfCtrl.pdfPageCount : (_isComic ? _comicCtrl.comicPageCount : _flatPageCount);
-    void goToPage() {
+    void goToPage(BuildContext dialogContext) {
       final page = int.tryParse(controller.text);
       if (page != null && page >= 1 && page <= maxPage) {
-        Navigator.of(context).pop();
+        Navigator.of(dialogContext).pop();
         if (_isPdf) {
           _jumpToPdfPage(page);
         } else if (_isComic) {
@@ -1683,7 +1683,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               borderSide: BorderSide(color: theme.accent),
             ),
           ),
-          onSubmitted: (_) => goToPage(),
+          onSubmitted: (_) => goToPage(ctx),
         ),
         actions: [
           TextButton(
@@ -1691,7 +1691,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             child: Text('Cancel', style: TextStyle(color: theme.muted)),
           ),
           TextButton(
-            onPressed: goToPage,
+            onPressed: () => goToPage(ctx),
             child: Text('Go', style: TextStyle(color: theme.accent)),
           ),
         ],

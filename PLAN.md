@@ -611,12 +611,12 @@ Review combined diff together before committing.
 
 ### Nit Issues (Review Round 7)
 
-- [ ] **56. `_showGoToPageDialog` uses `Navigator.of(context)` instead of `Navigator.of(ctx)`**
+- [x] **56. `_showGoToPageDialog` uses `Navigator.of(context)` instead of `Navigator.of(ctx)`**
   - **File:** `lib/screens/reader_screen.dart:1652`
   - **What:** The `goToPage` function does `Navigator.of(context).pop()` using the State's context, not the dialog's builder context `ctx`. Both resolve to the same Navigator (dialog is pushed onto the same navigator), so this works. But it's less precise than the original `Navigator.of(ctx).pop()` — if the dialog were ever shown on a nested navigator, this would pop the wrong route.
   - **Fix:** Change to `Navigator.of(ctx).pop()`. Since `goToPage` is defined outside the `builder` callback, it needs access to `ctx`. Either pass `ctx` as a parameter or move the function inside the builder.
 
-- [ ] **57. `deleteBookWithFile` removes book from `_books` before DB cascade deletes**
+[-] **57. `deleteBookWithFile` removes book from `_books` before DB cascade deletes** — acceptable; UI responsiveness priority, local SQLite failures extremely rare
   - **File:** `lib/services/library_service.dart:530-559`
   - **What:** `_books.remove(book)` at line 533 happens before the DB deletes at lines 550-557. If any DB delete fails, the book is gone from memory but orphaned rows remain in the database. Judgment call — current order ensures UI updates immediately, and DB failures on local SQLite are extremely rare. But the inverse order would be more defensive.
   - **Fix (judgment call):** Either leave as-is (UI responsiveness priority) or swap order to DB deletes first, then `_books.remove`.
