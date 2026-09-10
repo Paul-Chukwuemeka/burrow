@@ -833,10 +833,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ],
       4 => switch (_scanStatus) {
           _ScanStatus.running => [
+              _cta('Browse library', _finish),
+              const SizedBox(height: 6),
               _cta(
                 'Scanning…',
                 null,
-                variant: _CtaVariant.disabled,
+                variant: _CtaVariant.text,
               ),
             ],
           _ScanStatus.done ||
