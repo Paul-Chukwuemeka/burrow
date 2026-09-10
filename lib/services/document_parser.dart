@@ -6,6 +6,8 @@ import 'dart:ui' as ui;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:rar/rar.dart';
 import 'package:xml/xml.dart';
 
@@ -107,8 +109,20 @@ class TocEntry {
 
 class DocumentParser {
   /// Parses a document into chapters. Heavy work runs in a background isolate.
+  // In-memory cache for parsed documents (avoids re-parsing on re-open).
+  static final Map<String, ParsedDocument> _memCache = {};
+  static const int _maxMemCache = 5;
+
   static Future<ParsedDocument> parse(String path, BookFormat format) {
-    return compute(_parseIsolate, path);
+    final cached = _memCache[path];
+    if (cached != null) return Future.value(cached);
+    return compute(_parseIsolate, path).then((doc) {
+      if (_memCache.length >= _maxMemCache) {
+        _memCache.remove(_memCache.keys.first);
+      }
+      _memCache[path] = doc;
+      return doc;
+    });
   }
 
   static Future<ParsedDocument> _parseIsolate(String path) async {
@@ -610,11 +624,33 @@ class DocumentParser {
       (byFile[e.fileKey] ??= <TocEntry>[]).add(e);
     }
 
+    // Build archive entry lookup once (not per spine doc).
+    final archiveContentMap = <String, Uint8List>{
+      for (final e in entries.values)
+        Uri.decodeComponent(e.name.toLowerCase()): e.content,
+    };
+
+    // Read HTML and build DOMs once per chapter — shared between CSS parser
+    // (selector matching) and regex parser (style run extraction).
+    final chapterHtml = <String, String>{};
+    final chapterDoms = <String, dom.Document>{};
+    for (final p in docPaths) {
+      final htmlBytes = entry(p);
+      if (htmlBytes == null) continue;
+      final xhtml = utf8.decode(htmlBytes, allowMalformed: true);
+      chapterHtml[p] = xhtml;
+      try {
+        chapterDoms[_normalizeKey(p)] = html_parser.parse(xhtml);
+      } catch (_) {}
+    }
+
     // Parse CSS stylesheets and build resolved rules per chapter.
+    // Pass pre-built DOMs to avoid duplicate HTML reads and DOM builds.
     final cssParser = EpubCssParser.parse(
       manifest: manifest,
       spinePaths: docPaths,
       readEntry: (name) => entry(name) ?? Uint8List(0),
+      chapterDom: chapterDoms,
     );
 
     // Convert each spine document to one or more chapters. A document that
@@ -622,16 +658,13 @@ class DocumentParser {
     // entry becomes a chapter of its own.
     final chapters = <Chapter>[];
     for (final p in docPaths) {
-      final html = entry(p);
-      if (html == null) continue;
+      final xhtml = chapterHtml[p];
+      if (xhtml == null) continue;
       final docDir = p.contains('/') ? p.substring(0, p.lastIndexOf('/')) : '';
       final (body, runs, anchors, images) =
           parseHtmlDocument(
-            utf8.decode(html, allowMalformed: true),
-            archiveEntries: {
-              for (final e in entries.values)
-                Uri.decodeComponent(e.name.toLowerCase()): e.content,
-            },
+            xhtml,
+            archiveEntries: archiveContentMap,
             baseDir: docDir,
             manifestImageDims: manifestImageDims,
           );

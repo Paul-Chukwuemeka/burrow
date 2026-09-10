@@ -28,10 +28,16 @@ class EpubCssParser {
   final Map<String, FontFaceInfo> fontFaces;
 
   /// Parses CSS from an EPUB archive.
+  ///
+  /// If [chapterDom] is provided (keyed by chapter path), the parser reuses
+  /// those pre-built DOMs instead of reading and parsing HTML from the archive
+  /// a second time. This eliminates the duplicate DOM build that would
+  /// otherwise occur when the main parser also needs the HTML content.
   static EpubCssParser parse({
     required List<String> spinePaths,
     required Map<String, String> manifest,
     required Uint8List Function(String) readEntry,
+    Map<String, dom.Document>? chapterDom,
   }) {
     final allRules = <String, List<ResolvedCssRule>>{};
     final fontFaces = <String, FontFaceInfo>{};
@@ -59,14 +65,17 @@ class EpubCssParser {
     for (final chapterPath in spinePaths) {
       final rules = <ResolvedCssRule>[];
 
-      dom.Document? doc;
-      try {
-        final xhtmlBytes = readEntry(chapterPath);
-        final xhtml = String.fromCharCodes(xhtmlBytes);
-        doc = html_parser.parse(xhtml);
-      } catch (_) {
-        allRules[chapterPath] = rules;
-        continue;
+      // Reuse pre-built DOM if available, otherwise parse from archive.
+      dom.Document? doc = chapterDom?[chapterPath];
+      if (doc == null) {
+        try {
+          final xhtmlBytes = readEntry(chapterPath);
+          final xhtml = String.fromCharCodes(xhtmlBytes);
+          doc = html_parser.parse(xhtml);
+        } catch (_) {
+          allRules[chapterPath] = rules;
+          continue;
+        }
       }
 
       // Query external CSS rules against this chapter's DOM.

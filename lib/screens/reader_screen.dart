@@ -209,9 +209,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   Future<void> _loadDocument() async {
     try {
       final doc = await DocumentParser.parse(_book.path, _book.format);
-      // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
+      // Load embedded fonts in parallel with setting up state/pagination.
       if (doc.fontFaces.isNotEmpty) {
-        await EpubCssParser.loadEmbeddedFonts(doc.fontFaces);
+        unawaited(EpubCssParser.loadEmbeddedFonts(doc.fontFaces));
       }
       var cumulative = 0;
       _charsBefore.clear();
@@ -221,9 +221,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       }
       _totalChars = cumulative;
       if (!mounted) return;
-      // Pagination is kicked off by the reflowable LayoutBuilder, which owns
-      // the viewport. Deriving it from a second place risks a signature that
-      // disagrees with the layout and repaginating forever.
       setState(() => _doc = doc);
     } on FormatException catch (e) {
       if (!mounted) return;
