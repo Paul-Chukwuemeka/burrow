@@ -20,6 +20,10 @@ class CssStyle {
     this.wordSpacing,
     this.textTransform,
     this.whiteSpace,
+    this.width,
+    this.height,
+    this.maxWidth,
+    this.maxHeight,
   });
 
   final double? fontSize;
@@ -39,6 +43,10 @@ class CssStyle {
   final double? wordSpacing;
   final String? textTransform;
   final String? whiteSpace;
+  final double? width;
+  final double? height;
+  final double? maxWidth;
+  final double? maxHeight;
 
   CssStyle merge(CssStyle other) => CssStyle(
         fontSize: other.fontSize ?? fontSize,
@@ -58,6 +66,10 @@ class CssStyle {
         wordSpacing: other.wordSpacing ?? wordSpacing,
         textTransform: other.textTransform ?? textTransform,
         whiteSpace: other.whiteSpace ?? whiteSpace,
+        width: other.width ?? width,
+        height: other.height ?? height,
+        maxWidth: other.maxWidth ?? maxWidth,
+        maxHeight: other.maxHeight ?? maxHeight,
       );
 
   bool get isEmpty =>
@@ -77,5 +89,9 @@ class CssStyle {
       letterSpacing == null &&
       wordSpacing == null &&
       textTransform == null &&
-      whiteSpace == null;
+      whiteSpace == null &&
+      width == null &&
+      height == null &&
+      maxWidth == null &&
+      maxHeight == null;
 }

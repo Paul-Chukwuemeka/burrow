@@ -56,6 +56,10 @@ class ImageRun {
     this.alt = '',
     this.fullWidth = false,
     this.onTap,
+    this.css,
+    this.elementId = '',
+    this.htmlWidth,
+    this.htmlHeight,
   });
 
   /// Character offset in the chapter body where the `\uFFFC` placeholder lives.
@@ -77,6 +81,18 @@ class ImageRun {
   /// popup). If null, no tap gesture is attached.
   final VoidCallback? onTap;
 
+  /// CSS-derived sizing rules matched to this image element.
+  final CssStyle? css;
+
+  /// HTML element id of the `<img>` tag, used for CSS rule matching.
+  final String elementId;
+
+  /// HTML `width` attribute value (pixels), used as fallback sizing.
+  final double? htmlWidth;
+
+  /// HTML `height` attribute value (pixels), used as fallback sizing.
+  final double? htmlHeight;
+
   /// Maximum pixel height for inline images regardless of page size.
   /// Set to [double.infinity] to disable.
   static const double maxInlineImageHeight = 150;
@@ -85,23 +101,94 @@ class ImageRun {
   /// never exceeding [maxInlineImageHeight] vertically, preserving aspect
   /// ratio.
   Size renderedSize(double renderWidth, {double maxHeight = double.infinity}) {
+    // Use CSS dimensions as primary source when available.
+    if (css != null) {
+      var w = css!.width;
+      var h = css!.height;
+
+      // Resolve percentage values relative to renderWidth.
+      if (w != null && w <= 0) w = null;
+      if (h != null && h <= 0) h = null;
+
+      // If only one dimension is set, derive the other from aspect ratio.
+      if (w != null && h == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
+        h = w * (intrinsicHeight / intrinsicWidth);
+      } else if (h != null && w == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
+        w = h * (intrinsicWidth / intrinsicHeight);
+      }
+
+      // Fall back to HTML attributes, then intrinsic dimensions.
+      w ??= htmlWidth;
+      h ??= htmlHeight;
+      w ??= intrinsicWidth.toDouble();
+      h ??= intrinsicHeight.toDouble();
+
+      // Apply max-width / max-height caps.
+      if (css!.maxWidth != null && w > css!.maxWidth!) {
+        final scale = css!.maxWidth! / w;
+        w = css!.maxWidth!;
+        h *= scale;
+      }
+      if (css!.maxHeight != null && h > css!.maxHeight!) {
+        final scale = css!.maxHeight! / h;
+        h = css!.maxHeight!;
+        w *= scale;
+      }
+
+      // Apply inline image height cap (unless fullWidth).
+      if (!fullWidth && h > maxInlineImageHeight) {
+        final scale = maxInlineImageHeight / h;
+        h = maxInlineImageHeight;
+        w *= scale;
+      }
+
+      return Size(
+        w.clamp(40.0, renderWidth),
+        h.clamp(40.0, 800.0),
+      );
+    }
+
+    // HTML attribute fallback (no CSS).
+    var w = htmlWidth;
+    var h = htmlHeight;
+    if (w != null || h != null) {
+      w ??= (h != null && intrinsicWidth > 0 && intrinsicHeight > 0)
+          ? h * (intrinsicWidth / intrinsicHeight)
+          : intrinsicWidth.toDouble();
+      h ??= (intrinsicWidth > 0 && intrinsicHeight > 0)
+          ? w * (intrinsicHeight / intrinsicWidth)
+          : intrinsicHeight.toDouble();
+
+      if (!fullWidth && h > maxInlineImageHeight) {
+        final scale = maxInlineImageHeight / h;
+        h = maxInlineImageHeight;
+        w *= scale;
+      }
+
+      return Size(
+        w.clamp(40.0, renderWidth),
+        h.clamp(40.0, 800.0),
+      );
+    }
+
+    // Original intrinsic-based sizing.
     if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
       return Size(renderWidth, 160);
     }
     final scale = renderWidth / intrinsicWidth;
-    var w = renderWidth;
-    var h = intrinsicHeight * scale;
+    var w2 = renderWidth;
+    var h2 = intrinsicHeight * scale;
 
     // Cap height so decorative art does not dominate the page,
     // unless this is a cover/full-width image.
-    if (!fullWidth && h > maxInlineImageHeight) {
-      h = maxInlineImageHeight;
-      w = intrinsicWidth * (h / intrinsicHeight);
+    if (!fullWidth && h2 > maxInlineImageHeight) {
+      h2 = maxInlineImageHeight;
+      w2 = intrinsicWidth * (h2 / intrinsicHeight);
     }
 
     return Size(
-      w.clamp(40.0, renderWidth),
-      h.clamp(40.0, 800.0),
+      w2.clamp(40.0, renderWidth),
+      h2.clamp(40.0, 800.0),
     );
   }
 

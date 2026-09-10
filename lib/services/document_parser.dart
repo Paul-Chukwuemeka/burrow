@@ -353,6 +353,7 @@ class DocumentParser {
     // Manifest: id -> resolved href. The item flagged properties="nav" is the
     // EPUB3 table of contents.
     final manifest = <String, String>{};
+    final manifestImageDims = <String, (double, double)>{};  // href -> (width, height)
     String? navPath;
     for (final el in _els(opf, 'item')) {
       final id = el.getAttribute('id');
@@ -363,6 +364,16 @@ class DocumentParser {
       final props = el.getAttribute('properties');
       if (props != null && props.split(RegExp(r'\s+')).contains('nav')) {
         navPath = resolved;
+      }
+      // Read width/height from OPF manifest for images.
+      final wAttr = el.getAttribute('width');
+      final hAttr = el.getAttribute('height');
+      if (wAttr != null && hAttr != null) {
+        final w = double.tryParse(wAttr);
+        final h = double.tryParse(hAttr);
+        if (w != null && h != null && w > 0 && h > 0) {
+          manifestImageDims[resolved.toLowerCase()] = (w, h);
+        }
       }
     }
 
@@ -435,6 +446,7 @@ class DocumentParser {
                 Uri.decodeComponent(e.name.toLowerCase()): e.content,
             },
             baseDir: docDir,
+            manifestImageDims: manifestImageDims,
           );
       if (body.trim().isEmpty) continue;
 
@@ -442,6 +454,7 @@ class DocumentParser {
       final resolvedRules = cssParser.chapterStyles[_normalizeKey(p)] ?? const [];
       if (resolvedRules.isNotEmpty) {
         _mergeCssStyles(body, runs, resolvedRules);
+        _mergeCssIntoImages(images, resolvedRules);
       }
 
       chapters.addAll(
@@ -1116,10 +1129,12 @@ class DocumentParser {
     String html, {
     Map<String, Uint8List>? archiveEntries,
     String baseDir = '',
+    Map<String, (double, double)>? manifestImageDims,
   }) {
     final builder = _RichTextBuilder(
       archiveEntries: archiveEntries,
       baseDir: baseDir,
+      manifestImageDims: manifestImageDims,
     );
     final cleaned = _stripNonContent(html);
     var cursor = 0;
@@ -1196,10 +1211,15 @@ class DocumentParser {
         b.quoteDepth = math.max(0, b.quoteDepth + (closing ? -1 : 1));
       case 'img':
         if (!closing) {
+          final htmlWidth = _attr(RegExp(r'\bwidth\s*=\s*"([^"]*)"', caseSensitive: false), raw);
+          final htmlHeight = _attr(RegExp(r'\bheight\s*=\s*"([^"]*)"', caseSensitive: false), raw);
           b.image(
             _attr(_srcAttrRe, raw),
             _attr(_altAttrRe, raw),
             id: _attr(_idAttrRe, raw),
+            elementId: _attr(_idAttrRe, raw) ?? '',
+            htmlWidth: htmlWidth != null ? double.tryParse(htmlWidth) : null,
+            htmlHeight: htmlHeight != null ? double.tryParse(htmlHeight) : null,
           );
         }
       default:
@@ -1302,6 +1322,54 @@ class DocumentParser {
       }
     }
   }
+
+  /// Merges CSS-derived image-sizing rules into [images] by matching
+  /// resolved rules whose element is an `<img>` tag with a matching `id`.
+  static void _mergeCssIntoImages(
+    List<ImageRun> images,
+    List<ResolvedCssRule> rules,
+  ) {
+    if (rules.isEmpty || images.isEmpty) return;
+
+    for (final rule in rules) {
+      final element = rule.element;
+      if (element.localName != 'img') continue;
+
+      final props = rule.properties;
+      final hasImageProps = props.containsKey('width') ||
+          props.containsKey('height') ||
+          props.containsKey('max-width') ||
+          props.containsKey('max-height');
+      if (!hasImageProps) continue;
+
+      final css = EpubCssParser.propsToCssStyle(props);
+      if (css.width == null && css.height == null &&
+          css.maxWidth == null && css.maxHeight == null) {
+        continue;
+      }
+
+      final imgId = element.id;
+      for (var i = 0; i < images.length; i++) {
+        if (images[i].elementId == imgId && imgId.isNotEmpty) {
+          final existing = images[i].css;
+          images[i] = ImageRun(
+            offset: images[i].offset,
+            bytes: images[i].bytes,
+            intrinsicWidth: images[i].intrinsicWidth,
+            intrinsicHeight: images[i].intrinsicHeight,
+            alt: images[i].alt,
+            fullWidth: images[i].fullWidth,
+            onTap: images[i].onTap,
+            css: existing?.merge(css) ?? css,
+            elementId: images[i].elementId,
+            htmlWidth: images[i].htmlWidth,
+            htmlHeight: images[i].htmlHeight,
+          );
+          break;
+        }
+      }
+    }
+  }
 }
 
 /// Incrementally builds plain text plus style runs from HTML events.
@@ -1310,11 +1378,14 @@ class DocumentParser {
 /// collapses to one space, spaces around line breaks are dropped, runs of
 /// newlines collapse to at most two, and the result is left- and right-trimmed.
 class _RichTextBuilder {
-  _RichTextBuilder({this.archiveEntries, this.baseDir = ''});
+  _RichTextBuilder({this.archiveEntries, this.baseDir = '', this.manifestImageDims});
 
   /// Optional EPUB zip entries for resolving image src paths.
   final Map<String, Uint8List>? archiveEntries;
   final String baseDir;
+
+  /// OPF manifest image dimensions (href -> (width, height)), used as fallback.
+  final Map<String, (double, double)>? manifestImageDims;
 
   final StringBuffer _buf = StringBuffer();
   final List<StyleRun> _runs = [];
@@ -1341,7 +1412,7 @@ class _RichTextBuilder {
 
   /// Emits a `\uFFFC` placeholder for an inline image, resolving [src]
   /// against the EPUB archive when available.
-  void image(String? src, String? alt, {String? id}) {
+  void image(String? src, String? alt, {String? id, String elementId = '', double? htmlWidth, double? htmlHeight}) {
     if (src == null || src.isEmpty) return;
     if (archiveEntries == null) return;
     // Flush pending whitespace/newlines before the placeholder.
@@ -1369,6 +1440,12 @@ class _RichTextBuilder {
     _buf.write('\uFFFC');
     final (w, h) = _decodeImageDimensions(entry);
     final isCover = id != null && id.toLowerCase().contains('cover');
+
+    // Fallback: HTML attributes > manifest dimensions.
+    final manifestDims = manifestImageDims?[resolved.toLowerCase()];
+    final effectiveHtmlWidth = htmlWidth ?? manifestDims?.$1;
+    final effectiveHtmlHeight = htmlHeight ?? manifestDims?.$2;
+
     _images.add(ImageRun(
       offset: offset,
       bytes: entry,
@@ -1376,6 +1453,9 @@ class _RichTextBuilder {
       intrinsicHeight: h,
       alt: alt ?? '',
       fullWidth: isCover,
+      elementId: elementId,
+      htmlWidth: effectiveHtmlWidth,
+      htmlHeight: effectiveHtmlHeight,
     ));
   }
 

@@ -239,6 +239,10 @@ class EpubCssParser {
       wordSpacing: _parseLength(props['word-spacing']),
       textTransform: props['text-transform'],
       whiteSpace: props['white-space'],
+      width: _parseLength(props['width']),
+      height: _parseLength(props['height']),
+      maxWidth: _parseLength(props['max-width']),
+      maxHeight: _parseLength(props['max-height']),
     );
   }
 
