@@ -350,7 +350,7 @@ Review combined diff together before committing.
     ```
   - **Verify:** Add a book, create a bookmark for it, delete the book, query bookmarks table — should be empty.
 
-- [ ] **37. `_processMetadataQueue` progress counter inflated by skipped books**
+- [x] **37. `_processMetadataQueue` progress counter inflated by skipped books**
   - **File:** `lib/services/library_service.dart:393-485`
   - **What:** `totalToProcess` is set from `_metadataQueue.length` before the loop. When books are skipped (already `metadataComplete` or not found), `completed++` still increments. If you import 10 books and 3 are already complete, the progress starts at "7/10" and jumps to "10/10" at the end. The `MetadataStatus.progress` event fires for skipped books too, making the status bar unreliable.
   - **Fix:** Count only actually-processed books in `completed`, or pre-filter the queue to exclude already-complete books before emitting the `started` event.
@@ -363,7 +363,7 @@ Review combined diff together before committing.
 
 ### Minor Issues (Review Round 4)
 
-- [ ] **39. `_nonContentRe` does not strip `<style>` tag bodies**
+- [x] **39. `_nonContentRe` does not strip `<style>` tag bodies**
   - **File:** `lib/services/document_parser.dart:1067-1073`
   - **What:** The regex strips `<head>` and `<script>` content but not `<style>`. CSS rule bodies leak into plain text output. E.g. `<style>p { color: red; }</style><p>Text</p>` produces `p { color: red; } Text` instead of `Text`. The test at `document_parser_test.dart` named "drops style and script bodies" expects style content to be dropped — this test may be failing silently or not running.
   - **Fix:** Add `<style>` to `_nonContentRe`:
