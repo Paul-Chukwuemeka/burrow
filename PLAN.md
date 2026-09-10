@@ -657,7 +657,7 @@ Review combined diff together before committing.
 
 ### Major Issues (Review Round 8)
 
-- [ ] **58. Recovery path in `main.dart` destroys ALL SharedPreferences — user loses all settings**
+- [-] **58. Recovery path in `main.dart` destroys ALL SharedPreferences — user loses all settings**
   - **File:** `lib/main.dart:44-45`
   - **What:** When `library.load()` fails, the recovery path calls `await prefs.clear()`. This wipes EVERYTHING — `ReaderSettings`, `onboardingComplete`, `libraryLayout`. User loses all customizations and must redo onboarding.
   - **Failure scenario:** User has customized reading experience. A SharedPreferences corruption (possible on Android force-close) triggers recovery. All settings lost.
@@ -677,7 +677,7 @@ Review combined diff together before committing.
 
 ### Nit Issues (Review Round 8)
 
-- [ ] **60. `main.dart` recovery doesn't verify retry succeeded**
+- [-] **60. `main.dart` recovery doesn't verify retry succeeded**
   - **File:** `lib/main.dart:49-53`
   - **What:** If retry also fails, `library` is a fresh `LibraryService()` with no data. App runs empty with no explanation. Acceptable but user sees blank screen.
   - **Fix (optional):** Show a snackbar or error view if retry fails.
