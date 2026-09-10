@@ -714,15 +714,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _onSearchTextChanged() => _searchCtrl.onSearchTextChanged();
 
-  void _submitSearch() {
-    _initSearch();
-    _searchCtrl.submitSearch();
-  }
+  void _submitSearch() => _searchCtrl.submitSearch();
 
   void _toggleSearch() {
     _searchCtrl.toggleSearch();
-    if (!_searchCtrl.searchOpen) {
-      // Re-init next time search is opened.
+    if (_searchCtrl.searchOpen) {
+      _initSearch();
     }
   }
 
@@ -1649,6 +1646,23 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final theme = _settings.colors;
     final controller = TextEditingController();
     final maxPage = _isPdf ? _pdfCtrl.pdfPageCount : (_isComic ? _comicCtrl.comicPageCount : _flatPageCount);
+    void goToPage() {
+      final page = int.tryParse(controller.text);
+      if (page != null && page >= 1 && page <= maxPage) {
+        Navigator.of(context).pop();
+        if (_isPdf) {
+          _jumpToPdfPage(page);
+        } else if (_isComic) {
+          _comicCtrl.comicPageController?.animateToPage(
+            page - 1,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+          );
+        } else {
+          _pageController?.jumpToPage(page - 1);
+        }
+      }
+    }
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1669,23 +1683,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               borderSide: BorderSide(color: theme.accent),
             ),
           ),
-          onSubmitted: (_) {
-            final page = int.tryParse(controller.text);
-            if (page != null && page >= 1 && page <= maxPage) {
-              Navigator.of(ctx).pop();
-              if (_isPdf) {
-                _jumpToPdfPage(page);
-              } else if (_isComic) {
-                _comicCtrl.comicPageController?.animateToPage(
-                  page - 1,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                );
-              } else {
-                _pageController?.jumpToPage(page - 1);
-              }
-            }
-          },
+          onSubmitted: (_) => goToPage(),
         ),
         actions: [
           TextButton(
@@ -1693,23 +1691,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             child: Text('Cancel', style: TextStyle(color: theme.muted)),
           ),
           TextButton(
-            onPressed: () {
-              final page = int.tryParse(controller.text);
-              if (page != null && page >= 1 && page <= maxPage) {
-                Navigator.of(ctx).pop();
-                if (_isPdf) {
-                  _jumpToPdfPage(page);
-                } else if (_isComic) {
-      _comicCtrl.comicPageController?.animateToPage(
-                    page - 1,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                  );
-                } else {
-                  _pageController?.jumpToPage(page - 1);
-                }
-              }
-            },
+            onPressed: goToPage,
             child: Text('Go', style: TextStyle(color: theme.accent)),
           ),
         ],
