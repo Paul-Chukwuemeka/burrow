@@ -493,7 +493,7 @@ Review combined diff together before committing.
 
 ### Major Issues (Review Round 6)
 
-- [ ] **47. `_loadStats` fetches `getAllSessions()` AND `getPerBookStats()` — redundant full-table load**
+- [x] **47. `_loadStats` fetches `getAllSessions()` AND `getPerBookStats()` — redundant full-table load**
   - **File:** `lib/screens/stats_screen.dart:49-58`
   - **What:** `_loadStats` calls `getAllSessions()` (loads entire `reading_sessions` table into Dart), then manually sums `totalTime` and `totalPages` in a Dart loop (lines 60-65). It ALSO calls `getPerBookStats()` which runs a `GROUP BY bookId` SQL query with the same totals. This is a redundant full-table load + O(n) Dart re-aggregation. For users with thousands of sessions, this wastes memory and CPU. The `getPerBookStats` results already contain `totalTimeMs`, `totalPages`, and `sessionCount` per book.
   - **Fix:** Replace `getAllSessions` + Dart loop with totals derived from `getPerBookStats`:
@@ -512,7 +512,7 @@ Review combined diff together before committing.
 
 ### Minor Issues (Review Round 6)
 
-- [ ] **48. `ReadingSessionManager.endSession` silently swallows DB errors**
+- [x] **48. `ReadingSessionManager.endSession` silently swallows DB errors**
   - **File:** `lib/controllers/reading_session.dart:50-59`
   - **What:** `endSession` awaits `library.endSession()` but has no try/catch. If the DB write fails (e.g., DB closed during app shutdown), the error propagates unhandled into `dispose()` via `unawaited(endSession())`, and the session data is silently lost with no logging.
   - **Fix:** Wrap the await in try/catch with `debugPrint`:
@@ -524,7 +524,7 @@ Review combined diff together before committing.
     }
     ```
 
-- [ ] **49. `importFileFast` doesn't rollback `_books.add` on DB insert failure**
+- [x] **49. `importFileFast` doesn't rollback `_books.add` on DB insert failure**
   - **File:** `lib/services/library_service.dart:351-383`
   - **What:** `_books.add(book)` at line 371 executes before `insertBook` at line 372. If `insertBook` throws, the `finally` block removes the path from `_pendingImports`, but the book remains in `_books`. The book appears in the library with no DB record. On next app launch it won't exist (DB is source of truth), but during the current session it shows as a ghost entry with no metadata.
   - **Fix:** Add a rollback in a catch block before `finally`:
