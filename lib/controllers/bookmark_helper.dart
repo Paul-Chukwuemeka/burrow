@@ -23,6 +23,8 @@ class BookmarkHelper extends ChangeNotifier {
   List<db.Bookmark> get bookmarks => List.unmodifiable(_bookmarks);
   bool get isCurrentPageBookmarked => _isCurrentPageBookmarked;
 
+  Future<void> checkBookmarkState() => _checkBookmarkState();
+
   Future<void> loadBookmarks() async {
     _bookmarks = await library.getBookmarks(book.id);
     notifyListeners();

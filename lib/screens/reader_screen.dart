@@ -8,8 +8,8 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../controllers/bookmark_helper.dart';
 import '../controllers/reading_session.dart';
-import '../db/database.dart' as db;
 import '../services/brightness_controller.dart';
 import '../models/book.dart';
 import '../models/reader_settings.dart';
@@ -117,8 +117,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   late final ReadingSessionManager _sessionCtrl;
 
   // Bookmark state.
-  List<db.Bookmark> _bookmarks = [];
-  bool _isCurrentPageBookmarked = false;
+  late final BookmarkHelper _bookmarkCtrl;
 
   // Search state.
   BookSearch? _search;
@@ -175,6 +174,26 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       library: widget.library,
       book: _book,
     );
+    _bookmarkCtrl = BookmarkHelper(
+      library: widget.library,
+      book: _book,
+      isPdf: _isPdf,
+      getCurrentPosition: () {
+        if (_isPdf) {
+          return (chapter: _pdfPage, offset: 0, snippet: 'Page $_pdfPage');
+        }
+        final ref = _refAt(_flatPage);
+        if (ref == null || _doc == null) return null;
+        final offset = _paginators[ref.$1].pages[ref.$2].start;
+        final pageText = _doc!.chapters[ref.$1].body;
+        final end = (offset + 60).clamp(0, pageText.length);
+        final snippet = pageText.substring(offset, end).trim();
+        return (chapter: ref.$1, offset: offset, snippet: snippet);
+      },
+    );
+    _bookmarkCtrl.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
@@ -183,7 +202,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     ]);
     if (_settings.keepScreenOn) WakelockPlus.enable();
     BrightnessController.instance.apply(_settings.brightness);
-    _loadBookmarks();
+    _bookmarkCtrl.loadBookmarks();
     _sessionCtrl.startSession();
     if (_isPdf) {
       _pdfController.addListener(_onPdfViewChanged);
@@ -194,87 +213,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       _loadComicPages();
     }
     _searchController.addListener(_onSearchTextChanged);
-  }
-
-  Future<void> _loadBookmarks() async {
-    final bms = await widget.library.getBookmarks(_book.id);
-    if (!mounted) return;
-    setState(() => _bookmarks = bms);
-    _checkBookmarkState();
-  }
-
-  void _checkBookmarkState() {
-    if (_isPdf) {
-      // For PDF, check if any bookmark matches the current page number.
-      final currentPdfPage = _pdfPage;
-      final found = _bookmarks.any((bm) => bm.chapter == currentPdfPage);
-      if (mounted) setState(() => _isCurrentPageBookmarked = found);
-      return;
-    }
-    final ref = _refAt(_flatPage);
-    if (ref == null || _doc == null) return;
-    final offset = _paginators[ref.$1].pages[ref.$2].start;
-    final capturedPage = _flatPage;
-    widget.library
-        .isBookmarked(
-          bookId: _book.id,
-          chapter: ref.$1,
-          offset: offset,
-        )
-        .then((v) {
-      if (mounted && _flatPage == capturedPage) {
-        setState(() => _isCurrentPageBookmarked = v);
-      }
-    });
-  }
-
-  Future<void> _toggleBookmark() async {
-    if (_isPdf) {
-      // For PDF, store the page number in the chapter field.
-      final page = _pdfPage;
-      if (_isCurrentPageBookmarked) {
-        for (final bm in _bookmarks) {
-          if (bm.chapter == page) {
-            await widget.library.deleteBookmark(bm.id);
-            break;
-          }
-        }
-      } else {
-        await widget.library.addBookmark(
-          bookId: _book.id,
-          chapter: page,
-          offset: 0,
-          snippet: 'Page $page',
-        );
-      }
-      await _loadBookmarks();
-      return;
-    }
-    final ref = _refAt(_flatPage);
-    if (ref == null || _doc == null) return;
-    final chapter = ref.$1;
-    final offset = _paginators[chapter].pages[ref.$2].start;
-    final pageText = _doc!.chapters[chapter].body;
-    final end = (offset + 60).clamp(0, pageText.length);
-    final snippet = pageText.substring(offset, end).trim();
-
-    if (_isCurrentPageBookmarked) {
-      // Find and delete the bookmark at this position using the in-memory list.
-      for (final bm in _bookmarks) {
-        if (bm.chapter == chapter && bm.offset == offset) {
-          await widget.library.deleteBookmark(bm.id);
-          break;
-        }
-      }
-    } else {
-      await widget.library.addBookmark(
-        bookId: _book.id,
-        chapter: chapter,
-        offset: offset,
-        snippet: snippet,
-      );
-    }
-    await _loadBookmarks();
   }
 
   /// The controller is a `ValueListenable<Matrix4>`; poll page state on change.
@@ -289,7 +227,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _pdfPageCount = count;
       });
       _onPositionChanged(page - 1, 0);
-      _checkBookmarkState();
+      _bookmarkCtrl.checkBookmarkState();
     }
   }
 
@@ -345,6 +283,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sessionCtrl.dispose();
+    _bookmarkCtrl.dispose();
     _saveDebounce?.cancel();
     _flushSave();
     _settingsSaveDebounce?.cancel();
@@ -1784,7 +1723,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   _onPositionChanged(
                       ref.$1, _paginators[ref.$1].pages[ref.$2].start);
                 }
-                _checkBookmarkState();
+                _bookmarkCtrl.checkBookmarkState();
               },
               itemBuilder: (context, i) {
                 final ref = _refAt(i);
@@ -2037,10 +1976,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         outline: _pdfOutline,
         currentPage: _pdfPage,
         onJump: _jumpToPdfPage,
-        bookmarks: _bookmarks,
+        bookmarks: _bookmarkCtrl.bookmarks,
         onDeleteBookmark: (bm) async {
           await widget.library.deleteBookmark(bm.id);
-          await _loadBookmarks();
+          await _bookmarkCtrl.loadBookmarks();
         },
       );
       return;
@@ -2054,10 +1993,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       paginators: _paginators,
       currentIndex: currentChapter,
       onJump: _jumpToChapter,
-      bookmarks: _bookmarks,
+      bookmarks: _bookmarkCtrl.bookmarks,
       onDeleteBookmark: (bm) async {
         await widget.library.deleteBookmark(bm.id);
-        await _loadBookmarks();
+        await _bookmarkCtrl.loadBookmarks();
       },
     );
   }
@@ -2206,14 +2145,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 if (_showBookmark)
                   IconButton(
                     icon: Icon(
-                      _isCurrentPageBookmarked
+                      _bookmarkCtrl.isCurrentPageBookmarked
                           ? Icons.bookmark
                           : Icons.bookmark_border,
-                      color: _isCurrentPageBookmarked
+                      color: _bookmarkCtrl.isCurrentPageBookmarked
                           ? theme.accent
                           : theme.text,
                     ),
-                    onPressed: _toggleBookmark,
+                    onPressed: _bookmarkCtrl.toggleBookmark,
                   ),
                 if (_isComic)
                   IconButton(
