@@ -300,7 +300,7 @@ class DocumentParser {
         final im = img as Map<String, dynamic>;
         return ImageRun(
           offset: im['o'] as int,
-          bytes: im['b'] as Uint8List,
+          bytes: Uint8List.fromList((im['b'] as List).cast<int>()),
           intrinsicWidth: im['iw'] as int,
           intrinsicHeight: im['ih'] as int,
           alt: im['a'] as String? ?? '',
