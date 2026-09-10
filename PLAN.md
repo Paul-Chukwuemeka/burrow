@@ -650,3 +650,64 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Review Round 8 — Crash Recovery Review (f80161a)
+
+### Major Issues (Review Round 8)
+
+- [ ] **58. Recovery path in `main.dart` destroys ALL SharedPreferences — user loses all settings**
+  - **File:** `lib/main.dart:44-45`
+  - **What:** When `library.load()` fails, the recovery path calls `await prefs.clear()`. This wipes EVERYTHING — `ReaderSettings`, `onboardingComplete`, `libraryLayout`. User loses all customizations and must redo onboarding.
+  - **Failure scenario:** User has customized reading experience. A SharedPreferences corruption (possible on Android force-close) triggers recovery. All settings lost.
+  - **Fix:** Only clear library-specific keys:
+    ```dart
+    await prefs.remove('burrow.library.v1');      // legacy library
+    await prefs.remove('burrow.library.layout.v1'); // layout
+    ```
+
+### Minor Issues (Review Round 8)
+
+- [ ] **59. `database.dart` migration catch swallows errors — leaves DB in partial state**
+  - **File:** `lib/db/database.dart:163-164`
+  - **What:** The `onUpgrade` catch block only does `debugPrint`. If a migration step fails, DB is left partially migrated. Drift's `schemaVersion` still set to 6, so migration won't retry. Queries on missing columns crash.
+  - **Failure scenario:** User upgrades from v3 to v6. Step `from < 4` fails halfway. Some v4 columns exist, others don't.
+  - **Fix:** Re-throw after logging so `main.dart` recovery handles it, or delete the DB and rethrow.
+
+### Nit Issues (Review Round 8)
+
+- [ ] **60. `main.dart` recovery doesn't verify retry succeeded**
+  - **File:** `lib/main.dart:49-53`
+  - **What:** If retry also fails, `library` is a fresh `LibraryService()` with no data. App runs empty with no explanation. Acceptable but user sees blank screen.
+  - **Fix (optional):** Show a snackbar or error view if retry fails.
+
+---
+
+## Coordination — Round 8 Agent Split
+
+### Agent A — main.dart recovery path
+
+Issues: #58, #60
+
+| # | File | Effort |
+|---|------|--------|
+| 58 | `lib/main.dart` | small (selective prefs clear) |
+| 60 | `lib/main.dart` | trivial (optional) |
+
+### Agent B — database.dart migration
+
+Issues: #59
+
+| # | File | Effort |
+|---|------|--------|
+| 59 | `lib/db/database.dart` | small (rethrow or delete+retry) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
