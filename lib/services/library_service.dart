@@ -349,8 +349,10 @@ class LibraryService extends ChangeNotifier {
   /// The book is added to the library immediately, and metadata extraction
   /// is queued for background processing.
   Future<Book?> importFileFast(String path) async {
-    if (containsPath(path) || _pendingImports.contains(path)) return null;
+    // Guard: reject duplicates by path or pending import status.
+    if (_pendingImports.contains(path)) return null;
     _pendingImports.add(path);
+    if (containsPath(path)) return null;
 
     try {
       final format = formatFromExtension(path);
@@ -563,21 +565,21 @@ class LibraryService extends ChangeNotifier {
     if (book == null) return;
     if (title != null) book.title = title;
     if (author != null) book.author = author;
-    book.description = description;
-    book.annotation = annotation;
-    book.genre = genre;
-    book.seriesName = seriesName;
-    book.seriesIndex = seriesIndex;
-    book.publisher = publisher;
-    book.isbn = isbn;
-    book.language = language;
-    book.review = review;
-    book.publicationDate = publicationDate;
-    book.rights = rights;
-    book.type = type;
-    book.source = source;
-    book.titleSort = titleSort;
-    book.authorSort = authorSort;
+    book.description = description ?? book.description;
+    book.annotation = annotation ?? book.annotation;
+    book.genre = genre ?? book.genre;
+    book.seriesName = seriesName ?? book.seriesName;
+    book.seriesIndex = seriesIndex ?? book.seriesIndex;
+    book.publisher = publisher ?? book.publisher;
+    book.isbn = isbn ?? book.isbn;
+    book.language = language ?? book.language;
+    book.review = review ?? book.review;
+    book.publicationDate = publicationDate ?? book.publicationDate;
+    book.rights = rights ?? book.rights;
+    book.type = type ?? book.type;
+    book.source = source ?? book.source;
+    book.titleSort = titleSort ?? book.titleSort;
+    book.authorSort = authorSort ?? book.authorSort;
     if (_db != null) {
       await _db!.updateBook(db.bookToCompanionForUpdate(book));
     }

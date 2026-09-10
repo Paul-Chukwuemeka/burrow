@@ -48,6 +48,7 @@ void main() {
         end: 19,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
       ));
 
       expect(span.toPlainText(), 'quick brown fox');
@@ -74,6 +75,7 @@ void main() {
         end: text.length,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         runs: runs,
         matches: matches,
       ));
@@ -96,6 +98,7 @@ void main() {
         end: 20,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         runs: runs,
       ));
 
@@ -118,6 +121,7 @@ void main() {
         end: text.length,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         matches: [current, other],
         currentMatch: current,
       ));
@@ -146,6 +150,7 @@ void main() {
         end: 20,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         matches: [match(4, 5)],
         currentMatch: match(35, 3),
       ));
@@ -163,6 +168,7 @@ void main() {
         end: 15,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         matches: [match(10, 9)],
       ));
 
@@ -179,6 +185,7 @@ void main() {
         end: 20,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         runs: const [StyleRun(4, 15, quote: true)],
         matches: [match(10, 5)],
         currentMatch: match(10, 5),
@@ -198,6 +205,7 @@ void main() {
         end: 10,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         runs: const [StyleRun(20, 25, bold: true)],
         matches: [match(30, 4)],
       ));
@@ -309,6 +317,7 @@ void main() {
         end: 4,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         images: [img],
         renderWidth: 370,
         maxHeight: 860,
@@ -341,6 +350,7 @@ void main() {
         end: 4,
         base: style,
         theme: theme,
+        settings: ReaderSettings(),
         images: [img],
         renderWidth: 370,
       );
