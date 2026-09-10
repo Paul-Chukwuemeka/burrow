@@ -165,51 +165,41 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return _cachedVisibleBooks!;
     }
 
-    var books = widget.library.sorted;
     final filter = _filter;
-    if (filter != null) {
-      books = books.where((b) => b.format == filter).toList();
-    }
-    // Reading status filter.
-    switch (_statusFilter) {
-      case _ReadingStatus.all:
-        break;
-      case _ReadingStatus.reading:
-        books = books.where((b) => b.isStarted && !b.isFinished).toList();
-      case _ReadingStatus.finished:
-        books = books.where((b) => b.isFinished).toList();
-      case _ReadingStatus.new_:
-        books = books.where((b) => !b.isStarted).toList();
-    }
-    // Genre filter.
-    if (_genreFilter != null) {
-      final g = _genreFilter!;
-      books = books
-          .where((b) =>
-              b.genre != null &&
-              b.genre!
-                  .split(',')
-                  .map((s) => s.trim())
-                  .any((s) => s.toLowerCase() == g.toLowerCase()))
-          .toList();
-    }
-    // Series filter.
-    if (_seriesFilter != null) {
-      final s = _seriesFilter!;
-      books = books
-          .where((b) =>
-              b.seriesName != null &&
-              b.seriesName!.toLowerCase() == s.toLowerCase())
-          .toList();
-    }
+    final genreLower = _genreFilter?.toLowerCase();
+    final seriesLower = _seriesFilter?.toLowerCase();
     final q = _query.trim().toLowerCase();
-    if (q.isNotEmpty) {
-      books = books
-          .where((b) =>
-              b.displayTitle.toLowerCase().contains(q) ||
-              b.author.toLowerCase().contains(q))
-          .toList();
-    }
+
+    var books = widget.library.sorted.where((b) {
+      if (filter != null && b.format != filter) return false;
+      switch (_statusFilter) {
+        case _ReadingStatus.all:
+          break;
+        case _ReadingStatus.reading:
+          if (!(b.isStarted && !b.isFinished)) return false;
+        case _ReadingStatus.finished:
+          if (!b.isFinished) return false;
+        case _ReadingStatus.new_:
+          if (b.isStarted) return false;
+      }
+      if (genreLower != null) {
+        if (b.genre == null) return false;
+        if (!b.genre!.split(',').any((g) => g.trim().toLowerCase() == genreLower)) {
+          return false;
+        }
+      }
+      if (seriesLower != null) {
+        if (b.seriesName?.toLowerCase() != seriesLower) return false;
+      }
+      if (q.isNotEmpty) {
+        if (!b.displayTitle.toLowerCase().contains(q) &&
+            !b.author.toLowerCase().contains(q)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+
     switch (_sort) {
       case _SortMode.recent:
         break; // Already ordered by the service.

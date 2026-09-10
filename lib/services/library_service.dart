@@ -499,7 +499,11 @@ class LibraryService extends ChangeNotifier {
           if (_db != null) {
             await _db!.updateBook(db.bookToCompanionForUpdate(book));
           }
-          notifyListeners();
+          // Throttle UI rebuilds: notify at most every 5 books and always
+          // on the final one to avoid 100+ full rebuilds during batch imports.
+          if (completed % 5 == 0 || completed == totalToProcess - 1) {
+            notifyListeners();
+          }
 
           // For PDFs without covers, generate thumbnail in background.
           if (format == BookFormat.pdf && book.coverPath == null) {

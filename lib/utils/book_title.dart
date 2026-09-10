@@ -1,5 +1,8 @@
 import '../models/book.dart';
 
+/// Cache for displayTitle to avoid re-running 7 regexes per access.
+final Map<String, String> _displayTitleCache = <String, String>{};
+
 /// Filename cruft stripped from imported titles before display.
 ///
 /// Sideloading sites commonly name files like
@@ -79,6 +82,7 @@ String cleanBookTitle(String raw) {
 }
 
 extension BookDisplayTitle on Book {
-  /// Cleaned display title; also repairs legacy entries stored with cruft.
-  String get displayTitle => cleanBookTitle(title);
+  /// Cleaned display title; memoized to avoid re-running regex on every access.
+  String get displayTitle =>
+      _displayTitleCache[title] ??= cleanBookTitle(title);
 }

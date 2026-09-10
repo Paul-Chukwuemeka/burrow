@@ -58,7 +58,7 @@ class BookCard extends StatelessWidget {
                 side: BorderSide(
                     color: scheme.outlineVariant.withValues(alpha: 0.5)),
               ),
-              clipBehavior: Clip.antiAlias,
+              clipBehavior: Clip.hardEdge,
               child: InkWell(
                 onTap: onTap,
                 onLongPress: onLongPress,
@@ -171,7 +171,7 @@ class BookListCard extends StatelessWidget {
                 side: BorderSide(
                     color: scheme.outlineVariant.withValues(alpha: 0.5)),
               ),
-              clipBehavior: Clip.antiAlias,
+              clipBehavior: Clip.hardEdge,
               child: InkWell(
                 onTap: onTap,
                 onLongPress: onLongPress,

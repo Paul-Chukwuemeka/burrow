@@ -39,6 +39,8 @@ class BookCover extends StatelessWidget {
             File(book.coverPath!),
             fit: BoxFit.cover,
             gaplessPlayback: true,
+            cacheWidth: 300,
+            cacheHeight: 450,
             errorBuilder: (_, _, _) => _PlaceholderCover(book: book),
           )
         else
