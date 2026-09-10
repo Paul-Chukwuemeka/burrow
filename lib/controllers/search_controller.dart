@@ -12,7 +12,8 @@ class ReaderSearchController extends ChangeNotifier {
 
   BookSearch? _search;
   PdfTextSearcher? _pdfSearcher;
-  bool searchOpen = false;
+  VoidCallback? _pdfSearcherListener;
+  bool _searchOpen = false;
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
   List<SearchResult> _searchResults = [];
@@ -20,6 +21,7 @@ class ReaderSearchController extends ChangeNotifier {
   bool _searchDone = false;
 
   bool get isPdf => book.format == BookFormat.pdf;
+  bool get searchOpen => _searchOpen;
   List<SearchResult> get searchResults => List.unmodifiable(_searchResults);
   int get currentResultIndex => _currentResultIndex;
   bool get searchDone => _searchDone;
@@ -28,6 +30,8 @@ class ReaderSearchController extends ChangeNotifier {
     if (!isPdf) return;
     if (_pdfSearcher != null) return;
     _pdfSearcher = PdfTextSearcher(pdfController);
+    _pdfSearcherListener = onPdfSearchChanged;
+    _pdfSearcher!.addListener(_pdfSearcherListener!);
   }
 
   PdfTextSearcher? get pdfSearcher => _pdfSearcher;
@@ -100,16 +104,18 @@ class ReaderSearchController extends ChangeNotifier {
   }
 
   void toggleSearch() {
-    searchOpen = !searchOpen;
-    if (searchOpen) {
+    _searchOpen = !_searchOpen;
+    if (_searchOpen) {
       searchFocusNode.requestFocus();
     } else {
       searchController.clear();
       _searchResults = [];
       _currentResultIndex = -1;
       _searchDone = false;
+      _pdfSearcher?.removeListener(_pdfSearcherListener!);
       _pdfSearcher?.resetTextSearch();
       _pdfSearcher = null;
+      _pdfSearcherListener = null;
       _search?.dispose();
       _search = null;
     }
@@ -144,8 +150,10 @@ class ReaderSearchController extends ChangeNotifier {
   @override
   void dispose() {
     _search?.dispose();
+    _pdfSearcher?.removeListener(_pdfSearcherListener!);
     _pdfSearcher?.resetTextSearch();
     _pdfSearcher = null;
+    _pdfSearcherListener = null;
     searchController.dispose();
     searchFocusNode.dispose();
     super.dispose();

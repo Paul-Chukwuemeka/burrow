@@ -110,44 +110,6 @@ class ComicReaderController extends ChangeNotifier {
     }
   }
 
-  void onPageChanged(int i) {
-    comicPage = i;
-    notifyListeners();
-    library.savePosition(
-      id: book.id,
-      chapter: i,
-      offset: 0,
-      progress: comicPageCount == 0 ? 0 : i / comicPageCount,
-    );
-    if (isLazy) prefetchComicPages(i);
-    if (comicPreviewVisible) scrollToPreviewPage(i);
-  }
-
-  void onVerticalScroll() {
-    if (!_mounted) return;
-    final count = comicPageCount;
-    if (count == 0) return;
-    final viewportHeight = MediaQueryData.fromView(
-            WidgetsBinding.instance.platformDispatcher.views.first)
-        .size.height;
-    if (viewportHeight <= 0) return;
-    final newIndex = (comicVerticalScrollController!.offset / viewportHeight)
-        .round()
-        .clamp(0, count - 1);
-    if (newIndex != comicPage) {
-      comicPage = newIndex;
-      notifyListeners();
-      library.savePosition(
-        id: book.id,
-        chapter: newIndex,
-        offset: comicVerticalScrollController!.offset.toInt(),
-        progress: newIndex / count,
-      );
-      if (isLazy) prefetchComicPages(newIndex);
-      if (comicPreviewVisible) scrollToPreviewPage(newIndex);
-    }
-  }
-
   void prefetchComicPages(int center) {
     final provider = comicPageProvider;
     if (provider == null) return;

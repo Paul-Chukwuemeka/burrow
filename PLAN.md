@@ -402,27 +402,27 @@ Review combined diff together before committing.
 
 ## Round 5 Issues
 
-- [ ] **42. PdfTextSearcher listener accumulates on search toggle**
+- [x] **42. PdfTextSearcher listener accumulates on search toggle**
   - **File:** `lib/controllers/search_controller.dart:102-117` and `lib/screens/reader_screen.dart:702-706`
   - **What:** `toggleSearch()` nulls `_pdfSearcher` without removing the listener added at `reader_screen.dart:705`. Each open/close cycle adds a new listener to a new `PdfTextSearcher` without cleaning up the old one. Leaks the `PdfTextSearcher` and its `PdfViewerController` reference.
   - **Fix:** Remove listener in `toggleSearch` before nulling `_pdfSearcher`, or move listener management into the controller (preferred — controller should own its own listeners).
 
-- [ ] **43. DictionaryOverlay captures stale theme and BuildContext**
+- [x] **43. DictionaryOverlay captures stale theme and BuildContext**
   - **File:** `lib/controllers/dictionary_overlay.dart:12-18` and `lib/screens/reader_screen.dart:910-914`
   - **What:** `DictionaryOverlay` stores `BuildContext context` and `ReaderTheme theme` at construction time via `??=`. The overlay is never recreated. On theme change (sepia → dark), the toolbar renders with old colors. Also, `Overlay.of(context)` with a captured context is fragile if the overlay outlives the State.
   - **Fix:** Pass `themeBuilder: () => _settings.colors` instead of snapshot, or reset `_dictOverlay = null` in `_onSettingsChanged()` so it's recreated on next use.
 
-- [ ] **44. Dead controller methods — `ComicReaderController.onPageChanged` and `onVerticalScroll`**
+- [x] **44. Dead controller methods — `ComicReaderController.onPageChanged` and `onVerticalScroll`**
   - **File:** `lib/controllers/comic_controller.dart:113-148`
   - **What:** Controller has `onPageChanged()` and `onVerticalScroll()` that call `library.savePosition()`, but `reader_screen.dart:1147-1156` and `1199-1217` duplicate this logic inline without calling the controller methods. Dead code. The controller's `onVerticalScroll` also uses `MediaQueryData.fromView(platformDispatcher.views.first)` which bypasses text scaling.
   - **Fix:** Remove dead methods from controller, or have `reader_screen.dart` delegate to them.
 
-- [ ] **45. `_dictOverlay` theme not refreshed on settings change**
+- [x] **45. `_dictOverlay` theme not refreshed on settings change**
   - **File:** `lib/screens/reader_screen.dart:910`
   - **What:** `_dictOverlay` is created with `??=` and never recreated. When theme changes via `SettingsSheet`, the overlay still uses the old theme. Follow-on to #43.
   - **Fix:** Reset `_dictOverlay = null` in `_onSettingsChanged()` so it's recreated with the new theme on next use.
 
-- [ ] **46. `ReaderSearchController.searchOpen` is not encapsulated**
+- [x] **46. `ReaderSearchController.searchOpen` is not encapsulated**
   - **File:** `lib/controllers/search_controller.dart:15`
   - **What:** `searchOpen` is a public mutable `bool`. Any code can set it without calling `notifyListeners()`, causing UI desync. Currently safe because all mutations go through `toggleSearch()`, but fragile for future changes.
   - **Fix:** Make private with getter, ensure all mutations go through `toggleSearch()`.

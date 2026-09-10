@@ -650,6 +650,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _settingsSaveDebounce = Timer(const Duration(milliseconds: 600), () {
       widget.library.saveSettings();
     });
+    // Recreate dictionary overlay with fresh theme on next use.
+    _dictOverlay?.dismissDictionaryButton();
+    _dictOverlay = null;
     // Update wakelock.
     if (_settings.keepScreenOn) {
       WakelockPlus.enable();
@@ -702,7 +705,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   void _initSearch() {
     if (_isPdf) {
       _searchCtrl.initPdfSearch(_pdfCtrl.pdfController);
-      _searchCtrl.pdfSearcher?.addListener(_searchCtrl.onPdfSearchChanged);
       return;
     }
     if (_doc == null) return;
