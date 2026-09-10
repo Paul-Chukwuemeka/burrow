@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
@@ -45,17 +47,23 @@ class ReadingSessionManager extends ChangeNotifier {
     );
   }
 
-  void endSession() {
+  Future<void> endSession() async {
     if (_sessionId < 0) return;
-    library.endSession(_sessionId, pages: _pagesFlipped);
+    // Capture values before zeroing so the async write uses the correct data.
+    final sid = _sessionId;
+    final pages = _pagesFlipped;
     _sessionId = -1;
     _pagesFlipped = 0;
     notifyListeners();
+    await library.endSession(sid, pages: pages);
   }
 
   @override
   void dispose() {
-    endSession();
+    // Fire-and-forget: the DB write completes in the background even after
+    // dispose. This is safe because endSession captures session ID and pages
+    // as locals before the await.
+    unawaited(endSession());
     super.dispose();
   }
 }
