@@ -9,7 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 ///   runtime READ_EXTERNAL_STORAGE below that.
 /// - [scanFolder]: user picks one folder via SAF; no permission needed.
 class ScanService {
-  static const _extensions = {'.epub', '.txt', '.pdf', '.cbz', '.cbr'};
+  static const defaultExtensions = {'.epub', '.txt', '.pdf', '.cbz', '.cbr'};
   static const _maxResults = 2000;
   static const _maxDepth = 14;
 
@@ -38,8 +38,12 @@ class ScanService {
 
   /// Walks shared storage looking for documents. Returns absolute paths not
   /// already present in [knownPaths].
-  static Future<List<String>> scanDevice({Set<String> knownPaths = const {}}) {
-    return Isolate.run(() => _walk('/storage/emulated/0', knownPaths))
+  static Future<List<String>> scanDevice({
+    Set<String> knownPaths = const {},
+    Set<String>? extensions,
+  }) {
+    final exts = extensions ?? defaultExtensions;
+    return Isolate.run(() => _walk('/storage/emulated/0', knownPaths, exts))
         .timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
@@ -47,12 +51,18 @@ class ScanService {
   static Future<List<String>> scanFolder(
     String folder, {
     Set<String> knownPaths = const {},
+    Set<String>? extensions,
   }) {
-    return Isolate.run(() => _walk(folder, knownPaths))
+    final exts = extensions ?? defaultExtensions;
+    return Isolate.run(() => _walk(folder, knownPaths, exts))
         .timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
-  static List<String> _walk(String root, Set<String> knownPaths) {
+  static List<String> _walk(
+    String root,
+    Set<String> knownPaths,
+    Set<String> extensions,
+  ) {
     final results = <String>[];
     final stack = [(root, 0)];
     while (stack.isNotEmpty && results.length < _maxResults) {
@@ -74,7 +84,7 @@ class ScanService {
           final dot = name.lastIndexOf('.');
           if (dot < 0) continue;
           final ext = name.substring(dot).toLowerCase();
-          if (!_extensions.contains(ext)) continue;
+          if (!extensions.contains(ext)) continue;
           if (!knownPaths.contains(e.path)) results.add(e.path);
           if (results.length >= _maxResults) break;
         }

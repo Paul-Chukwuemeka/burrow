@@ -49,7 +49,7 @@ enum _ScanStatus { none, running, done, error }
 enum _ScanKind { none, device, folder }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  static const _pageCount = 4;
+  static const _pageCount = 5;
 
   final PageController _page = PageController();
   int _current = 0;
@@ -63,6 +63,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _permissionDenied = false;
   int _scanProgress = 0;
   int _scanTotal = 0;
+
+  /// Formats the user wants scanned (extensions with leading dot).
+  late Set<String> _selectedFormats;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFormats = Set.from(ScanService.defaultExtensions);
+  }
 
   @override
   void dispose() {
@@ -98,9 +107,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // Import / permission
   // -------------------------------------------------------------------------
 
-  /// Requests storage access, then advances to the preferences page. The
-  /// device scan itself is deferred until the import page becomes active so
-  /// the user sees one calm setup step at a time.
+  /// Requests storage access, then advances to the format selection page.
+  /// The device scan itself is deferred until the import page becomes active
+  /// so the user sees one calm setup step at a time.
   Future<void> _grantAndProceed() async {
     final granted =
         await (widget.requestPermission ?? ScanService.ensurePermission)();
@@ -118,13 +127,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _scanStatus = _ScanStatus.running;
       _permissionDenied = false;
     });
-    _goTo(3);
+    _goTo(4);
     await _startScan(
       widget.scanFolder ??
           () async {
             final dir = await FilePicker.getDirectoryPath();
             if (dir == null) return const <String>[];
-            return ScanService.scanFolder(dir, knownPaths: _knownPaths);
+            return ScanService.scanFolder(
+              dir,
+              knownPaths: _knownPaths,
+              extensions: _selectedFormats,
+            );
           },
     );
   }
@@ -137,7 +150,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       case _ScanKind.device:
         await _startScan(
           widget.scanDevice ??
-              () => ScanService.scanDevice(knownPaths: _knownPaths),
+              () => ScanService.scanDevice(
+                    knownPaths: _knownPaths,
+                    extensions: _selectedFormats,
+                  ),
         );
       case _ScanKind.folder:
         await _startScan(
@@ -145,7 +161,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               () async {
                 final dir = await FilePicker.getDirectoryPath();
                 if (dir == null) return const <String>[];
-                return ScanService.scanFolder(dir, knownPaths: _knownPaths);
+                return ScanService.scanFolder(
+                  dir,
+                  knownPaths: _knownPaths,
+                  extensions: _selectedFormats,
+                );
               },
         );
     }
@@ -241,7 +261,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 physics: const BouncingScrollPhysics(),
                 onPageChanged: (i) {
                   setState(() => _current = i);
-                  if (i == 3) _runPendingScan();
+                  if (i == 4) _runPendingScan();
                 },
                 itemCount: _pageCount,
                 itemBuilder: (context, i) => _pageBody(context, i),
@@ -278,7 +298,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const Spacer(),
           if (_current < _pageCount - 1)
             TextButton(
-              onPressed: () => _goTo(3),
+              onPressed: () => _goTo(_pageCount - 1),
               child: const Text('Skip'),
             )
           else
@@ -304,9 +324,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const SizedBox(height: 12),
           _body(context, i),
           const SizedBox(height: 28),
-          if (i == 2) _preferences(context),
-          if (i == 3) _importBody(context),
+          if (i == 3) _preferences(context),
+          if (i == 4) _importBody(context),
           if (i == 1) _formatChips(context),
+          if (i == 2) _formatSelection(context),
           const SizedBox(height: 40),
         ],
       ),
@@ -316,8 +337,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _title(int i) => switch (i) {
         0 => 'burrow',
         1 => 'let burrow find your books',
-        2 => 'make it yours',
-        3 => switch (_scanStatus) {
+        2 => 'what formats do you read?',
+        3 => 'make it yours',
+        4 => switch (_scanStatus) {
             _ScanStatus.running => 'settling in…',
             _ScanStatus.done => _scanPaths.isEmpty
                 ? 'no new books found'
@@ -330,9 +352,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   String _subtitle(int i) => switch (i) {
         0 => 'a cozy den for all your books.',
-        1 => 'we only look for your books — EPUB, TXT and PDF. nothing leaves your device.',
-        2 => 'what feels like reading?',
-        3 => switch (_scanStatus) {
+        1 => 'we only look for your books — nothing leaves your device.',
+        2 => 'pick the types you want to scan for.',
+        3 => 'what feels like reading?',
+        4 => switch (_scanStatus) {
             _ScanStatus.running => 'scanning your device…',
             _ScanStatus.done =>
               '$_added added${_failed > 0 ? ' · $_failed unreadable' : ''}.',
@@ -399,6 +422,69 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(width: 8),
         chip('PDF', const Color(0xFFFFDACF), const Color(0xFF66241A)),
       ],
+    );
+  }
+
+  Widget _formatSelection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final formats = [
+      ('.epub', 'EPUB', Icons.menu_book_rounded, scheme.primaryContainer, scheme.onPrimaryContainer),
+      ('.txt', 'TXT', Icons.description_outlined, const Color(0xFFFFE3BC), const Color(0xFF5A421A)),
+      ('.pdf', 'PDF', Icons.picture_as_pdf_rounded, const Color(0xFFFFDACF), const Color(0xFF66241A)),
+      ('.cbz', 'CBZ', Icons.collections_rounded, const Color(0xFFE8DEF8), const Color(0xFF4A3560)),
+      ('.cbr', 'CBR', Icons.collections_rounded, const Color(0xFFD0E8E0), const Color(0xFF1A4A3A)),
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      alignment: WrapAlignment.center,
+      children: formats.map((f) {
+        final (ext, label, icon, bg, fg) = f;
+        final selected = _selectedFormats.contains(ext);
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (selected) {
+                _selectedFormats.remove(ext);
+              } else {
+                _selectedFormats.add(ext);
+              }
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? bg : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(
+                color: selected ? fg.withValues(alpha: 0.4) : scheme.outlineVariant.withValues(alpha: 0.5),
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  selected ? Icons.check_circle_rounded : icon,
+                  size: 18,
+                  color: selected ? fg : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? fg : scheme.onSurfaceVariant,
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -533,6 +619,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             bg: s.secondaryContainer, fg: s.onSecondaryContainer,
             icon: Icons.folder_open_rounded),
         2 => _StageSpec(
+            w: 152, h: 152, radius: 28,
+            bg: s.tertiaryContainer, fg: s.onTertiaryContainer,
+            icon: Icons.tune_rounded),
+        3 => _StageSpec(
             w: 152, h: 152, radius: 28,
             bg: s.primaryContainer, fg: s.onPrimaryContainer,
             icon: Icons.menu_book_rounded),
@@ -731,12 +821,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             variant: _CtaVariant.outlined,
           ),
           const SizedBox(height: 6),
-          _cta('Skip for now', () => _goTo(3), variant: _CtaVariant.text),
+          _cta('Skip for now', () => _goTo(4), variant: _CtaVariant.text),
         ],
       2 => [
-          _cta('Next', () => _goTo(3)),
+          _selectedFormats.isEmpty
+              ? _cta('Skip for now', () => _goTo(3), variant: _CtaVariant.text)
+              : _cta('Next', () => _goTo(3)),
         ],
-      3 => switch (_scanStatus) {
+      3 => [
+          _cta('Next', () => _goTo(4)),
+        ],
+      4 => switch (_scanStatus) {
           _ScanStatus.running => [
               _cta(
                 'Scanning…',

@@ -97,6 +97,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
+      // Format selection page.
+      expect(find.text('what formats do you read?'), findsOneWidget);
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
 
       expect(find.text('make it yours'), findsOneWidget);
 
@@ -124,7 +128,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
-      // Permission granted: preferences page, scan not yet run.
+      // Format selection page — scan not yet run.
+      expect(find.text('what formats do you read?'), findsOneWidget);
+      expect(scanned, isFalse);
+
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      // Preferences page.
       expect(find.text('make it yours'), findsOneWidget);
       expect(scanned, isFalse);
 
@@ -149,14 +159,15 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
+      // Format selection page.
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
+      // Theme preferences page.
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      // Import page — scan runs and completes.
 
       expect(find.text('found 1 books'), findsOneWidget);
-      await tester.tap(find.text('Continue'));
-      await tester.pumpAndSettle();
-      expect(find.text('welcome home.'), findsOneWidget);
-
       await tester.tap(find.text('Open your burrow'));
       await tester.pumpAndSettle();
       expect(done, isTrue);
@@ -175,7 +186,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
-      // Lands on preferences despite denial; Next shows the empty state.
+      // Format selection page.
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      // Preferences page.
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
 
