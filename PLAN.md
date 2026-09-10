@@ -603,7 +603,7 @@ Review combined diff together before committing.
 
 ### Major Issues (Review Round 7)
 
-- [ ] **55. `_cleanupOrphanedCovers` is dead code — never runs**
+- [x] **55. `_cleanupOrphanedCovers` is dead code — never runs**
   - **File:** `lib/services/library_service.dart:170-171` (call site) and `665-681` (implementation)
   - **What:** `load()` calls `_cleanupOrphanedCovers()` at line 171. At this point, `_coversDir` is always `null` — it's only initialized in `_ensureCoversDir()` (line 658), which is called from `_saveCover()` (line 643). The cleanup method checks `if (dir == null || !dir.existsSync()) return;` and exits immediately. The orphaned cover cleanup from #51 never executes.
   - **Failure scenario:** User imports 50 books, the app is killed mid-import 10 times. 10 orphaned cover files accumulate on disk forever. The cleanup function exists but is a no-op.
