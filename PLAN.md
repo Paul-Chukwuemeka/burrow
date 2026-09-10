@@ -486,3 +486,113 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Review Round 6 — On-Call Mindset Review
+
+### Major Issues (Review Round 6)
+
+- [ ] **47. `_loadStats` fetches `getAllSessions()` AND `getPerBookStats()` — redundant full-table load**
+  - **File:** `lib/screens/stats_screen.dart:49-58`
+  - **What:** `_loadStats` calls `getAllSessions()` (loads entire `reading_sessions` table into Dart), then manually sums `totalTime` and `totalPages` in a Dart loop (lines 60-65). It ALSO calls `getPerBookStats()` which runs a `GROUP BY bookId` SQL query with the same totals. This is a redundant full-table load + O(n) Dart re-aggregation. For users with thousands of sessions, this wastes memory and CPU. The `getPerBookStats` results already contain `totalTimeMs`, `totalPages`, and `sessionCount` per book.
+  - **Fix:** Replace `getAllSessions` + Dart loop with totals derived from `getPerBookStats`:
+    ```dart
+    final perBookStats = await widget.library.getPerBookStats();
+    var totalTime = 0;
+    var totalPages = 0;
+    var totalSessions = 0;
+    for (final s in perBookStats) {
+      totalTime += s.totalTimeMs;
+      totalPages += s.totalPages;
+      totalSessions += s.sessionCount;
+    }
+    ```
+  - **Verify:** Open Stats screen with 5000+ sessions, measure memory and load time before/after.
+
+### Minor Issues (Review Round 6)
+
+- [ ] **48. `ReadingSessionManager.endSession` silently swallows DB errors**
+  - **File:** `lib/controllers/reading_session.dart:50-59`
+  - **What:** `endSession` awaits `library.endSession()` but has no try/catch. If the DB write fails (e.g., DB closed during app shutdown), the error propagates unhandled into `dispose()` via `unawaited(endSession())`, and the session data is silently lost with no logging.
+  - **Fix:** Wrap the await in try/catch with `debugPrint`:
+    ```dart
+    try {
+      await library.endSession(sid, pages: pages);
+    } catch (e) {
+      debugPrint('Failed to end session $sid: $e');
+    }
+    ```
+
+- [ ] **49. `importFileFast` doesn't rollback `_books.add` on DB insert failure**
+  - **File:** `lib/services/library_service.dart:351-383`
+  - **What:** `_books.add(book)` at line 371 executes before `insertBook` at line 372. If `insertBook` throws, the `finally` block removes the path from `_pendingImports`, but the book remains in `_books`. The book appears in the library with no DB record. On next app launch it won't exist (DB is source of truth), but during the current session it shows as a ghost entry with no metadata.
+  - **Fix:** Add a rollback in a catch block before `finally`:
+    ```dart
+    } catch (e) {
+      _books.removeWhere((b) => b.id == book.id);
+      rethrow;
+    } finally {
+      _pendingImports.remove(path);
+    }
+    ```
+
+- [ ] **50. `_processMetadataQueue` inner null/complete check is redundant after pre-filter**
+  - **File:** `lib/services/library_service.dart:411-416`
+  - **What:** The pre-filter at lines 395-398 already removes books where `book == null || book.metadataComplete`. The inner check at line 414 does the same. If a book is deleted between pre-filter and processing, the inner `continue` skips it without incrementing `completed`, causing the progress bar to stall at N-1/N.
+  - **Fix:** Either remove the inner check (pre-filter is sufficient since worker is single-threaded), or increment `completed` before the inner `continue`.
+
+- [ ] **51. `_saveCover` orphaned files on app kill**
+  - **File:** `lib/services/library_service.dart:635-647`
+  - **What:** If the app is killed between `_saveCover` writing a file and `updateBook` persisting the path, the cover file is orphaned on disk with no DB reference. Over time, repeated interrupted imports accumulate unreferenced cover files.
+  - **Fix:** Add a cleanup scan in `LibraryService.load()` that removes cover files not referenced by any book's `coverPath`. Or document as known limitation.
+
+- [ ] **52. `PdfReaderController.dispose` doesn't remove listener from `PdfViewerController`**
+  - **File:** `lib/controllers/pdf_controller.dart:65-70`
+  - **What:** `reader_screen.dart:189` adds `_pdfCtrl.onPdfViewChanged` as a listener to `_pdfCtrl.pdfController`. `dispose()` only nulls `pdfSearcher` — it never calls `pdfController.removeListener(onPdfViewChanged)`. Since `pdfController` is a field of `PdfReaderController`, they share lifecycle and the dangling listener won't fire after GC. But it's a correctness gap for future refactoring.
+  - **Fix:** Add `pdfController.removeListener(onPdfViewChanged)` in `dispose()`.
+
+### Nit Issues (Review Round 6)
+
+- [ ] **53. `_initSearch` called redundantly on every `_submitSearch`**
+  - **File:** `lib/screens/reader_screen.dart:717-719`
+  - **What:** `_submitSearch` calls `_initSearch()` every time. For reflowable books, `setChapters` has `if (_search != null) return` — a no-op after first call. Works, but the guard makes it unclear whether `_initSearch` is idempotent by design or by accident.
+  - **Fix:** Call `_initSearch` once on first search open, or remove the guard and make it idempotent by design.
+
+- [ ] **54. `_showGoToPageDialog` has duplicated page-navigation logic**
+  - **File:** `lib/screens/reader_screen.dart:1674-1689` and `1698-1713`
+  - **What:** The `onSubmitted` callback and the 'Go' button's `onPressed` contain identical page-navigation logic. If one is updated and the other isn't, they diverge.
+  - **Fix:** Extract to a local function `_goToPage(int page)`.
+
+---
+
+## Coordination — Round 6 Agent Split
+
+### Agent A — Stats screen + session error handling
+
+Issues: #47 → #48 → #49
+
+| # | File | Effort |
+|---|------|--------|
+| 47 | `lib/screens/stats_screen.dart` | small (remove redundant getAllSessions) |
+| 48 | `lib/controllers/reading_session.dart` | trivial (add try/catch) |
+| 49 | `lib/services/library_service.dart` | small (add rollback) |
+
+### Agent B — Metadata queue + cover cleanup + PDF controller
+
+Issues: #50 → #51 → #52
+
+| # | File | Effort |
+|---|------|--------|
+| 50 | `lib/services/library_service.dart` | trivial (remove redundant check) |
+| 51 | `lib/services/library_service.dart` | small (add cleanup scan) |
+| 52 | `lib/controllers/pdf_controller.dart` | trivial (remove listener) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
