@@ -447,6 +447,17 @@ class LibraryService extends ChangeNotifier {
 
         try {
           final format = book.format;
+
+          // TXT has no embedded metadata or cover — nothing to extract.
+          if (format == BookFormat.txt) {
+            book.metadataComplete = true;
+            if (_db != null) {
+              await _db!.updateBook(db.bookToCompanionForUpdate(book));
+            }
+            completed++;
+            continue;
+          }
+
           ParsedDocument doc;
           try {
             doc = await DocumentParser.parse(book.path, format);
