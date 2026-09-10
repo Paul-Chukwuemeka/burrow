@@ -930,11 +930,11 @@ EPUBs take 1.5–10 seconds to open. Three major bottlenecks:
 
 ### Implementation
 
-- [ ] **79. Compile CSS once, query per chapter**
+- [x] **79. Compile CSS once, query per chapter**
   - **File:** `lib/services/epub_css_parser.dart:51-84`
   - **What:** Move `css.compile(combinedCss)` outside the per-chapter loop. Compile once, query each chapter's DOM with pre-compiled rules.
 
-- [ ] **80. Parallel font loading**
+- [x] **80. Parallel font loading**
   - **File:** `lib/services/epub_css_parser.dart:389-404`
   - **What:** Replace sequential `await fontLoader.load()` with `Future.wait()`.
 
