@@ -119,9 +119,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!mounted) return;
     final saved = widget.library.libraryLayout;
     final newLayout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
-    if (newLayout != _layout) {
-      setState(() => _layout = newLayout);
-    }
+    _cacheKey = null;
+    setState(() => _layout = newLayout);
   }
 
   String get _sortLabel => switch (_sort) {
@@ -603,12 +602,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  void _showBookDetailsSheet(Book book) {
+  Future<void> _showBookDetailsSheet(Book book) async {
     final file = File(book.path);
-    final fileSize = file.existsSync()
-        ? _formatFileSize(file.lengthSync())
-        : 'Unknown';
+    String fileSize;
+    try {
+      fileSize = _formatFileSize(await file.length());
+    } catch (_) {
+      fileSize = 'Unknown';
+    }
 
+    if (!mounted) return;
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -2815,7 +2818,7 @@ class _EmptyTabState extends StatelessWidget {
   }
 }
 
-class _CollectionPickerTile extends StatelessWidget {
+class _CollectionPickerTile extends StatefulWidget {
   const _CollectionPickerTile({
     required this.collection,
     required this.isInCollection,
@@ -2827,10 +2830,23 @@ class _CollectionPickerTile extends StatelessWidget {
   final VoidCallback onToggle;
 
   @override
+  State<_CollectionPickerTile> createState() => _CollectionPickerTileState();
+}
+
+class _CollectionPickerTileState extends State<_CollectionPickerTile> {
+  late final Future<bool> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.isInCollection;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return FutureBuilder<bool>(
-      future: isInCollection,
+      future: _future,
       builder: (context, snapshot) {
         final inCollection = snapshot.data ?? false;
         return ListTile(
@@ -2842,10 +2858,10 @@ class _CollectionPickerTile extends StatelessWidget {
             color: inCollection ? scheme.primary : scheme.outlineVariant,
           ),
           title: Text(
-            collection.name,
+            widget.collection.name,
             style: const TextStyle(fontWeight: FontWeight.w500),
           ),
-          onTap: onToggle,
+          onTap: widget.onToggle,
         );
       },
     );
