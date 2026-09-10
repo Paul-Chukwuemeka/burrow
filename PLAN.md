@@ -149,10 +149,18 @@ This keeps the document as a live status board, not just a static plan.
   - **What:** Inner and outer catch blocks discard all metadata extraction errors with no logging.
   - **Fix:** Added `debugPrint` for both catch blocks.
 
-- [-] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — deferred to dedicated PR
+- [~] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — controller files extracted, wiring pending
   - **File:** `lib/screens/reader_screen.dart:52-2411`
   - **What:** Single state class manages reflowable pagination, PDF viewing, comic viewing, search, bookmarks, sessions, dictionary overlay, settings, chrome visibility, and word selection.
-  - **Fix:** Extract into sub-controllers. Defer to a dedicated PR.
+  - **Fix:** Extracted 7 controller files in `lib/controllers/` + `lib/widgets/reader_chrome.dart`:
+    - `ReadingSessionManager` — session lifecycle + page flip tracking
+    - `DictionaryOverlay` — word selection toolbar + dictionary lookups
+    - `ReaderSearchController` — search state, navigation, overlay builder
+    - `BookmarkHelper` — bookmark loading, checking, toggling
+    - `PdfReaderController` — PDF page state, outline, viewer
+    - `ComicReaderController` — comic loading, pagination, prefetch, preview
+    - `ReaderChrome` — top/bottom chrome widget
+  - **Status:** All files compile cleanly, zero analyzer issues, 201 tests pass. Wiring into `reader_screen.dart` pending — requires incremental migration to avoid regressions.
 
 ### Minor Issues (Review Round 2)
 
