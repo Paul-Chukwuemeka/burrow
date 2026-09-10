@@ -996,6 +996,17 @@ Review combined diff together before committing.
 
 ---
 
+## EPUB Opening Performance (Round 11)
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 89 | Blocker | `lib/services/document_parser.dart:614-630` | CSS parser builds duplicate DOM per chapter (html_parser.parse called twice) | [x] |
+| 90 | Major | `lib/services/document_parser.dart:631-634` | `archiveEntries` map rebuilt per spine doc (100+ copies of 200-entry map) | [x] |
+| 91 | Major | `lib/screens/reader_screen.dart:213` | `loadEmbeddedFonts` awaited sequentially before first render | [x] |
+| 92 | Major | `lib/services/document_parser.dart:110` | No in-memory cache — re-parses entire EPUB on re-open | [x] |
+
+---
+
 ## Memory: Lightweight EPUB Metadata Extraction
 
 ### Problem
