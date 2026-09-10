@@ -149,18 +149,18 @@ This keeps the document as a live status board, not just a static plan.
   - **What:** Inner and outer catch blocks discard all metadata extraction errors with no logging.
   - **Fix:** Added `debugPrint` for both catch blocks.
 
-- [~] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — controller files extracted, wiring pending
+- [~] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — partially wired
   - **File:** `lib/screens/reader_screen.dart:52-2411`
   - **What:** Single state class manages reflowable pagination, PDF viewing, comic viewing, search, bookmarks, sessions, dictionary overlay, settings, chrome visibility, and word selection.
   - **Fix:** Extracted 7 controller files in `lib/controllers/` + `lib/widgets/reader_chrome.dart`:
-    - `ReadingSessionManager` — session lifecycle + page flip tracking
-    - `DictionaryOverlay` — word selection toolbar + dictionary lookups
-    - `ReaderSearchController` — search state, navigation, overlay builder
-    - `BookmarkHelper` — bookmark loading, checking, toggling
-    - `PdfReaderController` — PDF page state, outline, viewer
-    - `ComicReaderController` — comic loading, pagination, prefetch, preview
-    - `ReaderChrome` — top/bottom chrome widget
-  - **Status:** All files compile cleanly, zero analyzer issues, 201 tests pass. Wiring into `reader_screen.dart` pending — requires incremental migration to avoid regressions.
+    - `ReadingSessionManager` — session lifecycle + page flip tracking ✅ wired
+    - `DictionaryOverlay` — word selection toolbar + dictionary lookups (interface mismatch: needs `TapUpDetails` vs `Offset`)
+    - `ReaderSearchController` — search state, navigation, overlay builder (interface mismatch: uses callbacks vs `setState`)
+    - `BookmarkHelper` — bookmark loading, checking, toggling ✅ wired
+    - `PdfReaderController` — PDF page state, outline, viewer (pending)
+    - `ComicReaderController` — comic loading, pagination, prefetch, preview (pending)
+    - `ReaderChrome` — top/bottom chrome widget (pending)
+  - **Status:** 2 of 7 controllers wired. 201 tests pass, zero analyzer issues. Remaining 5 need interface alignment before wiring.
 
 ### Minor Issues (Review Round 2)
 
