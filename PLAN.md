@@ -537,17 +537,17 @@ Review combined diff together before committing.
     }
     ```
 
-- [ ] **50. `_processMetadataQueue` inner null/complete check is redundant after pre-filter**
+- [x] **50. `_processMetadataQueue` inner null/complete check is redundant after pre-filter**
   - **File:** `lib/services/library_service.dart:411-416`
   - **What:** The pre-filter at lines 395-398 already removes books where `book == null || book.metadataComplete`. The inner check at line 414 does the same. If a book is deleted between pre-filter and processing, the inner `continue` skips it without incrementing `completed`, causing the progress bar to stall at N-1/N.
   - **Fix:** Either remove the inner check (pre-filter is sufficient since worker is single-threaded), or increment `completed` before the inner `continue`.
 
-- [ ] **51. `_saveCover` orphaned files on app kill**
+- [x] **51. `_saveCover` orphaned files on app kill**
   - **File:** `lib/services/library_service.dart:635-647`
   - **What:** If the app is killed between `_saveCover` writing a file and `updateBook` persisting the path, the cover file is orphaned on disk with no DB reference. Over time, repeated interrupted imports accumulate unreferenced cover files.
   - **Fix:** Add a cleanup scan in `LibraryService.load()` that removes cover files not referenced by any book's `coverPath`. Or document as known limitation.
 
-- [ ] **52. `PdfReaderController.dispose` doesn't remove listener from `PdfViewerController`**
+- [x] **52. `PdfReaderController.dispose` doesn't remove listener from `PdfViewerController`**
   - **File:** `lib/controllers/pdf_controller.dart:65-70`
   - **What:** `reader_screen.dart:189` adds `_pdfCtrl.onPdfViewChanged` as a listener to `_pdfCtrl.pdfController`. `dispose()` only nulls `pdfSearcher` — it never calls `pdfController.removeListener(onPdfViewChanged)`. Since `pdfController` is a field of `PdfReaderController`, they share lifecycle and the dangling listener won't fire after GC. But it's a correctness gap for future refactoring.
   - **Fix:** Add `pdfController.removeListener(onPdfViewChanged)` in `dispose()`.

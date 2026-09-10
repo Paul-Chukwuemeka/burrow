@@ -64,6 +64,7 @@ class PdfReaderController extends ChangeNotifier {
 
   @override
   void dispose() {
+    pdfController.removeListener(onPdfViewChanged);
     pdfSearcher?.resetTextSearch();
     pdfSearcher = null;
     super.dispose();
