@@ -993,3 +993,139 @@ Review combined diff together before committing.
 | 86 | Major | `lib/utils/book_title.dart:83` | `displayTitle` runs 7 regexes per call, no cache | [x] |
 | 87 | Minor | `lib/services/library_service.dart:502` | `notifyListeners()` per book during metadata extraction | [x] |
 | 88 | Minor | `lib/screens/library_screen.dart:162-227` | `_visibleBooks` intermediate `.toList()` per filter step | [x] |
+
+---
+
+## Memory: Lightweight EPUB Metadata Extraction
+
+### Problem
+
+During library scan of 500+ books, `DocumentParser.parse()` performs a **full EPUB parse** for every book — HTML parsing, CSS compilation, chapter splitting, image resolution, font extraction, style run building — all just to extract title/author/cover. This causes massive memory spikes:
+
+- A 10MB EPUB peaks at ~40MB (compressed bytes + decompressed archive + parsed ParsedDocument)
+- `_serializeParsedDocument` triple-sizes image bytes as JSON integers for disk cache
+- 500 sequential parses create extreme GC pressure
+
+ReadEra and other efficient readers use a two-phase approach: lightweight metadata extraction (OPF + cover only), then full content parsing on-demand when the user opens the book.
+
+### Implementation
+
+#### Agent A — Lightweight EPUB metadata parser
+
+| # | File | Effort | Description |
+|---|------|--------|-------------|
+| 89 | `lib/services/document_parser.dart` | medium | Create `_parseEpubMetadata(path)` that only reads OPF XML + cover image |
+| 90 | `lib/services/document_parser.dart:110-112` | trivial | Route metadata worker to `_parseEpubMetadata` instead of full `parse()` |
+| 91 | `lib/services/library_service.dart:413-527` | small | Update `_processMetadataQueue` to use metadata-only parse for EPUB |
+
+#### Agent B — Memory cleanup after extraction
+
+| # | File | Effort | Description |
+|---|------|--------|-------------|
+| 92 | `lib/screens/reader_screen.dart:57,239-266` | trivial | Null `_doc` in `dispose()` to free parsed data immediately |
+| 93 | `lib/services/document_parser.dart:167,225-235` | small | Skip disk cache serialization during metadata-only parse |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+
+---
+
+### Issue #89: `_parseEpubMetadata` — Lightweight OPF + Cover Extraction
+
+**File:** `lib/services/document_parser.dart`
+
+**What:** Create a new function that extracts only metadata and cover from an EPUB without parsing any HTML content.
+
+**Implementation:**
+1. Open the EPUB as a ZIP archive (same as current `_parseEpub`)
+2. Read `META-INF/container.xml` to find the OPF file path
+3. Parse the OPF XML to extract Dublin Core metadata:
+   - `dc:title` → title
+   - `dc:creator` → author
+   - `dc:description` → description
+   - `dc:publisher` → publisher
+   - `dc:language` → language
+   - `dc:identifier` (ISBN) → isbn
+   - `dc:date` → publicationDate
+   - `dc:rights` → rights
+   - `<meta name="genre">` or `<subject>` → genre
+   - `<meta name="calibre:series">` or series refiner → seriesName
+   - `<meta name="calibre:series_index">` → seriesIndex
+   - `<meta name="cover" content="cover-image"/>` → cover image ID
+4. From the manifest, find the cover image item by ID
+5. Extract **only** the cover image bytes from the ZIP (single file, not entire archive)
+6. Return a lightweight result (metadata fields + cover bytes)
+
+**What it skips:** HTML parsing, CSS compilation, chapter splitting, inline image extraction, font extraction, style run building, disk cache serialization.
+
+**Signature:**
+```dart
+/// Lightweight EPUB metadata + cover extraction.
+/// Returns (metadata map, cover bytes) without parsing chapter content.
+static Future<({Map<String, String> metadata, List<int>? coverBytes})>
+    _parseEpubMetadata(String path) async { ... }
+```
+
+**OPF Parsing:** Use `xml` package (already a dependency via `csslib`) or simple regex extraction for Dublin Core fields. The OPF is a small XML file (typically <10KB).
+
+**Cover Detection:**
+1. Look for `<meta name="cover" content="cover-image"/>` in OPF metadata
+2. Find the manifest item with that ID
+3. Extract the file at that href from the ZIP
+
+**Memory impact:** Per-book peak drops from ~40MB to ~2-5MB (ZIP handle + OPF XML + single cover image).
+
+### Issue #90: Route metadata worker to lightweight parser
+
+**File:** `lib/services/document_parser.dart:110-112`
+
+**What:** The `parse()` function currently routes to `_parseIsolate` which does a full parse. For the metadata worker, we need a separate entry point.
+
+**Implementation:** Add a `parseMetadata()` static method that calls `_parseEpubMetadata` for EPUB, returns minimal data for other formats (same as current behavior for PDF/TXT/CBZ).
+
+```dart
+/// Lightweight metadata extraction for library scan.
+/// For EPUB: reads OPF + cover only. For others: same as parse().
+static Future<ParsedDocument> parseMetadata(String path, BookFormat format) {
+  return compute(_parseMetadataIsolate, (path, format));
+}
+```
+
+### Issue #91: Update metadata worker
+
+**File:** `lib/services/library_service.dart:413-527`
+
+**What:** Change `_processMetadataQueue` to call `DocumentParser.parseMetadata()` instead of `DocumentParser.parse()`.
+
+**Before:**
+```dart
+doc = await DocumentParser.parse(book.path, format);
+```
+
+**After:**
+```dart
+doc = await DocumentParser.parseMetadata(book.path, format);
+```
+
+The returned `ParsedDocument` will have metadata fields populated but empty chapters (for EPUB). The metadata worker already only reads metadata fields and cover bytes, so this is a drop-in replacement.
+
+### Issue #92: Null `_doc` in reader dispose
+
+**File:** `lib/screens/reader_screen.dart:57,239-266`
+
+**What:** `_doc` holds the full `ParsedDocument` (all chapter text, images, fonts) but is never nullified in `dispose()`. This keeps the parsed data alive until the State object is GC'd.
+
+**Fix:** Add `_doc = null;` in `dispose()`.
+
+### Issue #93: Skip disk cache during metadata-only parse
+
+**File:** `lib/services/document_parser.dart:163-169`
+
+**What:** `_parseEpub` serializes the full `ParsedDocument` to disk cache (triple-sizing image bytes as JSON). During metadata-only extraction, this serialization is unnecessary and wasteful.
+
+**Fix:** The metadata-only path (`_parseEpubMetadata`) doesn't produce a `ParsedDocument` with chapters, so no cache is written. The existing disk cache in `_parseEpub` is only used when the full parser is called (reader screen), which is correct.
