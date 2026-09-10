@@ -821,6 +821,8 @@ class DocumentParser {
             .toList();
 
         // Extract all to temp dir, then read images from disk.
+        // TODO: Consider lazy per-entry extraction if Rar library supports it,
+        // to avoid holding all decompressed images on disk simultaneously.
         try {
           cbrTempDir = await Directory.systemTemp.createTemp('cbr_');
           final extractResult = await Rar.extractRarFile(
@@ -1067,6 +1069,7 @@ class DocumentParser {
   static final RegExp _nonContentRe = RegExp(
     r'<!--.*?-->'
     r'|<head\b[^>]*>.*?</head\s*>'
+    r'|<style\b[^>]*>.*?</style\s*>'
     r'|<script\b[^>]*>.*?</script\s*>',
     dotAll: true,
     caseSensitive: false,

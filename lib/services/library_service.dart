@@ -293,8 +293,8 @@ class LibraryService extends ChangeNotifier {
           }
         }
         imported++;
-      } catch (_) {
-        // Malformed entry: skip rather than abort the whole import.
+      } catch (e) {
+        debugPrint('Skipping malformed backup entry: $e');
       }
     }
 
@@ -391,6 +391,12 @@ class LibraryService extends ChangeNotifier {
 
   /// Processes the metadata extraction queue one book at a time.
   Future<void> _processMetadataQueue() async {
+    // Pre-filter: remove books that are already complete or no longer in the library.
+    _metadataQueue.removeWhere((id) {
+      final book = _books.where((b) => b.id == id).firstOrNull;
+      return book == null || book.metadataComplete;
+    });
+
     final totalToProcess = _metadataQueue.length;
     var completed = 0;
     
@@ -406,7 +412,6 @@ class LibraryService extends ChangeNotifier {
       final bookId = _metadataQueue.removeFirst();
       final book = _books.where((b) => b.id == bookId).firstOrNull;
       if (book == null || book.metadataComplete) {
-        completed++;
         continue;
       }
 
@@ -536,7 +541,15 @@ class LibraryService extends ChangeNotifier {
         debugPrint('Failed to delete book file: $e');
       }
     }
-    if (_db != null) await _db!.deleteBookById(id);
+    if (_db != null) {
+      await _db!.customStatement(
+        'DELETE FROM bookmarks WHERE bookId = ?', [id]);
+      await _db!.customStatement(
+        'DELETE FROM reading_sessions WHERE bookId = ?', [id]);
+      await _db!.customStatement(
+        'DELETE FROM collection_books WHERE bookId = ?', [id]);
+      await _db!.deleteBookById(id);
+    }
     notifyListeners();
   }
 

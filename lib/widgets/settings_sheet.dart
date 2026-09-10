@@ -397,7 +397,7 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
             Switch(
               value: settings.respectCssStyles,
-              activeColor: theme.accent,
+              activeThumbColor: theme.accent,
               onChanged: (v) => _update(() => settings.respectCssStyles = v),
             ),
           ],
@@ -789,7 +789,7 @@ class _CssOverrideToggle extends StatelessWidget {
           ),
           Switch(
             value: value,
-            activeColor: theme.accent,
+            activeThumbColor: theme.accent,
             onChanged: onChanged,
           ),
         ],

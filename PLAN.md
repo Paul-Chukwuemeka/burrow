@@ -333,7 +333,7 @@ Review combined diff together before committing.
 
 ### Major Issues (Review Round 4)
 
-- [ ] **36. `deleteBookWithFile` does not cascade — orphaned bookmarks, sessions, collection-links**
+- [x] **36. `deleteBookWithFile` does not cascade — orphaned bookmarks, sessions, collection-links**
   - **File:** `lib/services/library_service.dart:519-541`
   - **What:** `deleteBookWithFile` only calls `_db!.deleteBookById(id)`. Since `PRAGMA foreign_keys` is not enabled (Drift `NativeDatabase` default), the FK constraints on `Bookmarks`, `ReadingSessions`, and `CollectionBooks` are decorative. Orphaned rows accumulate indefinitely, bloating the database. Exported backups include bookmarks/sessions for books that no longer exist. This is silent data corruption.
   - **Fix:** Add cascading deletes before `deleteBookById`:
@@ -379,12 +379,12 @@ Review combined diff together before committing.
     ```
   - **Verify:** Run the "drops style and script bodies" test; confirm it passes.
 
-- [ ] **40. `importLibrary` silently swallows per-book parse errors**
+- [x] **40. `importLibrary` silently swallows per-book parse errors**
   - **File:** `lib/services/library_service.dart:296-298`
   - **What:** The `catch (_) { }` at line 296 drops malformed backup entries with no logging. If a backup has a corrupt book entry, the user sees "Restored N books" with no indication entries were skipped.
   - **Fix:** Add `debugPrint('Skipping malformed backup entry: $e');` in the catch block.
 
-- [ ] **41. CBR extraction writes all images to temp dir before reading any**
+- [x] **41. CBR extraction writes all images to temp dir before reading any**
   - **File:** `lib/services/document_parser.dart:823-848`
   - **What:** For CBR files, `Rar.extractRarFile` extracts ALL images to a temp directory before any are read. A 500-page comic writes 500 image files to disk simultaneously. If the app is killed mid-parse, temp files leak. Also blocks the isolate for the full extraction time.
   - **Fix:** Consider lazy extraction (read from RAR on demand) similar to CBZ's `ComicPageProvider`. Or use a unique temp dir per file to avoid collision with concurrent extractions.

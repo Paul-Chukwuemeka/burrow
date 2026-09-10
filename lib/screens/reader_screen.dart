@@ -1210,7 +1210,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   Widget _toolbarButton({
     required String label,
     required VoidCallback onTap,
-    required theme,
+    required ReaderTheme theme,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -1229,7 +1229,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     );
   }
 
-  Widget _toolbarDivider({required theme}) {
+  Widget _toolbarDivider({required ReaderTheme theme}) {
     return Container(
       width: 1,
       height: 20,
