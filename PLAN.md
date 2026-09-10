@@ -554,12 +554,12 @@ Review combined diff together before committing.
 
 ### Nit Issues (Review Round 6)
 
-- [ ] **53. `_initSearch` called redundantly on every `_submitSearch`**
+- [x] **53. `_initSearch` called redundantly on every `_submitSearch`**
   - **File:** `lib/screens/reader_screen.dart:717-719`
   - **What:** `_submitSearch` calls `_initSearch()` every time. For reflowable books, `setChapters` has `if (_search != null) return` — a no-op after first call. Works, but the guard makes it unclear whether `_initSearch` is idempotent by design or by accident.
   - **Fix:** Call `_initSearch` once on first search open, or remove the guard and make it idempotent by design.
 
-- [ ] **54. `_showGoToPageDialog` has duplicated page-navigation logic**
+- [x] **54. `_showGoToPageDialog` has duplicated page-navigation logic**
   - **File:** `lib/screens/reader_screen.dart:1674-1689` and `1698-1713`
   - **What:** The `onSubmitted` callback and the 'Go' button's `onPressed` contain identical page-navigation logic. If one is updated and the other isn't, they diverge.
   - **Fix:** Extract to a local function `_goToPage(int page)`.
