@@ -389,3 +389,35 @@ Review combined diff together before committing.
   - **What:** For CBR files, `Rar.extractRarFile` extracts ALL images to a temp directory before any are read. A 500-page comic writes 500 image files to disk simultaneously. If the app is killed mid-parse, temp files leak. Also blocks the isolate for the full extraction time.
   - **Fix:** Consider lazy extraction (read from RAR on demand) similar to CBZ's `ComicPageProvider`. Or use a unique temp dir per file to avoid collision with concurrent extractions.
   - **Verify:** Open a large CBR file, confirm temp dir is cleaned up after parse.
+
+---
+
+## Coordination — Round 4 Agent Split
+
+### Agent A — `library_service.dart` metadata + `document_parser.dart` CSS
+
+Issues: #37 → #39
+
+| # | File | Lines | Effort |
+|---|------|-------|--------|
+| 37 | `lib/services/library_service.dart` | 393-485 | small (progress counter) |
+| 39 | `lib/services/document_parser.dart` | 1067-1073 | small (regex fix) |
+
+### Agent B — `library_service.dart` deletes + imports + CBR
+
+Issues: #36 → #40 → #41
+
+| # | File | Lines | Effort |
+|---|------|-------|--------|
+| 36 | `lib/services/library_service.dart` | 519-541 | small (cascade deletes) |
+| 40 | `lib/services/library_service.dart` | 296-298 | trivial (add debugPrint) |
+| 41 | `lib/services/document_parser.dart` | 823-848 | medium (CBR temp dir) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
