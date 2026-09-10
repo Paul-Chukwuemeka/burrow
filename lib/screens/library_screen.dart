@@ -834,7 +834,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   if (id.isNotEmpty) {
                     await widget.library.addBookToCollection(id, book.id);
                   }
-                  Navigator.pop(sheetContext);
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
                 }
               },
             ),
@@ -857,7 +857,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         if (id.isNotEmpty) {
                           await widget.library.addBookToCollection(id, book.id);
                         }
-                        Navigator.pop(sheetContext);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
                       }
                     },
                     child: const Text('Create & add'),
@@ -1294,7 +1294,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
                   await widget.library.createCollection(name);
-                  Navigator.pop(sheetContext);
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
                 }
               },
             ),
@@ -1314,7 +1314,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       final name = controller.text.trim();
                       if (name.isNotEmpty) {
                         await widget.library.createCollection(name);
-                        Navigator.pop(sheetContext);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
                       }
                     },
                     child: const Text('Create'),
@@ -1413,7 +1413,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 final name = controller.text.trim();
                 if (name.isNotEmpty) {
                   await widget.library.renameCollection(collection.id, name);
-                  Navigator.pop(sheetContext);
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
                 }
               },
             ),
@@ -1433,7 +1433,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       final name = controller.text.trim();
                       if (name.isNotEmpty) {
                         await widget.library.renameCollection(collection.id, name);
-                        Navigator.pop(sheetContext);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
                       }
                     },
                     child: const Text('Save'),

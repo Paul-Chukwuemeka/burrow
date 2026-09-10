@@ -252,7 +252,7 @@ This keeps the document as a live status board, not just a static plan.
   - **What:** Identical ~50-line widget copy-pasted in 5 files. Any change to its appearance requires editing 5 files.
   - **Fix:** Extract to shared `lib/widgets/pill_chip.dart`.
 
-- [ ] **31. Grid layout code duplicated across 6 files**
+- [x] **31. Grid layout code duplicated across 6 files**
   - **Files:** `library_screen.dart`, `collection_screen.dart`, `author_screen.dart`, `genre_screen.dart`, `series_screen.dart`, `smart_group_screen.dart`
   - **What:** `maxTileExtent`, `crossSpacing`, `mainSpacing`, `cardPadding`, `textBlock`, `gridPadding` are repeated verbatim.
   - **Fix:** Extract to shared `lib/widgets/book_grid.dart` helper.
@@ -274,7 +274,7 @@ This keeps the document as a live status board, not just a static plan.
 
 ### Nit Issues (Review Round 3)
 
-- [ ] **35. `use_build_context_synchronously` warnings in `library_screen.dart`**
+- [x] **35. `use_build_context_synchronously` warnings in `library_screen.dart`**
   - **File:** `lib/screens/library_screen.dart:836, 859, 1296, 1316, 1415, 1435`
   - **What:** 6 info-level analyzer warnings about using `BuildContext` after `await`. These are inside sheet callbacks where the context is still valid (sheet is mounted).
   - **Fix:** Acceptable — suppress with `// ignore:` if noisy, or restructure to check `mounted` before using context.

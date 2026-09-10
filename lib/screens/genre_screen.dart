@@ -1,14 +1,13 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../services/library_service.dart';
-import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/book_grid.dart';
 import '../widgets/pill_chip.dart';
 import 'book_info_screen.dart';
 import 'reader_screen.dart';
@@ -138,28 +137,10 @@ class _GenreScreenState extends State<GenreScreen> {
   Widget _bookGrid(BuildContext context, List<Book> books) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const maxTileExtent = 200.0;
-        const crossSpacing = 12.0;
-        const mainSpacing = 14.0;
-        const cardPadding = 6.0;
-        const textBlock = 58.0;
-        const gridPadding = 20.0;
-
-        final width = constraints.maxWidth - gridPadding * 2;
-        final columns = math.max(1, (width / maxTileExtent).ceil());
-        final tileWidth = (width - crossSpacing * (columns - 1)) / columns;
-        final coverWidth = tileWidth - cardPadding * 2;
-        final mainAxisExtent =
-            cardPadding + coverWidth / Burrow.coverAspectRatio + textBlock;
-
+        final width = constraints.maxWidth - kBookGridPadding * 2;
         return GridView.builder(
-          padding: const EdgeInsets.all(gridPadding),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: crossSpacing,
-            mainAxisSpacing: mainSpacing,
-            mainAxisExtent: mainAxisExtent,
-          ),
+          padding: const EdgeInsets.all(kBookGridPadding),
+          gridDelegate: bookGridDelegate(width),
           itemCount: books.length,
           itemBuilder: (context, i) {
             final book = books[i];
