@@ -711,3 +711,122 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Review Round 9 — Library Screen & Search Review
+
+### Major Issues (Review Round 9)
+
+- [ ] **61. `_onLibraryChanged` only rebuilds on layout change — all other mutations invisible**
+  - **File:** `lib/screens/library_screen.dart:118-125`
+  - **What:** The `LibraryService` listener only calls `setState` when the layout mode changes. Book deletion, collection changes, reading progress updates, and cover generation all call `notifyListeners()` but are silently dropped. The library screen doesn't update.
+  - **Failure scenario:** User deletes a book. Book removed from `_books`, `notifyListeners()` fires. `_onLibraryChanged` doesn't rebuild (layout unchanged). Deleted book still appears until navigation.
+  - **Fix:** Always call `setState` in `_onLibraryChanged` and invalidate `_visibleBooks` cache:
+    ```dart
+    void _onLibraryChanged() {
+      if (!mounted) return;
+      final saved = widget.library.libraryLayout;
+      final newLayout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
+      _cacheKey = null;
+      setState(() => _layout = newLayout);
+    }
+    ```
+
+- [ ] **62. Metadata worker permanently stuck after stream disposal**
+  - **File:** `lib/services/library_service.dart:394-496`
+  - **What:** `_processMetadataQueue` is async but called without `await`. `_metadataStatusController.add()` at line 424 is outside the try block. If `dispose()` closes the stream controller, `.add()` throws `StateError`. `_metadataWorkerRunning` stays `true` forever — no future metadata extraction runs.
+  - **Failure scenario:** User imports books, metadata extraction starts, user navigates away. Stream controller closes. Next `.add()` throws. Worker permanently blocked.
+  - **Fix:** Wrap while loop body in try/finally to ensure `_metadataWorkerRunning = false` always executes.
+
+- [ ] **63. Book search scan permanently stalls after rapid typing**
+  - **File:** `lib/services/book_search.dart:89-101`
+  - **What:** Race condition between `_startScan` (checks `_running`) and `_scanIncrementally` (sets `_running = false` on query change). When user types quickly, old scan exits, new scan's `_startScan` already returned because `_running` was still `true`. Nobody restarts scan for new query.
+  - **Failure scenario:** User types "the", then "theory" quickly. Search results stale/empty until user clears and retypes.
+  - **Fix:** In `_scanIncrementally`, call `_startScan()` when exiting due to query change:
+    ```dart
+    if (_lastQuery != _query) {
+      _running = false;
+      _startScan();
+      return;
+    }
+    ```
+
+### Minor Issues (Review Round 9)
+
+- [ ] **64. `_visibleBooks` cache not invalidated on library changes**
+  - **File:** `lib/screens/library_screen.dart:164`
+  - **What:** Cache key uses `books.length`. If metadata changes without count change, sorted order is stale.
+  - **Fix:** Clear `_cacheKey` in `_onLibraryChanged` (combined with #61 fix).
+
+- [ ] **65. `deleteBookWithFile` DB operations not transactional**
+  - **File:** `lib/services/library_service.dart:550-558`
+  - **What:** Four separate `customStatement` calls. If any fails mid-way, DB is left inconsistent.
+  - **Fix:** Wrap in `_db!.transaction()`.
+
+- [ ] **66. Synchronous file I/O in `_showBookDetailsSheet`**
+  - **File:** `lib/screens/library_screen.dart:608-609`
+  - **What:** `existsSync()` and `lengthSync()` block UI thread on slow storage.
+  - **Fix:** Compute file size asynchronously before showing sheet.
+
+- [ ] **67. `_CollectionPickerTile` recreates `FutureBuilder` futures on rebuild**
+  - **File:** `lib/screens/library_screen.dart:762`
+  - **What:** Passing `Future<bool>` to `StatelessWidget`. On `setSheetState`, every tile's `FutureBuilder` restarts.
+  - **Fix:** Resolve eagerly and pass `bool`, or make tile a `StatefulWidget`.
+
+- [ ] **68. EPUB parsing has no file size guard**
+  - **File:** `lib/services/document_parser.dart:134-141`
+  - **What:** No size check before `readAsBytes()`. Large EPUBs can OOM the isolate.
+  - **Fix:** Add file length check (100MB limit like `importLibrary`).
+
+### Nit Issues (Review Round 9)
+
+- [ ] **69. `format` parameter in `parse()` is dead code**
+  - **File:** `lib/services/document_parser.dart:108-109`
+  - **What:** `parse()` accepts `format` but `_parseIsolate` ignores it, re-deriving from extension.
+  - **Fix (optional):** Pass format into isolate or remove from public API.
+
+- [ ] **70. `_naturalCompareImpl` leading-zero edge case**
+  - **File:** `lib/services/document_parser.dart:931`
+  - **What:** "01" sorts before "1" due to character comparison after numeric equality.
+  - **Fix (optional):** Skip character comparison after digit run with `continue`.
+
+- [ ] **71. `_mergeCssStyles` mutates list during iteration**
+  - **File:** `lib/services/document_parser.dart:1262-1298`
+  - **What:** `runs.removeAt`/`insert` during for loop. Works due to careful index management but fragile.
+  - **Fix (optional):** Build new list instead of mutating in place.
+
+---
+
+## Coordination — Round 9 Agent Split
+
+### Agent A — Library screen listener + cache
+
+Issues: #61, #64, #66, #67
+
+| # | File | Effort |
+|---|------|--------|
+| 61 | `lib/screens/library_screen.dart` | small (listener always setState) |
+| 64 | `lib/screens/library_screen.dart` | trivial (clear cache in listener) |
+| 66 | `lib/screens/library_screen.dart` | small (async file size) |
+| 67 | `lib/screens/library_screen.dart` | small (resolve eagerly or StatefulWidget) |
+
+### Agent B — Service layer fixes
+
+Issues: #62, #63, #65, #68
+
+| # | File | Effort |
+|---|------|--------|
+| 62 | `lib/services/library_service.dart` | small (try/finally in worker) |
+| 63 | `lib/services/book_search.dart` | small (restart scan on query change) |
+| 65 | `lib/services/library_service.dart` | small (wrap in transaction) |
+| 68 | `lib/services/document_parser.dart` | trivial (add size check) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
