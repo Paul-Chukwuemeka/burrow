@@ -669,7 +669,7 @@ Review combined diff together before committing.
 
 ### Minor Issues (Review Round 8)
 
-- [ ] **59. `database.dart` migration catch swallows errors — leaves DB in partial state**
+- [x] **59. `database.dart` migration catch swallows errors — leaves DB in partial state**
   - **File:** `lib/db/database.dart:163-164`
   - **What:** The `onUpgrade` catch block only does `debugPrint`. If a migration step fails, DB is left partially migrated. Drift's `schemaVersion` still set to 6, so migration won't retry. Queries on missing columns crash.
   - **Failure scenario:** User upgrades from v3 to v6. Step `from < 4` fails halfway. Some v4 columns exist, others don't.
