@@ -46,7 +46,6 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Future<void> _loadStats() async {
-    final sessions = await widget.library.getAllSessions();
     final books = widget.library.books;
     final dailyTime = await widget.library.getDailyReadingTime();
     final streak = await widget.library.getReadingStreak();
@@ -59,9 +58,11 @@ class _StatsScreenState extends State<StatsScreen> {
 
     var totalTime = 0;
     var totalPages = 0;
-    for (final s in sessions) {
-      if (s.endedAt > 0) totalTime += s.endedAt - s.startedAt;
-      totalPages += s.pages;
+    var totalSessions = 0;
+    for (final s in perBookStats) {
+      totalTime += s.totalTimeMs;
+      totalPages += s.totalPages;
+      totalSessions += s.sessionCount;
     }
 
     final started = books.where((b) => b.isStarted).length;
@@ -72,7 +73,7 @@ class _StatsScreenState extends State<StatsScreen> {
       _streak = streak;
       _totalTimeMs = totalTime;
       _totalPages = totalPages;
-      _totalSessions = sessions.length;
+      _totalSessions = totalSessions;
       _booksStarted = started;
       _booksFinished = finished;
       _todayTimeMs = todayTime;

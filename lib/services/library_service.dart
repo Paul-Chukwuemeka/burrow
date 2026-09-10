@@ -167,6 +167,9 @@ class LibraryService extends ChangeNotifier {
     // First-run onboarding state.
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;
 
+    // Clean up orphaned cover files (e.g. from interrupted imports).
+    _cleanupOrphanedCovers();
+
     notifyListeners();
   }
 
@@ -369,7 +372,12 @@ class LibraryService extends ChangeNotifier {
       );
       
       _books.add(book);
-      if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
+      try {
+        if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
+      } catch (e) {
+        _books.removeWhere((b) => b.id == book.id);
+        rethrow;
+      }
       notifyListeners();
 
       // Queue metadata extraction for background processing.
@@ -411,9 +419,7 @@ class LibraryService extends ChangeNotifier {
     while (_metadataQueue.isNotEmpty) {
       final bookId = _metadataQueue.removeFirst();
       final book = _books.where((b) => b.id == bookId).firstOrNull;
-      if (book == null || book.metadataComplete) {
-        continue;
-      }
+      if (book == null) continue;
 
       _metadataStatusController.add(MetadataStatus(
         type: MetadataStatusType.progress,
@@ -652,6 +658,26 @@ class LibraryService extends ChangeNotifier {
     _coversDir = Directory('${docs.path}/burrow_covers');
     _coversDir!.createSync(recursive: true);
     return _coversDir!;
+  }
+
+  /// Removes cover files in the covers directory that aren't referenced by
+  /// any book. Runs once at startup; safe to call if the directory is missing.
+  void _cleanupOrphanedCovers() {
+    try {
+      final dir = _coversDir;
+      if (dir == null || !dir.existsSync()) return;
+      final referenced = <String>{
+        for (final b in _books)
+          if (b.coverPath != null) b.coverPath!,
+      };
+      for (final file in dir.listSync()) {
+        if (file is File && !referenced.contains(file.path)) {
+          try {
+            file.deleteSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   String _newId() =>

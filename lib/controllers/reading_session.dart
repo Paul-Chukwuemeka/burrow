@@ -55,7 +55,11 @@ class ReadingSessionManager extends ChangeNotifier {
     _sessionId = -1;
     _pagesFlipped = 0;
     notifyListeners();
-    await library.endSession(sid, pages: pages);
+    try {
+      await library.endSession(sid, pages: pages);
+    } catch (e) {
+      debugPrint('Failed to end session $sid: $e');
+    }
   }
 
   @override
