@@ -326,3 +326,66 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Review Round 4 — On-Call Mindset Review
+
+### Major Issues (Review Round 4)
+
+- [ ] **36. `deleteBookWithFile` does not cascade — orphaned bookmarks, sessions, collection-links**
+  - **File:** `lib/services/library_service.dart:519-541`
+  - **What:** `deleteBookWithFile` only calls `_db!.deleteBookById(id)`. Since `PRAGMA foreign_keys` is not enabled (Drift `NativeDatabase` default), the FK constraints on `Bookmarks`, `ReadingSessions`, and `CollectionBooks` are decorative. Orphaned rows accumulate indefinitely, bloating the database. Exported backups include bookmarks/sessions for books that no longer exist. This is silent data corruption.
+  - **Fix:** Add cascading deletes before `deleteBookById`:
+    ```dart
+    if (_db != null) {
+      await _db!.customStatement(
+        'DELETE FROM bookmarks WHERE bookId = ?', [id]);
+      await _db!.customStatement(
+        'DELETE FROM reading_sessions WHERE bookId = ?', [id]);
+      await _db!.customStatement(
+        'DELETE FROM collection_books WHERE bookId = ?', [id]);
+      await _db!.deleteBookById(id);
+    }
+    ```
+  - **Verify:** Add a book, create a bookmark for it, delete the book, query bookmarks table — should be empty.
+
+- [ ] **37. `_processMetadataQueue` progress counter inflated by skipped books**
+  - **File:** `lib/services/library_service.dart:393-485`
+  - **What:** `totalToProcess` is set from `_metadataQueue.length` before the loop. When books are skipped (already `metadataComplete` or not found), `completed++` still increments. If you import 10 books and 3 are already complete, the progress starts at "7/10" and jumps to "10/10" at the end. The `MetadataStatus.progress` event fires for skipped books too, making the status bar unreliable.
+  - **Fix:** Count only actually-processed books in `completed`, or pre-filter the queue to exclude already-complete books before emitting the `started` event.
+
+- [ ] **38. CBZ memory pressure — archive + decoded entries both live in memory**
+  - **File:** `lib/services/comic_page_provider.dart:38-68`
+  - **What:** Issue #9 was marked complete but only added a TODO comment. The actual problem remains: `ZipDecoder().decodeBytes(bytes)` decompresses all entries into an `Archive` object kept alive for the provider's lifetime. The raw `bytes` `Uint8List` is also retained by the closure. For a 500-page comic this is ~2x the compressed size in memory simultaneously, and the decompressed images persist in the `Archive` until `dispose()`.
+  - **Fix (minimum):** After building `pageMetas`, drop the reference to the raw `bytes` (it's a local, so it should be GC'd, but verify the `Archive` doesn't hold it). Long-term: switch to file-backed random-access ZIP reading.
+  - **Verify:** Open a 200+ page CBZ and monitor memory via DevTools — should not grow unbounded.
+
+### Minor Issues (Review Round 4)
+
+- [ ] **39. `_nonContentRe` does not strip `<style>` tag bodies**
+  - **File:** `lib/services/document_parser.dart:1067-1073`
+  - **What:** The regex strips `<head>` and `<script>` content but not `<style>`. CSS rule bodies leak into plain text output. E.g. `<style>p { color: red; }</style><p>Text</p>` produces `p { color: red; } Text` instead of `Text`. The test at `document_parser_test.dart` named "drops style and script bodies" expects style content to be dropped — this test may be failing silently or not running.
+  - **Fix:** Add `<style>` to `_nonContentRe`:
+    ```dart
+    static final RegExp _nonContentRe = RegExp(
+        r'<!--.*?-->'
+        r'|<head\b[^>]*>.*?</head\s*>'
+        r'|<style\b[^>]*>.*?</style\s*>'
+        r'|<script\b[^>]*>.*?</script\s*>',
+        dotAll: true,
+        caseSensitive: false,
+    );
+    ```
+  - **Verify:** Run the "drops style and script bodies" test; confirm it passes.
+
+- [ ] **40. `importLibrary` silently swallows per-book parse errors**
+  - **File:** `lib/services/library_service.dart:296-298`
+  - **What:** The `catch (_) { }` at line 296 drops malformed backup entries with no logging. If a backup has a corrupt book entry, the user sees "Restored N books" with no indication entries were skipped.
+  - **Fix:** Add `debugPrint('Skipping malformed backup entry: $e');` in the catch block.
+
+- [ ] **41. CBR extraction writes all images to temp dir before reading any**
+  - **File:** `lib/services/document_parser.dart:823-848`
+  - **What:** For CBR files, `Rar.extractRarFile` extracts ALL images to a temp directory before any are read. A 500-page comic writes 500 image files to disk simultaneously. If the app is killed mid-parse, temp files leak. Also blocks the isolate for the full extraction time.
+  - **Fix:** Consider lazy extraction (read from RAR on demand) similar to CBZ's `ComicPageProvider`. Or use a unique temp dir per file to avoid collision with concurrent extractions.
+  - **Verify:** Open a large CBR file, confirm temp dir is cleaned up after parse.
