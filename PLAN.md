@@ -916,3 +916,68 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Performance: EPUB Open Speed Optimizations
+
+### Problem
+
+EPUBs take 1.5–10 seconds to open. Three major bottlenecks:
+1. CSS stylesheet compiled from scratch per chapter (50 chapters = 50 identical compilations)
+2. Fonts loaded sequentially on main thread
+3. Full-book pagination before first page shows
+
+### Implementation
+
+- [ ] **79. Compile CSS once, query per chapter**
+  - **File:** `lib/services/epub_css_parser.dart:51-84`
+  - **What:** Move `css.compile(combinedCss)` outside the per-chapter loop. Compile once, query each chapter's DOM with pre-compiled rules.
+
+- [ ] **80. Parallel font loading**
+  - **File:** `lib/services/epub_css_parser.dart:389-404`
+  - **What:** Replace sequential `await fontLoader.load()` with `Future.wait()`.
+
+- [ ] **81. Lazy pagination — show reader after first chapters**
+  - **File:** `lib/screens/reader_screen.dart:1448-1525`
+  - **What:** Paginate first 2-3 chapters eagerly, show reader immediately, paginate rest in background.
+
+- [ ] **82. Cache parsed ParsedDocument to disk**
+  - **File:** `lib/services/document_parser.dart`, `lib/screens/reader_screen.dart:209-236`
+  - **What:** Serialize chapter text/runs/images to disk cache. Load from cache on subsequent opens. Cache key: book ID + file mtime.
+
+- [ ] **83. Background image decoding**
+  - **File:** `lib/services/document_parser.dart` (in `_parseIsolate`), `lib/models/style_run.dart`
+  - **What:** Decode images in background isolate during parsing. Store decoded pixel data so main thread doesn't decode during widget build.
+
+---
+
+## Coordination — Performance Agent Split
+
+### Agent A — CSS optimization + font parallelism
+
+Issues: #79, #80
+
+| # | File | Effort |
+|---|------|--------|
+| 79 | `lib/services/epub_css_parser.dart` | medium (restructure compile loop) |
+| 80 | `lib/services/epub_css_parser.dart` | trivial (Future.wait) |
+
+### Agent B — Pagination + caching + image decoding
+
+Issues: #81, #82, #83
+
+| # | File | Effort |
+|---|------|--------|
+| 81 | `lib/screens/reader_screen.dart` | medium (chunked early show) |
+| 82 | `lib/services/document_parser.dart` + `reader_screen.dart` | medium (cache) |
+| 83 | `lib/services/document_parser.dart` + `lib/models/style_run.dart` | medium (decode in isolate) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
