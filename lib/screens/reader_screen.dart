@@ -256,6 +256,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationCache.clear();
     _pdfCtrl.dispose();
     _comicCtrl.dispose();
+    _searchCtrl.searchController.removeListener(_searchCtrl.onSearchTextChanged);
     _searchCtrl.dispose();
     _dictOverlay?.dismissDictionaryButton();
     WakelockPlus.disable();
@@ -1107,9 +1108,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       },
     );
     if (!mounted) return;
-    if (_comicCtrl.comicLoading && _error == null) {
-      setState(() => _error = 'Failed to load comic');
-    }
   }
 
   Widget _buildComic(ReaderTheme theme) {
@@ -1716,7 +1714,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           ),
         ],
       ),
-    );
+    ).then((_) => controller.dispose());
   }
 
   // ------------------------------ Chrome -------------------------------------
