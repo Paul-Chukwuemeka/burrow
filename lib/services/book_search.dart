@@ -97,7 +97,11 @@ class BookSearch {
   void _scanIncrementally(int chapterIndex) {
     if (chapterIndex >= chapters.length || _lastQuery != _query) {
       _running = false;
-      if (_lastQuery == _query) onDone();
+      if (_lastQuery == _query) {
+        onDone();
+      } else {
+        _startScan();
+      }
       return;
     }
 

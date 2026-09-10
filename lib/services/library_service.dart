@@ -416,83 +416,91 @@ class LibraryService extends ChangeNotifier {
       ));
     }
     
-    while (_metadataQueue.isNotEmpty) {
-      final bookId = _metadataQueue.removeFirst();
-      final book = _books.where((b) => b.id == bookId).firstOrNull;
-      if (book == null) continue;
+    try {
+      while (_metadataQueue.isNotEmpty) {
+        final bookId = _metadataQueue.removeFirst();
+        final book = _books.where((b) => b.id == bookId).firstOrNull;
+        if (book == null) continue;
 
-      _metadataStatusController.add(MetadataStatus(
-        type: MetadataStatusType.progress,
-        total: totalToProcess,
-        completed: completed,
-        bookTitle: book.title,
-      ));
-
-      try {
-        final format = book.format;
-        ParsedDocument doc;
         try {
-          doc = await DocumentParser.parse(book.path, format);
-        } on FormatException {
-          debugPrint('Metadata parse skip (format): ${book.title}');
-          completed++;
-          continue;
+          _metadataStatusController.add(MetadataStatus(
+            type: MetadataStatusType.progress,
+            total: totalToProcess,
+            completed: completed,
+            bookTitle: book.title,
+          ));
+        } catch (_) {
+          break;
+        }
+
+        try {
+          final format = book.format;
+          ParsedDocument doc;
+          try {
+            doc = await DocumentParser.parse(book.path, format);
+          } on FormatException {
+            debugPrint('Metadata parse skip (format): ${book.title}');
+            completed++;
+            continue;
+          } catch (e) {
+            debugPrint('Metadata extraction failed for ${book.title}: $e');
+            completed++;
+            continue;
+          }
+
+          // Update book with extracted metadata.
+          book.title = doc.title.isNotEmpty ? doc.title : book.title;
+          book.author = doc.author;
+          book.description = doc.description;
+          book.annotation = doc.annotation;
+          book.genre = doc.genre;
+          book.seriesName = doc.seriesName;
+          book.seriesIndex = doc.seriesIndex;
+          book.publisher = doc.publisher;
+          book.isbn = doc.isbn;
+          book.language = doc.language;
+          book.publicationDate = doc.publicationDate;
+          book.rights = doc.rights;
+          book.type = doc.type;
+          book.source = doc.source;
+          book.titleSort = doc.titleSort;
+          book.authorSort = doc.authorSort;
+          book.metadataComplete = true;
+
+          // Save cover if extracted.
+          final coverBytes = doc.coverBytes;
+          if (coverBytes != null && coverBytes.isNotEmpty) {
+            book.coverPath = await _saveCover(coverBytes);
+          }
+
+          if (_db != null) {
+            await _db!.updateBook(db.bookToCompanionForUpdate(book));
+          }
+          notifyListeners();
+
+          // For PDFs without covers, generate thumbnail in background.
+          if (format == BookFormat.pdf && book.coverPath == null) {
+            _generatePdfCoverInBackground(book);
+          }
         } catch (e) {
-          debugPrint('Metadata extraction failed for ${book.title}: $e');
-          completed++;
-          continue;
+          debugPrint('Metadata queue processing failed for ${book.title}: $e');
         }
-
-        // Update book with extracted metadata.
-        book.title = doc.title.isNotEmpty ? doc.title : book.title;
-        book.author = doc.author;
-        book.description = doc.description;
-        book.annotation = doc.annotation;
-        book.genre = doc.genre;
-        book.seriesName = doc.seriesName;
-        book.seriesIndex = doc.seriesIndex;
-        book.publisher = doc.publisher;
-        book.isbn = doc.isbn;
-        book.language = doc.language;
-        book.publicationDate = doc.publicationDate;
-        book.rights = doc.rights;
-        book.type = doc.type;
-        book.source = doc.source;
-        book.titleSort = doc.titleSort;
-        book.authorSort = doc.authorSort;
-        book.metadataComplete = true;
-
-        // Save cover if extracted.
-        final coverBytes = doc.coverBytes;
-        if (coverBytes != null && coverBytes.isNotEmpty) {
-          book.coverPath = await _saveCover(coverBytes);
-        }
-
-        if (_db != null) {
-          await _db!.updateBook(db.bookToCompanionForUpdate(book));
-        }
-        notifyListeners();
-
-        // For PDFs without covers, generate thumbnail in background.
-        if (format == BookFormat.pdf && book.coverPath == null) {
-          _generatePdfCoverInBackground(book);
-        }
-      } catch (e) {
-        debugPrint('Metadata queue processing failed for ${book.title}: $e');
+        
+        completed++;
       }
-      
-      completed++;
+    } finally {
+      _metadataWorkerRunning = false;
     }
 
     if (totalToProcess > 0) {
-      _metadataStatusController.add(MetadataStatus(
-        type: MetadataStatusType.completed,
-        total: totalToProcess,
-        completed: totalToProcess,
-      ));
+      try {
+        _metadataStatusController.add(MetadataStatus(
+          type: MetadataStatusType.completed,
+          total: totalToProcess,
+          completed: totalToProcess,
+        ));
+      } catch (_) {}
     }
-
-    _metadataWorkerRunning = false;
   }
 
   /// Extracts title from filename, cleaning up common patterns.
@@ -548,13 +556,15 @@ class LibraryService extends ChangeNotifier {
       }
     }
     if (_db != null) {
-      await _db!.customStatement(
-        'DELETE FROM bookmarks WHERE bookId = ?', [id]);
-      await _db!.customStatement(
-        'DELETE FROM reading_sessions WHERE bookId = ?', [id]);
-      await _db!.customStatement(
-        'DELETE FROM collection_books WHERE bookId = ?', [id]);
-      await _db!.deleteBookById(id);
+      await _db!.transaction(() async {
+        await _db!.customStatement(
+          'DELETE FROM bookmarks WHERE bookId = ?', [id]);
+        await _db!.customStatement(
+          'DELETE FROM reading_sessions WHERE bookId = ?', [id]);
+        await _db!.customStatement(
+          'DELETE FROM collection_books WHERE bookId = ?', [id]);
+        await _db!.deleteBookById(id);
+      });
     }
     notifyListeners();
   }

@@ -132,9 +132,14 @@ class DocumentParser {
   // --------------------------------------------------------------------------
 
   static Future<ParsedDocument> _parseEpub(String path) async {
+    final file = File(path);
+    final length = await file.length();
+    if (length > 100 * 1024 * 1024) {
+      throw const FormatException('EPUB file too large (limit 100 MB)');
+    }
     final Uint8List bytes;
     try {
-      bytes = await File(path).readAsBytes();
+      bytes = await file.readAsBytes();
     } catch (_) {
       throw const FormatException('Not a valid EPUB file');
     }

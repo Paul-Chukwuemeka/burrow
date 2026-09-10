@@ -733,13 +733,13 @@ Review combined diff together before committing.
     }
     ```
 
-- [ ] **62. Metadata worker permanently stuck after stream disposal**
+- [x] **62. Metadata worker permanently stuck after stream disposal**
   - **File:** `lib/services/library_service.dart:394-496`
   - **What:** `_processMetadataQueue` is async but called without `await`. `_metadataStatusController.add()` at line 424 is outside the try block. If `dispose()` closes the stream controller, `.add()` throws `StateError`. `_metadataWorkerRunning` stays `true` forever — no future metadata extraction runs.
   - **Failure scenario:** User imports books, metadata extraction starts, user navigates away. Stream controller closes. Next `.add()` throws. Worker permanently blocked.
   - **Fix:** Wrap while loop body in try/finally to ensure `_metadataWorkerRunning = false` always executes.
 
-- [ ] **63. Book search scan permanently stalls after rapid typing**
+- [x] **63. Book search scan permanently stalls after rapid typing**
   - **File:** `lib/services/book_search.dart:89-101`
   - **What:** Race condition between `_startScan` (checks `_running`) and `_scanIncrementally` (sets `_running = false` on query change). When user types quickly, old scan exits, new scan's `_startScan` already returned because `_running` was still `true`. Nobody restarts scan for new query.
   - **Failure scenario:** User types "the", then "theory" quickly. Search results stale/empty until user clears and retypes.
@@ -759,7 +759,7 @@ Review combined diff together before committing.
   - **What:** Cache key uses `books.length`. If metadata changes without count change, sorted order is stale.
   - **Fix:** Clear `_cacheKey` in `_onLibraryChanged` (combined with #61 fix).
 
-- [ ] **65. `deleteBookWithFile` DB operations not transactional**
+- [x] **65. `deleteBookWithFile` DB operations not transactional**
   - **File:** `lib/services/library_service.dart:550-558`
   - **What:** Four separate `customStatement` calls. If any fails mid-way, DB is left inconsistent.
   - **Fix:** Wrap in `_db!.transaction()`.
@@ -774,7 +774,7 @@ Review combined diff together before committing.
   - **What:** Passing `Future<bool>` to `StatelessWidget`. On `setSheetState`, every tile's `FutureBuilder` restarts.
   - **Fix:** Resolve eagerly and pass `bool`, or make tile a `StatefulWidget`.
 
-- [ ] **68. EPUB parsing has no file size guard**
+- [x] **68. EPUB parsing has no file size guard**
   - **File:** `lib/services/document_parser.dart:134-141`
   - **What:** No size check before `readAsBytes()`. Large EPUBs can OOM the isolate.
   - **Fix:** Add file length check (100MB limit like `importLibrary`).
