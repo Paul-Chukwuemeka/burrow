@@ -48,6 +48,14 @@ class EpubCssParser {
       }
     }
 
+    // Compile external CSS once — shared across all chapters.
+    final externalCss = cssFiles.values.join('\n');
+    css_visitor.StyleSheet? externalStylesheet;
+    if (externalCss.isNotEmpty) {
+      _extractFontFacesFromCss(externalCss, fontFaces, readEntry);
+      externalStylesheet = css.compile(externalCss);
+    }
+
     for (final chapterPath in spinePaths) {
       final rules = <ResolvedCssRule>[];
 
@@ -61,21 +69,19 @@ class EpubCssParser {
         continue;
       }
 
-      final cssTexts = <String>[];
-      for (final cssContent in cssFiles.values) {
-        cssTexts.add(cssContent);
+      // Query external CSS rules against this chapter's DOM.
+      if (externalStylesheet != null) {
+        rules.addAll(_resolveRules(externalStylesheet, doc, fontFaces));
       }
 
+      // Compile and query inline <style> elements per chapter.
       final styleElements = doc.querySelectorAll('style');
-      for (final styleEl in styleElements) {
-        cssTexts.add(styleEl.text);
-      }
-
-      final combinedCss = cssTexts.join('\n');
-      if (combinedCss.isNotEmpty) {
-        _extractFontFacesFromCss(combinedCss, fontFaces, readEntry);
-        final stylesheet = css.compile(combinedCss);
-        rules.addAll(_resolveRules(stylesheet, doc, fontFaces));
+      if (styleElements.isNotEmpty) {
+        final inlineCss = styleElements.map((e) => e.text).join('\n');
+        if (inlineCss.isNotEmpty) {
+          final inlineStylesheet = css.compile(inlineCss);
+          rules.addAll(_resolveRules(inlineStylesheet, doc, fontFaces));
+        }
       }
 
       _resolveInlineStyles(doc, rules);
@@ -389,6 +395,7 @@ class EpubCssParser {
   static Future<List<String>> loadEmbeddedFonts(
     Map<String, FontFaceInfo> fontFaces,
   ) async {
+    final futures = <Future<void>>[];
     final loaded = <String>[];
     for (final entry in fontFaces.entries) {
       final info = entry.value;
@@ -396,10 +403,10 @@ class EpubCssParser {
       try {
         final fontLoader = FontLoader(info.family)
           ..addFont(Future.value(ByteData.view(info.bytes!.buffer)));
-        await fontLoader.load();
-        loaded.add(info.family);
+        futures.add(fontLoader.load().then((_) => loaded.add(info.family)));
       } catch (_) {}
     }
+    await Future.wait(futures);
     return loaded;
   }
 
