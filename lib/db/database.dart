@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -128,35 +129,40 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
         },
         onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            await m.createTable(collections);
-            await m.createTable(collectionBooks);
-          }
-          if (from < 3) {
-            await m.addColumn(books, books.description);
-            await m.addColumn(books, books.genre);
-            await m.addColumn(books, books.seriesName);
-            await m.addColumn(books, books.seriesIndex);
-            await m.addColumn(books, books.publisher);
-            await m.addColumn(books, books.isbn);
-            await m.addColumn(books, books.language);
-            await m.addColumn(books, books.review);
-          }
-          if (from < 4) {
-            await m.addColumn(books, books.annotation);
-            await m.addColumn(books, books.publicationDate);
-            await m.addColumn(books, books.rights);
-            await m.addColumn(books, books.type);
-            await m.addColumn(books, books.source);
-            await m.addColumn(books, books.titleSort);
-            await m.addColumn(books, books.authorSort);
-          }
-          if (from < 5) {
-            await m.addColumn(books, books.metadataComplete);
-          }
-          if (from < 6) {
-            await customStatement(
-                'CREATE INDEX idx_bookmarks_book_id ON bookmarks (bookId)');
+          try {
+            if (from < 2) {
+              await m.createTable(collections);
+              await m.createTable(collectionBooks);
+            }
+            if (from < 3) {
+              await m.addColumn(books, books.description);
+              await m.addColumn(books, books.genre);
+              await m.addColumn(books, books.seriesName);
+              await m.addColumn(books, books.seriesIndex);
+              await m.addColumn(books, books.publisher);
+              await m.addColumn(books, books.isbn);
+              await m.addColumn(books, books.language);
+              await m.addColumn(books, books.review);
+            }
+            if (from < 4) {
+              await m.addColumn(books, books.annotation);
+              await m.addColumn(books, books.publicationDate);
+              await m.addColumn(books, books.rights);
+              await m.addColumn(books, books.type);
+              await m.addColumn(books, books.source);
+              await m.addColumn(books, books.titleSort);
+              await m.addColumn(books, books.authorSort);
+            }
+            if (from < 5) {
+              await m.addColumn(books, books.metadataComplete);
+            }
+            if (from < 6) {
+              await customStatement(
+                  'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (bookId)');
+            }
+          } catch (e) {
+            debugPrint('Migration error (from=$from to=$to): $e');
+            rethrow;
           }
         },
       );
