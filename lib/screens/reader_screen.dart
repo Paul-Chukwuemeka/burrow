@@ -8,6 +8,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../controllers/reading_session.dart';
 import '../db/database.dart' as db;
 import '../services/brightness_controller.dart';
 import '../models/book.dart';
@@ -113,8 +114,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   final ScrollController _comicPreviewScrollController = ScrollController();
 
   // Reading session state.
-  int _sessionId = -1;
-  int _pagesFlipped = 0;
+  late final ReadingSessionManager _sessionCtrl;
 
   // Bookmark state.
   List<db.Bookmark> _bookmarks = [];
@@ -171,6 +171,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   @override
   void initState() {
     super.initState();
+    _sessionCtrl = ReadingSessionManager(
+      library: widget.library,
+      book: _book,
+    );
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
@@ -180,7 +184,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     if (_settings.keepScreenOn) WakelockPlus.enable();
     BrightnessController.instance.apply(_settings.brightness);
     _loadBookmarks();
-    _startSession();
+    _sessionCtrl.startSession();
     if (_isPdf) {
       _pdfController.addListener(_onPdfViewChanged);
     } else if (!_isComic) {
@@ -340,7 +344,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _endSession();
+    _sessionCtrl.dispose();
     _saveDebounce?.cancel();
     _flushSave();
     _settingsSaveDebounce?.cancel();
@@ -379,38 +383,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      _endSession();
-    } else if (state == AppLifecycleState.resumed) {
-      _startSession();
+    _sessionCtrl.onLifecycleChanged(state);
+    if (state == AppLifecycleState.resumed) {
       BrightnessController.instance.apply(_settings.brightness);
     }
-  }
-
-  void _startSession() {
-    if (_sessionId >= 0) return; // already tracking
-    _sessionId = -2; // sentinel: session pending
-    widget.library.startSession(_book.id).then(
-      (id) {
-        if (mounted) {
-          _sessionId = id;
-        } else {
-          // Widget disposed while session was pending — end it immediately.
-          widget.library.endSession(id, pages: 0);
-        }
-      },
-      onError: (_) {
-        if (mounted) _sessionId = -1;
-      },
-    );
-  }
-
-  void _endSession() {
-    if (_sessionId < 0) return;
-    widget.library.endSession(_sessionId, pages: _pagesFlipped);
-    _sessionId = -1;
-    _pagesFlipped = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -418,7 +394,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // ---------------------------------------------------------------------------
 
   void _onPositionChanged(int chapter, int offsetInChapter) {
-    _pagesFlipped++;
+    _sessionCtrl.onPageFlipped();
     final progress = _totalChars == 0
         ? 0.0
         : (_charsBefore[chapter] + offsetInChapter) / _totalChars;
