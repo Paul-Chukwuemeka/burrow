@@ -25,16 +25,13 @@ class DictionaryOverlay {
   ({int start, int end})? get selectedWordRange => _selectedWordRange;
 
   void showWordToolbar(
-    TapUpDetails details,
+    Offset globalPosition,
     String word,
     int bodyStart,
     int bodyEnd,
-    TextEditingController controller,
   ) {
     dismissDictionaryButton();
     _selectedWordRange = (start: bodyStart, end: bodyEnd);
-
-    final globalPosition = details.globalPosition;
 
     _dictionaryButtonEntry = OverlayEntry(
       builder: (context) {

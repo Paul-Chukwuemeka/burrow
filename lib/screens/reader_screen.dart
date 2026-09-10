@@ -4,11 +4,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/bookmark_helper.dart';
 import '../controllers/comic_controller.dart';
+import '../controllers/dictionary_overlay.dart';
 import '../controllers/pdf_controller.dart';
 import '../controllers/reading_session.dart';
 import '../controllers/search_controller.dart';
@@ -20,13 +20,10 @@ import '../services/book_search.dart';
 import '../services/comic_page_provider.dart';
 import '../services/document_parser.dart';
 import '../services/epub_css_parser.dart';
-import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/page_spans.dart';
 import '../widgets/book_cover.dart';
-import '../widgets/dictionary_sheet.dart';
-import '../screens/settings_screen.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/toc_sheet.dart';
 
@@ -127,8 +124,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   late final ComicReaderController _comicCtrl;
 
   // Dictionary state.
-  OverlayEntry? _dictionaryButtonEntry;
-  ({int start, int end})? _selectedWordRange;
+  DictionaryOverlay? _dictOverlay;
 
   bool get _isPdf => _book.format == BookFormat.pdf;
   bool get _isComic => _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
@@ -261,9 +257,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _pdfCtrl.dispose();
     _comicCtrl.dispose();
     _searchCtrl.dispose();
-    _dictionaryButtonEntry?.remove();
-    _dictionaryButtonEntry = null;
-    _selectedWordRange = null;
+    _dictOverlay?.dismissDictionaryButton();
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -913,169 +907,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // ---------------------------------------------------------------------------
 
   void _showWordToolbar(Offset globalPosition, String word, int bodyStart, int bodyEnd) {
-    _dismissDictionaryButton();
-    setState(() => _selectedWordRange = (start: bodyStart, end: bodyEnd));
-
-    _dictionaryButtonEntry = OverlayEntry(
-      builder: (context) {
-        final theme = _settings.colors;
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _dismissDictionaryButton,
-              ),
-            ),
-            Positioned(
-              left: (globalPosition.dx - 140).clamp(8.0, MediaQuery.sizeOf(context).width - 296.0),
-              top: (globalPosition.dy - 56).clamp(0.0, MediaQuery.sizeOf(context).height - 60),
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: theme.background,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _toolbarButton(
-                        label: 'Define',
-                        onTap: () {
-                          _dismissDictionaryButton();
-                          _openDictionarySheet(word);
-                        },
-                        theme: theme,
-                      ),
-                      _toolbarDivider(theme: theme),
-                      _toolbarButton(
-                        label: 'Copy',
-                        onTap: () {
-                          _dismissDictionaryButton();
-                          Clipboard.setData(ClipboardData(text: word));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Copied "$word"'),
-                              duration: const Duration(seconds: 1),
-                            ),
-                          );
-                        },
-                        theme: theme,
-                      ),
-                      _toolbarDivider(theme: theme),
-                      _toolbarButton(
-                        label: 'Share',
-                        onTap: () {
-                          _dismissDictionaryButton();
-                          SharePlus.instance.share(ShareParams(text: word));
-                        },
-                        theme: theme,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+    _dictOverlay ??= DictionaryOverlay(
+      context: context,
+      theme: _settings.colors,
+      library: widget.library,
     );
-
-    Overlay.of(context).insert(_dictionaryButtonEntry!);
-  }
-
-  Widget _toolbarButton({
-    required String label,
-    required VoidCallback onTap,
-    required ReaderTheme theme,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: theme.text,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _toolbarDivider({required ReaderTheme theme}) {
-    return Container(
-      width: 1,
-      height: 20,
-      color: theme.muted.withValues(alpha: 0.3),
-    );
+    _dictOverlay!.showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
+    setState(() {});
   }
 
   void _dismissDictionaryButton() {
-    _dictionaryButtonEntry?.remove();
-    _dictionaryButtonEntry = null;
-    if (_selectedWordRange != null) {
-      setState(() => _selectedWordRange = null);
-    }
-  }
-
-  void _openDictionarySheet(String word) {
-    if (DictionaryService.instance.isDownloaded) {
-      DictionarySheet.show(
-        context,
-        word: word.toLowerCase(),
-        theme: _settings.colors,
-      );
-    } else {
-      _showDownloadDialog(word);
-    }
-  }
-
-  void _showDownloadDialog(String word) {
-    final theme = _settings.colors;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: theme.background,
-        title: Text(
-          'Download dictionary?',
-          style: TextStyle(color: theme.text),
-        ),
-        content: Text(
-          'The offline dictionary (~40 MB) is needed to look up word definitions.\n\nDownload now?',
-          style: TextStyle(color: theme.muted, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: theme.muted)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              SettingsScreen.show(
-                context,
-                library: widget.library,
-                autoDownloadDictionary: true,
-              );
-            },
-            child: Text('Download', style: TextStyle(color: theme.accent)),
-          ),
-        ],
-      ),
-    );
+    _dictOverlay?.dismissDictionaryButton();
+    if (mounted) setState(() {});
   }
 
   // ---------------------------------------------------------------------------
@@ -1567,7 +1410,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                   onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
                     _showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
                   },
-                  selectedWordRange: _selectedWordRange,
+                  selectedWordRange: _dictOverlay?.selectedWordRange,
                   textAlign: _settings.textJustification == TextJustification.justify
                       ? TextAlign.justify
                       : TextAlign.left,
