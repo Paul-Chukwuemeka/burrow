@@ -149,18 +149,18 @@ This keeps the document as a live status board, not just a static plan.
   - **What:** Inner and outer catch blocks discard all metadata extraction errors with no logging.
   - **Fix:** Added `debugPrint` for both catch blocks.
 
-- [~] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — partially wired
-  - **File:** `lib/screens/reader_screen.dart:52-2411`
+- [x] **16. `ReaderScreenState` is 2758 lines with ~40 state variables and ~80 methods** — all 6 controllers wired
+  - **File:** `lib/screens/reader_screen.dart:52-2305`
   - **What:** Single state class manages reflowable pagination, PDF viewing, comic viewing, search, bookmarks, sessions, dictionary overlay, settings, chrome visibility, and word selection.
   - **Fix:** Extracted 7 controller files in `lib/controllers/` + `lib/widgets/reader_chrome.dart`:
     - `ReadingSessionManager` — session lifecycle + page flip tracking ✅ wired
-    - `DictionaryOverlay` — word selection toolbar + dictionary lookups (interface mismatch: needs `TapUpDetails` vs `Offset`)
-    - `ReaderSearchController` — search state, navigation, overlay builder (interface mismatch: uses callbacks vs `setState`)
+    - `DictionaryOverlay` — word selection toolbar + dictionary lookups ✅ wired
+    - `ReaderSearchController` — search state, navigation, overlay builder ✅ wired
     - `BookmarkHelper` — bookmark loading, checking, toggling ✅ wired
-    - `PdfReaderController` — PDF page state, outline, viewer (pending)
-    - `ComicReaderController` — comic loading, pagination, prefetch, preview (pending)
-    - `ReaderChrome` — top/bottom chrome widget (pending)
-  - **Status:** 2 of 7 controllers wired. 201 tests pass, zero analyzer issues. Remaining 5 need interface alignment before wiring.
+    - `PdfReaderController` — PDF page state, outline, viewer ✅ wired
+    - `ComicReaderController` — comic loading, pagination, prefetch, preview ✅ wired
+    - `ReaderChrome` — top/bottom chrome widget (already a separate widget, no wiring needed)
+  - **Status:** reader_screen.dart 2758 → 2305 lines (16% reduction). 201 tests pass, zero analyzer issues.
 
 ### Minor Issues (Review Round 2)
 
