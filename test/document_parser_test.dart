@@ -1,10 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:burrow/models/book.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/document_parser.dart';
 
@@ -789,6 +789,117 @@ More text.''';
       }
     });
   });
+
+  group('decodeImageDimensions', () {
+    test('decodes GIF logical screen size', () {
+      final gif = Uint8List.fromList([
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+        0x40, 0x01, // width 320 (LE)
+        0xC8, 0x00, // height 200 (LE)
+        0x00,
+      ]);
+      expect(DocumentParser.decodeImageDimensions(gif), (320, 200));
+    });
+
+    test('decodes BMP bitmap dimensions', () {
+      final bmp = Uint8List(26);
+      bmp[0] = 0x42;
+      bmp[1] = 0x4D;
+      bmp[18] = 0x40; // width 320 (LE)
+      bmp[19] = 0x01;
+      bmp[22] = 0x2C; // height 300 (LE)
+      bmp[23] = 0x01;
+      expect(DocumentParser.decodeImageDimensions(bmp), (320, 300));
+    });
+
+    test('decodes WebP VP8X canvas size', () {
+      final webp = Uint8List(30);
+      webp.setRange(0, 4, [0x52, 0x49, 0x46, 0x46]); // RIFF
+      webp.setRange(8, 12, [0x57, 0x45, 0x42, 0x50]); // WEBP
+      webp.setRange(12, 16, [0x56, 0x50, 0x38, 0x58]); // VP8X
+      webp[24] = 0x3F; // width-1 = 319
+      webp[25] = 0x01;
+      webp[27] = 0xC7; // height-1 = 199
+      expect(DocumentParser.decodeImageDimensions(webp), (320, 200));
+    });
+
+    test('decodes SVG viewBox', () {
+      final svg = Uint8List.fromList(
+        utf8.encode('<svg viewBox="0 0 120 80"></svg>'),
+      );
+      expect(DocumentParser.decodeImageDimensions(svg), (120, 80));
+    });
+
+    test('decodes SVG width/height', () {
+      final svg = Uint8List.fromList(
+        utf8.encode('<svg width="300" height="150"></svg>'),
+      );
+      expect(DocumentParser.decodeImageDimensions(svg), (300, 150));
+    });
+  });
+
+  group('parseHtmlDocument images', () {
+    test('resolves an SVG <image xlink:href>', () {
+      final (_, _, _, images) = DocumentParser.parseHtmlDocument(
+        '<svg><image xlink:href="pic.png" width="10" height="20"/></svg>',
+        archiveEntries: {'pic.png': _png(500, 700)},
+      );
+      expect(images.length, 1);
+      expect(images.first.intrinsicWidth, 500);
+      expect(images.first.intrinsicHeight, 700);
+    });
+
+    test('falls back to the first srcset candidate', () {
+      final (_, _, _, images) = DocumentParser.parseHtmlDocument(
+        '<img srcset="pic.png 1x, other.png 2x"/>',
+        archiveEntries: {'pic.png': _png(500, 700)},
+      );
+      expect(images.length, 1);
+    });
+
+    test('OPF cover href marks the image full-width', () {
+      final (_, _, _, images) = DocumentParser.parseHtmlDocument(
+        '<img src="pic.png"/>',
+        archiveEntries: {'pic.png': _png(500, 700)},
+        coverHrefs: const {'pic.png'},
+      );
+      expect(images.single.fullWidth, isTrue);
+    });
+
+    test('a large standalone image is promoted to full-width', () {
+      final (_, _, _, images) = DocumentParser.parseHtmlDocument(
+        '<p>before</p><p><img src="pic.png"/></p><p>after</p>',
+        archiveEntries: {'pic.png': _png(500, 700)},
+      );
+      expect(images.single.fullWidth, isTrue);
+    });
+
+    test('a small standalone icon stays inline', () {
+      final (_, _, _, images) = DocumentParser.parseHtmlDocument(
+        '<p>before</p><p><img src="pic.png"/></p><p>after</p>',
+        archiveEntries: {'pic.png': _png(32, 32)},
+      );
+      expect(images.single.fullWidth, isFalse);
+    });
+  });
+}
+
+/// Minimal PNG header carrying [w]×[h] (enough for dimension decoding).
+Uint8List _png(int w, int h) {
+  final b = Uint8List(24);
+  b[0] = 0x89;
+  b[1] = 0x50;
+  b[2] = 0x4E;
+  b[3] = 0x47;
+  b[16] = (w >> 24) & 0xFF;
+  b[17] = (w >> 16) & 0xFF;
+  b[18] = (w >> 8) & 0xFF;
+  b[19] = w & 0xFF;
+  b[20] = (h >> 24) & 0xFF;
+  b[21] = (h >> 16) & 0xFF;
+  b[22] = (h >> 8) & 0xFF;
+  b[23] = h & 0xFF;
+  return b;
 }
 
 // -----------------------------------------------------------------------------

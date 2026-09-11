@@ -448,6 +448,25 @@ class DocumentParser {
         Uri.decodeComponent(e.name.toLowerCase()): e.content,
     };
 
+    // Cover image hrefs, from both EPUB3 `properties="cover-image"` and the
+    // EPUB2 `<meta name="cover" content="id">` convention.
+    final coverHrefs = <String>{};
+    for (final el in _els(opf, 'meta')) {
+      if ((el.getAttribute('name') ?? '').toLowerCase() == 'cover') {
+        final id = el.getAttribute('content');
+        final href = id == null ? null : manifest[id];
+        if (href != null) coverHrefs.add(href.toLowerCase());
+      }
+    }
+    for (final el in _els(opf, 'item')) {
+      final props = el.getAttribute('properties') ?? '';
+      if (!props.split(RegExp(r'\s+')).contains('cover-image')) continue;
+      final href = el.getAttribute('href');
+      if (href != null) {
+        coverHrefs.add(_resolveHref(opfDir, href).toLowerCase());
+      }
+    }
+
     // Read HTML and build DOMs once per chapter — shared between CSS parser
     // (selector matching) and regex parser (style run extraction).
     final chapterHtml = <String, String>{};
@@ -485,6 +504,7 @@ class DocumentParser {
             archiveEntries: archiveContentMap,
             baseDir: docDir,
             manifestImageDims: manifestImageDims,
+            coverHrefs: coverHrefs,
           );
       if (body.trim().isEmpty) continue;
 
@@ -760,6 +780,15 @@ class DocumentParser {
     XmlDocument opf,
   ) {
     try {
+      // EPUB3: the manifest item flagged properties="cover-image".
+      for (final item in _els(opf, 'item')) {
+        final props = item.getAttribute('properties') ?? '';
+        if (!props.split(RegExp(r'\s+')).contains('cover-image')) continue;
+        final href = item.getAttribute('href');
+        if (href == null) continue;
+        final bytes = entries[_resolveHrefForLookup(href)]?.content;
+        if (bytes != null && bytes.isNotEmpty) return bytes;
+      }
       for (final meta in _els(opf, 'meta')) {
         if (meta.getAttribute('name')?.toLowerCase() != 'cover') continue;
         final coverId = meta.getAttribute('content');
@@ -1173,11 +1202,13 @@ class DocumentParser {
     Map<String, Uint8List>? archiveEntries,
     String baseDir = '',
     Map<String, (double, double)>? manifestImageDims,
+    Set<String> coverHrefs = const {},
   }) {
     final builder = _RichTextBuilder(
       archiveEntries: archiveEntries,
       baseDir: baseDir,
       manifestImageDims: manifestImageDims,
+      coverHrefs: coverHrefs,
     );
     final cleaned = _stripNonContent(html);
     var cursor = 0;
@@ -1210,6 +1241,23 @@ class DocumentParser {
     r'''\salt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
     caseSensitive: false,
   );
+  // SVG images use `href`/`xlink:href` instead of `src`.
+  static final RegExp _hrefAttrRe = RegExp(
+    r'''\s(?:xlink:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
+  static final RegExp _srcsetAttrRe = RegExp(
+    r'''\ssrcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
+
+  /// First candidate URL from a `srcset` list (`"a.jpg 1x, b.jpg 2x"`).
+  static String? _firstSrcset(String? srcset) {
+    if (srcset == null || srcset.isEmpty) return null;
+    final first = srcset.split(',').first.trim();
+    if (first.isEmpty) return null;
+    return first.split(RegExp(r'\s+')).first;
+  }
 
   static String? _attr(RegExp re, String raw) {
     final m = re.firstMatch(raw);
@@ -1252,12 +1300,18 @@ class DocumentParser {
       case 'blockquote':
         b.newline();
         b.quoteDepth = math.max(0, b.quoteDepth + (closing ? -1 : 1));
-      case 'img':
+      case 'img' || 'image':
         if (!closing) {
           final htmlWidth = _attr(RegExp(r'\bwidth\s*=\s*"([^"]*)"', caseSensitive: false), raw);
           final htmlHeight = _attr(RegExp(r'\bheight\s*=\s*"([^"]*)"', caseSensitive: false), raw);
+          // SVG `<image>` carries its target in href/xlink:href; `<img>` uses
+          // src, falling back to the first srcset candidate.
+          final src = name == 'image'
+              ? _attr(_hrefAttrRe, raw)
+              : (_attr(_srcAttrRe, raw) ??
+                  _firstSrcset(_attr(_srcsetAttrRe, raw)));
           b.image(
-            _attr(_srcAttrRe, raw),
+            src,
             _attr(_altAttrRe, raw),
             id: _attr(_idAttrRe, raw),
             elementId: _attr(_idAttrRe, raw) ?? '',
@@ -1586,7 +1640,12 @@ class DocumentParser {
 /// collapses to one space, spaces around line breaks are dropped, runs of
 /// newlines collapse to at most two, and the result is left- and right-trimmed.
 class _RichTextBuilder {
-  _RichTextBuilder({this.archiveEntries, this.baseDir = '', this.manifestImageDims});
+  _RichTextBuilder({
+    this.archiveEntries,
+    this.baseDir = '',
+    this.manifestImageDims,
+    this.coverHrefs = const {},
+  });
 
   /// Optional EPUB zip entries for resolving image src paths.
   final Map<String, Uint8List>? archiveEntries;
@@ -1594,6 +1653,9 @@ class _RichTextBuilder {
 
   /// OPF manifest image dimensions (href -> (width, height)), used as fallback.
   final Map<String, (double, double)>? manifestImageDims;
+
+  /// Normalized hrefs the OPF flags as the cover image.
+  final Set<String> coverHrefs;
 
   final StringBuffer _buf = StringBuffer();
   final List<StyleRun> _runs = [];
@@ -1647,7 +1709,9 @@ class _RichTextBuilder {
     final offset = _buf.length;
     _buf.write('\uFFFC');
     final (w, h) = _decodeImageDimensions(entry);
-    final isCover = id != null && id.toLowerCase().contains('cover');
+    final isCover = (id != null && id.toLowerCase().contains('cover')) ||
+        coverHrefs.contains(resolved.toLowerCase()) ||
+        _filenameOf(src).toLowerCase().contains('cover');
 
     // Fallback: HTML attributes > manifest dimensions.
     final manifestDims = manifestImageDims?[resolved.toLowerCase()];
@@ -1684,7 +1748,15 @@ class _RichTextBuilder {
     return null;
   }
 
-  /// Reads width/height from PNG/JPEG headers. Falls back to 0×0 on failure.
+  static String _filenameOf(String path) {
+    final clean = path.split('?').first;
+    return clean.contains('/')
+        ? clean.substring(clean.lastIndexOf('/') + 1)
+        : clean;
+  }
+
+  /// Reads width/height from common image headers (PNG/JPEG/GIF/BMP/WebP/SVG).
+  /// Falls back to 0×0 on failure, which callers treat as "unknown".
   static (int, int) _decodeImageDimensions(Uint8List bytes) {
     if (bytes.length >= 24 &&
         bytes[0] == 0x89 &&
@@ -1695,6 +1767,51 @@ class _RichTextBuilder {
       final w = (bytes[16] << 24 | bytes[17] << 16 | bytes[18] << 8 | bytes[19]);
       final h = (bytes[20] << 24 | bytes[21] << 16 | bytes[22] << 8 | bytes[23]);
       return (w, h);
+    }
+    if (bytes.length >= 10 &&
+        bytes[0] == 0x47 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46) {
+      // GIF: logical screen width/height, little-endian uint16 at 6/8.
+      return (bytes[6] | (bytes[7] << 8), bytes[8] | (bytes[9] << 8));
+    }
+    if (bytes.length >= 26 && bytes[0] == 0x42 && bytes[1] == 0x4D) {
+      // BMP: int32 LE width at 18, height at 22 (may be negative top-down).
+      final w = bytes[18] | (bytes[19] << 8) | (bytes[20] << 16) | (bytes[21] << 24);
+      final h = bytes[22] | (bytes[23] << 8) | (bytes[24] << 16) | (bytes[25] << 24);
+      return (w.abs(), h.abs());
+    }
+    if (bytes.length >= 30 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      // WebP: RIFF container; parse the first chunk's canvas size.
+      final fourcc = String.fromCharCodes(bytes.sublist(12, 16));
+      if (fourcc == 'VP8X') {
+        final w = 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16));
+        final h = 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16));
+        return (w, h);
+      }
+      if (fourcc == 'VP8L' && bytes.length >= 25) {
+        final b0 = bytes[21], b1 = bytes[22], b2 = bytes[23], b3 = bytes[24];
+        final w = 1 + (((b1 & 0x3F) << 8) | b0);
+        final h = 1 + (((b3 & 0x0F) << 10) | (b2 << 2) | ((b1 & 0xC0) >> 6));
+        return (w, h);
+      }
+      if (fourcc == 'VP8 ' && bytes.length >= 30) {
+        final w = (bytes[26] | (bytes[27] << 8)) & 0x3FFF;
+        final h = (bytes[28] | (bytes[29] << 8)) & 0x3FFF;
+        return (w, h);
+      }
+    }
+    if (_looksLikeSvg(bytes)) {
+      final (w, h) = _decodeSvgDimensions(bytes);
+      if (w > 0 && h > 0) return (w, h);
     }
     if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
       // JPEG: scan for SOF0–SOF15 marker (0xFFC0–0xFFCF).
@@ -1711,6 +1828,47 @@ class _RichTextBuilder {
         final len = (bytes[i + 2] << 8) | bytes[i + 3];
         i += 2 + len;
       }
+    }
+    return (0, 0);
+  }
+
+  /// True when the bytes open as XML/SVG (ignoring a UTF-8 BOM and whitespace).
+  static bool _looksLikeSvg(Uint8List bytes) {
+    for (var i = 0; i < bytes.length && i < 64; i++) {
+      final b = bytes[i];
+      if (b == 0x3C) return true; // '<'
+      if (b != 0x20 && b != 0x09 && b != 0x0A && b != 0x0D &&
+          b != 0xEF && b != 0xBB && b != 0xBF) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// Best-effort SVG dimensions from `viewBox`, then `width`/`height`.
+  static (int, int) _decodeSvgDimensions(Uint8List bytes) {
+    const limit = 8192;
+    final slice = bytes.length > limit ? bytes.sublist(0, limit) : bytes;
+    final text = utf8.decode(slice, allowMalformed: true);
+
+    final viewBox =
+        RegExp(r'''viewBox\s*=\s*["']([^"']+)["']''').firstMatch(text);
+    if (viewBox != null) {
+      final parts = viewBox.group(1)!.trim().split(RegExp(r'[\s,]+'));
+      if (parts.length == 4) {
+        final w = double.tryParse(parts[2]);
+        final h = double.tryParse(parts[3]);
+        if (w != null && h != null && w > 0 && h > 0) {
+          return (w.round(), h.round());
+        }
+      }
+    }
+    final wm = RegExp(r'''\bwidth\s*=\s*["']([\d.]+)''').firstMatch(text);
+    final hm = RegExp(r'''\bheight\s*=\s*["']([\d.]+)''').firstMatch(text);
+    final w = wm == null ? null : double.tryParse(wm.group(1)!);
+    final h = hm == null ? null : double.tryParse(hm.group(1)!);
+    if (w != null && h != null && w > 0 && h > 0) {
+      return (w.round(), h.round());
     }
     return (0, 0);
   }
@@ -1800,7 +1958,10 @@ class _RichTextBuilder {
               : StyleRun(r.start, end,
                   bold: r.bold, italic: r.italic, quote: r.quote);
         }).toList();
-    final images = _images.where((img) => img.offset < end).toList();
+    final images = _images
+        .where((img) => img.offset < end)
+        .map((img) => _promoteStandaloneImage(text, img))
+        .toList();
     // Trailing anchors had no following text; park them at the very end so
     // they resolve to an empty slice and get dropped rather than mis-titling
     // the preceding section.
@@ -1813,6 +1974,53 @@ class _RichTextBuilder {
     };
     return (text, runs, anchors, images);
   }
+
+  /// Marks a large image that sits on its own paragraph as full-width so the
+  /// inline height cap does not shrink real illustrations into thumbnails.
+  /// Small icons are left alone, and covers are already full-width.
+  static ImageRun _promoteStandaloneImage(String text, ImageRun img) {
+    if (img.fullWidth) return img;
+    final largest = math.max(img.intrinsicWidth, img.intrinsicHeight);
+    if (largest < 400 || !_isStandalone(text, img.offset)) return img;
+    return ImageRun(
+      offset: img.offset,
+      bytes: img.bytes,
+      intrinsicWidth: img.intrinsicWidth,
+      intrinsicHeight: img.intrinsicHeight,
+      alt: img.alt,
+      fullWidth: true,
+      onTap: img.onTap,
+      css: img.css,
+      elementId: img.elementId,
+      htmlWidth: img.htmlWidth,
+      htmlHeight: img.htmlHeight,
+    );
+  }
+
+  /// True when only horizontal whitespace, image placeholders or line breaks
+  /// surround [offset] — i.e. the image is its own block, not inline with text.
+  static bool _isStandalone(String text, int offset) {
+    var i = offset - 1;
+    while (i >= 0 &&
+        (_isHorizontalWs(text.codeUnitAt(i)) ||
+            text.codeUnitAt(i) == 0xFFFC)) {
+      i--;
+    }
+    final left = i >= 0 ? text.codeUnitAt(i) : null;
+    if (left != null && left != 0x0A) return false;
+
+    var j = offset + 1;
+    while (j < text.length &&
+        (_isHorizontalWs(text.codeUnitAt(j)) ||
+            text.codeUnitAt(j) == 0xFFFC)) {
+      j++;
+    }
+    final right = j < text.length ? text.codeUnitAt(j) : null;
+    if (right != null && right != 0x0A) return false;
+    return true;
+  }
+
+  static bool _isHorizontalWs(int c) => c == 0x20 || c == 0x09 || c == 0x0D;
 
   static bool _isWs(int c) =>
       c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
