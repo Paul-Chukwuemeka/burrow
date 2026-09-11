@@ -1188,3 +1188,120 @@ New issues found from full codebase review. These are **in addition to** the unc
   - **Severity:** Nit
   - **What:** `parse()` accepts `BookFormat format` but `_parseIsolate` re-derives format from file extension. Parameter is unused and misleading.
   - **Fix:** Forward `format` to the isolate or remove the parameter.
+
+---
+
+## Review Round 11 — Deep Code Review Findings
+
+Issues found from full codebase review across all layers (services, controllers, widgets, screens).
+
+- [ ] **101. `importLibrary` session dedup — sessions restored without duplicate check**
+  - **File:** `lib/services/library_service.dart:303-305`
+  - **Severity:** Major
+  - **What:** Bookmarks get `bookmarkExists` checks (line 299), but sessions are inserted unconditionally. Importing the same backup twice duplicates all reading sessions, inflating stats.
+  - **Fix:** Add dedup check matching the bookmark pattern: `if (!await _db!.sessionExists(m['id'] as String)) await _db!.insertSession(...)`.
+
+- [ ] **102. `deleteBookWithFile` — book removed from memory before DB commit**
+  - **File:** `lib/services/library_service.dart:565-597`
+  - **Severity:** Major
+  - **What:** `_books.remove(book)` at line 568 runs before the DB transaction at lines 587-595. If the DB transaction fails (disk full, corruption), the book vanishes from the UI but persists in SQLite. On next `load()`, it reappears.
+  - **Fix:** Move `_books.remove(book)` and `_invalidateSortCache()` to after the DB transaction succeeds.
+
+- [ ] **103. `_paginateNextBatch` — `setState` without `mounted` check**
+  - **File:** `lib/screens/reader_screen.dart:1527`
+  - **Severity:** Major
+  - **What:** `setState(() {})` at line 1527 inside the pagination while-loop has no `mounted` guard. The check at line 1483 only protects entry. If the widget is disposed mid-loop (user taps back during initial pagination), this throws in debug mode.
+  - **Fix:** Add `if (!mounted) return;` before `setState` at line 1527.
+
+- [ ] **104. `ReadingSessionManager.startSession` — race on rapid lifecycle toggle**
+  - **File:** `lib/controllers/reading_session.dart:37-47`
+  - **Severity:** Major
+  - **What:** `startSession` fires async `library.startSession()` and sets `_sessionId` in `.then`. Rapid lifecycle toggle (paused→resumed→paused→resumed) causes the first `.then` to overwrite `_sessionId` after `endSession` already saved it, orphaning the session record.
+  - **Fix:** Use a generation counter: increment before each `startSession`, check it in the `.then` callback before assigning `_sessionId`.
+
+- [ ] **105. `loadEmbeddedFonts` — one corrupt font aborts all font loading**
+  - **File:** `lib/services/epub_css_parser.dart:415-418`
+  - **Severity:** Major
+  - **What:** `Future.wait(futures, eagerError: true)` cancels remaining font futures on the first failure. A single corrupt font file among several valid ones prevents all embedded fonts from loading. The book renders with system fonts instead of the intended typeface.
+  - **Fix:** Remove `eagerError: true` so all fonts load independently.
+
+- [ ] **106. `_parseTxt` — no file size limit**
+  - **File:** `lib/services/document_parser.dart:811`
+  - **Severity:** Minor
+  - **What:** EPUB caps at 100 MB (line 155), but TXT has no size guard. A 1 GB log file imported as `.txt` fully loads into memory, decodes to Dart string (tripling memory), causing OOM on 4GB devices.
+  - **Fix:** Add size check before reading: `if (length > 100 * 1024 * 1024) throw FormatException(...)`.
+
+- [ ] **107. `PdfReaderController.pdfFileExists` — synchronous `existsSync` in field initializer**
+  - **File:** `lib/controllers/pdf_controller.dart:20`
+  - **Severity:** Minor
+  - **What:** `File(book.path).existsSync()` blocks the UI thread. On slow SD cards or cloud-backed filesystems, this freezes the widget tree for hundreds of milliseconds.
+  - **Fix:** Make lazy `Future<bool>` or compute in `initState`.
+
+- [ ] **108. `_processMetadataQueue` — progress counter off-by-one**
+  - **File:** `lib/services/library_service.dart:502-516`
+  - **Severity:** Minor
+  - **What:** `completed++` at line 516 runs after the throttle check at line 504. The last item's notification fires with `completed` one behind the actual count, causing the progress bar to show 99% then jump to done.
+  - **Fix:** Move `completed++` before the throttle check.
+
+- [ ] **109. `_processMetadataQueue` — pre-filter corrupts progress total**
+  - **File:** `lib/services/library_service.dart:414-420`
+  - **Severity:** Minor
+  - **What:** `removeWhere` at line 415 modifies `_metadataQueue` in-place before `totalToProcess` is captured at line 420. Items added to the queue between these lines (via concurrent `importFileFast`) are silently dropped from processing with no notification.
+  - **Fix:** Capture `totalToProcess` before the `removeWhere`, or process the removed items separately.
+
+- [ ] **110. `_showCreateCollectionAndAddSheet` — duplicate async handlers**
+  - **File:** `lib/screens/library_screen.dart:823,846`
+  - **Severity:** Minor
+  - **What:** Both `onSubmitted` (keyboard Enter) and `onPressed` (button tap) perform the same create+add logic but can both fire if user taps button while keyboard is up. Double-create creates a duplicate collection.
+  - **Fix:** Disable `onPressed` while `onSubmitted` is in flight, or deduplicate by checking if collection name already exists.
+
+- [ ] **111. `deleteCollectionById` — two deletes without transaction**
+  - **File:** `lib/db/database.dart:404-408`
+  - **Severity:** Minor
+  - **What:** `DELETE FROM collection_books` and `DELETE FROM collections` are separate statements. Force-kill between them leaves orphaned `collection_books` rows.
+  - **Fix:** Wrap both deletes in a single `customStatement` with a transaction, or use `cascade` on the foreign key.
+
+---
+
+## Coordination — Review Round 11 Agent Split
+
+### Agent A — Reader + Parser fixes
+
+Issues: #97, #103, #105, #106, #107, #100
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 97 | `lib/screens/reader_screen.dart:239-266` | Major | trivial (add `_doc = null;`) |
+| 100 | `lib/services/document_parser.dart:110-112` | Nit | trivial (forward or remove `format` param) |
+| 103 | `lib/screens/reader_screen.dart:1527` | Major | trivial (add `if (!mounted) return;`) |
+| 105 | `lib/services/epub_css_parser.dart:415-418` | Major | trivial (remove `eagerError: true`) |
+| 106 | `lib/services/document_parser.dart:811` | Minor | small (add size guard) |
+| 107 | `lib/controllers/pdf_controller.dart:20` | Minor | small (make async) |
+
+### Agent B — Library + DB + Controller fixes
+
+Issues: #94, #95, #96, #98, #99, #101, #102, #104, #108, #109, #110, #111
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 94 | `lib/db/database.dart:131-162` | Blocker | medium (wrap each DDL in try-catch) |
+| 95 | `lib/services/library_service.dart:288-311` | Major | small (rollback in catch) |
+| 96 | `lib/services/library_service.dart:80-85,413-531` | Major | small (add `_disposed` flag) |
+| 98 | `lib/services/comic_page_provider.dart:83` | Minor | trivial (add `orElse`) |
+| 99 | `lib/services/library_service.dart:384-393` | Minor | trivial (move `notifyListeners`) |
+| 101 | `lib/services/library_service.dart:303-305` | Major | small (add session dedup) |
+| 102 | `lib/services/library_service.dart:565-597` | Major | small (move `_books.remove` after DB commit) |
+| 104 | `lib/controllers/reading_session.dart:37-47` | Major | small (generation counter) |
+| 108 | `lib/services/library_service.dart:502-516` | Minor | trivial (move `completed++`) |
+| 109 | `lib/services/library_service.dart:414-420` | Minor | trivial (capture total before removeWhere) |
+| 110 | `lib/screens/library_screen.dart:823,846` | Minor | small (deduplicate handlers) |
+| 111 | `lib/db/database.dart:404-408` | Minor | trivial (wrap in transaction) |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing.
