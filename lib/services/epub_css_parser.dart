@@ -31,8 +31,7 @@ class EpubCssParser {
   ///
   /// If [chapterDom] is provided (keyed by chapter path), the parser reuses
   /// those pre-built DOMs instead of reading and parsing HTML from the archive
-  /// a second time. This eliminates the duplicate DOM build that would
-  /// otherwise occur when the main parser also needs the HTML content.
+  /// a second time.
   static EpubCssParser parse({
     required List<String> spinePaths,
     required Map<String, String> manifest,
@@ -415,7 +414,7 @@ class EpubCssParser {
         futures.add(fontLoader.load().then((_) => loaded.add(info.family)));
       } catch (_) {}
     }
-    await Future.wait(futures);
+    await Future.wait(futures, eagerError: true);
     return loaded;
   }
 
