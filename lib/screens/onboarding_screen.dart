@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/library_service.dart';
+import '../services/onboarding_analytics.dart';
 import '../services/onboarding_flow_controller.dart';
 import '../widgets/onboarding/format_picker.dart';
 import '../widgets/onboarding/import_body.dart';
@@ -43,10 +44,13 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   late final OnboardingFlowController _ctrl;
   late final PageController _page;
+  final _analytics = OnboardingAnalytics.instance;
+  DateTime? _flowStartedAt;
 
   @override
   void initState() {
     super.initState();
+    _flowStartedAt = DateTime.now();
     _ctrl = OnboardingFlowController(
       library: widget.library,
       requestPermission: widget.requestPermission,
@@ -56,6 +60,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
     _page = PageController();
     _ctrl.addListener(_onControllerUpdate);
+    _analytics.onboardingStarted();
+    _analytics.pageViewed(0, 'welcome');
   }
 
   @override
@@ -80,7 +86,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   LibraryService get _lib => widget.library;
 
-  void _finish() => widget.onDone();
+  void _finish() {
+    final elapsed = _flowStartedAt != null
+        ? DateTime.now().difference(_flowStartedAt!).inMilliseconds
+        : 0;
+    _analytics.onboardingCompleted(totalDurationMs: elapsed);
+    widget.onDone();
+  }
 
   // -------------------------------------------------------------------------
   // Build
@@ -102,6 +114,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 physics: const BouncingScrollPhysics(),
                 onPageChanged: (i) {
                   _ctrl.goTo(i);
+                  _analytics.pageViewed(i, _pageName(i));
                   if (i == 4) _ctrl.runPendingScan();
                 },
                 itemCount: _ctrl.pageCount,
@@ -119,6 +132,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
     );
   }
+
+  String _pageName(int i) => switch (i) {
+        0 => 'welcome',
+        1 => 'permission',
+        2 => 'format',
+        3 => 'theme',
+        4 => 'import',
+        _ => 'unknown',
+      };
 
   Widget _topBar(BuildContext context) {
     return Padding(
@@ -147,6 +169,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           if (!_ctrl.isLastPage)
             TextButton(
               onPressed: () {
+                _analytics.skippedFrom(_ctrl.currentPageIndex);
                 _ctrl.skipToEnd();
                 _page.animateToPage(
                   _ctrl.currentPageIndex,
@@ -176,6 +199,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           buildStage(
             context,
             i,
+            animateEntrance: i == 0,
             showPermissionCheck: i == 1 && _ctrl.permissionGranted,
             showScanCheck: i == 3 && _ctrl.scanStatus == ScanStatus.done,
           ),
@@ -184,6 +208,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const SizedBox(height: 12),
           _body(context, i),
           const SizedBox(height: 28),
+          if (i == 1) _permissionExtras(context),
           if (i == 3) _preferences(context),
           if (i == 4) _importBody(context),
           if (i == 1) formatChips(context),
@@ -254,6 +279,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
     );
   }
+
+  // ---- Permission page extras --------------------------------------------
+
+  Widget _permissionExtras(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TextButton(
+        onPressed: () {
+          // Track B stub — will expand the page order to include
+          // theme + typography steps in Phase 4.
+        },
+        style: TextButton.styleFrom(
+          foregroundColor: scheme.onSurfaceVariant,
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        ),
+        child: const Text('Customize more →'),
+      ),
+    );
+  }
+
+  // ---- Format / theme / import -------------------------------------------
 
   Widget _formatSelection(BuildContext context) {
     return FormatPicker(
@@ -336,7 +383,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     curve: Easing.emphasizedDecelerate,
                   );
                 })
-              : buildCta(context, 'Find my books', _ctrl.grantAndProceed),
+              : buildCta(context, 'Find my books', () {
+                  _analytics.permissionGranted();
+                  _ctrl.grantAndProceed();
+                }),
           const SizedBox(height: 10),
           buildCta(
             context,
@@ -346,6 +396,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 6),
           buildCta(context, 'Skip for now', () {
+            _analytics.skippedFrom(1);
             _ctrl.skipToEnd();
             _page.animateToPage(
               _ctrl.currentPageIndex,

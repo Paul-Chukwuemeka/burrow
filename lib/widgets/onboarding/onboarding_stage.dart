@@ -46,13 +46,18 @@ StageSpec specFor(ColorScheme s, int i) => switch (i) {
 /// The shared-element "den": one container that morphs its size, shape and
 /// fill between pages so the flow reads as a single object travelling
 /// through (den → folder → book → pages → shelf).
+///
+/// When [animateEntrance] is true (default for page 0), the stage fades in
+/// and scales from 0.9 to 1.0 on first build.
 Widget buildStage(BuildContext context, int i, {
   bool showPermissionCheck = false,
   bool showScanCheck = false,
+  bool animateEntrance = false,
 }) {
   final scheme = Theme.of(context).colorScheme;
   final s = specFor(scheme, i);
-  return AnimatedContainer(
+
+  Widget stage = AnimatedContainer(
     duration: const Duration(milliseconds: 540),
     curve: Easing.emphasizedDecelerate,
     width: s.w,
@@ -79,38 +84,95 @@ Widget buildStage(BuildContext context, int i, {
             ),
           ),
         if (showScanCheck)
-          Positioned(
-            right: 6,
-            bottom: 6,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                shape: BoxShape.circle,
-                border: Border.all(color: scheme.surface, width: 3),
-              ),
-              child: Icon(Icons.check_rounded, size: 20, color: scheme.onPrimary),
-            ),
-          ),
+          _checkBadge(scheme),
         if (showPermissionCheck)
-          Positioned(
-            right: 6,
-            bottom: 6,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                shape: BoxShape.circle,
-                border: Border.all(color: scheme.surface, width: 3),
-              ),
-              child: Icon(Icons.check_rounded, size: 20, color: scheme.onPrimary),
-            ),
-          ),
+          _checkBadge(scheme),
       ],
     ),
   );
+
+  if (animateEntrance) {
+    stage = _EntranceAnimation(child: stage);
+  }
+
+  return stage;
+}
+
+Widget _checkBadge(ColorScheme scheme) {
+  return Positioned(
+    right: 6,
+    bottom: 6,
+    child: Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        shape: BoxShape.circle,
+        border: Border.all(color: scheme.surface, width: 3),
+      ),
+      child: Icon(Icons.check_rounded, size: 20, color: scheme.onPrimary),
+    ),
+  );
+}
+
+/// Fades in and scales from 0.9→1.0 on first build.
+class _EntranceAnimation extends StatefulWidget {
+  const _EntranceAnimation({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_EntranceAnimation> createState() => _EntranceAnimationState();
+}
+
+class _EntranceAnimationState extends State<_EntranceAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _fade;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fade = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0, 0.6, curve: Easing.emphasizedDecelerate),
+    );
+    _scale = Tween<double>(begin: 0.9, end: 1).animate(
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.1, 0.8, curve: Curves.easeOutBack),
+      ),
+    );
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _fade.value,
+          child: Transform.scale(
+            scale: _scale.value,
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
 }
 
 /// A page curled into a den: sepia page resting inside a moss ring, with a
