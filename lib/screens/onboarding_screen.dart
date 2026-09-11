@@ -208,7 +208,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const SizedBox(height: 12),
           _body(context, i),
           const SizedBox(height: 28),
-          if (i == 1) _permissionExtras(context),
           if (i == 3) _preferences(context),
           if (i == 4) _importBody(context),
           if (i == 1) formatChips(context),
@@ -279,28 +278,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
     );
   }
-
-  // ---- Permission page extras --------------------------------------------
-
-  Widget _permissionExtras(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TextButton(
-        onPressed: () {
-          // Track B stub — will expand the page order to include
-          // theme + typography steps in Phase 4.
-        },
-        style: TextButton.styleFrom(
-          foregroundColor: scheme.onSurfaceVariant,
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-        ),
-        child: const Text('Customize more →'),
-      ),
-    );
-  }
-
-  // ---- Format / theme / import -------------------------------------------
 
   Widget _formatSelection(BuildContext context) {
     return FormatPicker(
