@@ -111,7 +111,8 @@ List<InlineSpan> buildPageSpans({
       children.add(WidgetSpan(
         alignment: PlaceholderAlignment.middle,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              vertical: ImageRun.verticalPadding),
           child: Center(child: imageWidget),
         ),
       ));

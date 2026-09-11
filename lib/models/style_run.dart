@@ -98,6 +98,10 @@ class ImageRun {
   /// Set to [double.infinity] to disable.
   static const double maxInlineImageHeight = 150;
 
+  /// Vertical gap the page renderer puts above and below an inline image.
+  /// Pagination measurement must add this too so page heights stay in sync.
+  static const double verticalPadding = 8;
+
   /// Fallback height for an image whose dimensions cannot be determined.
   static const double _unknownImageHeight = 160;
 

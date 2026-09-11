@@ -32,6 +32,7 @@ class ChapterPaginationDriver {
     ReaderSettings? settings,
     ReaderTheme? theme,
   })  : _text = text,
+        _measureText = images.isEmpty ? text : text.replaceAll('\uFFFC', '\n'),
         _runs = runs,
         _images = images,
         _imageHeights = [
@@ -51,6 +52,10 @@ class ChapterPaginationDriver {
   static const double _slack = 6.0;
 
   final String _text;
+
+  /// [_text] with image placeholders swapped for line breaks, used only for
+  /// measurement. Length is unchanged, so style-run offsets stay valid.
+  final String _measureText;
   final List<StyleRun> _runs;
 
   /// Images in this chapter, sorted by ascending [ImageRun.offset] (as the
@@ -155,30 +160,32 @@ class ChapterPaginationDriver {
   double _sliceHeight(int start, int end) {
     if (end <= start) return 0;
     // Images are sorted by offset, so only those landing in [start, end) are
-    // summed. Precomputed heights avoid re-measuring on every probe.
+    // summed. Precomputed heights avoid re-measuring on every probe. The
+    // rendered image also carries [ImageRun.verticalPadding] above and below,
+    // which must be reserved here or pages containing images overflow.
     var imageExtra = 0.0;
     for (var i = _firstImageAtOrAfter(start);
         i < _images.length && _images[i].offset < end;
         i++) {
-      imageExtra += _imageHeights[i];
+      imageExtra += _imageHeights[i] + 2 * ImageRun.verticalPadding;
     }
     // If the slice contains images, strip the \uFFFC so TextPainter doesn't
     // measure them as zero-height characters, then add the real heights.
     final span = _spanFor(start, end);
     if (imageExtra > 0) {
-      // Rebuild span with \uFFFC replaced by newlines (line break height is
-      // negligible vs the image we'll add back).
-      final cleanText = _text.substring(start, end).replaceAll('\uFFFC', '\n');
+      // Build against the placeholder-substituted text with the original
+      // offsets: replacing one code unit with another keeps lengths equal, so
+      // the chapter-global [StyleRun]s still line up.
       final cleanSpan = _runs.isEmpty
-          ? TextSpan(text: cleanText, style: _style)
+          ? TextSpan(text: _measureText.substring(start, end), style: _style)
           : TextSpan(
               style: _style,
               children: buildStyledSpans(
-                cleanText,
+                _measureText,
                 _runs,
                 _style,
-                0,
-                cleanText.length,
+                start,
+                end,
                 quoteColor: _theme?.muted,
                 settings: _settings,
               ),
