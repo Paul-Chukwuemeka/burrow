@@ -74,7 +74,7 @@ class ComicReaderController extends ChangeNotifier {
         return;
       }
 
-      final doc = await DocumentParser.parse(book.path, book.format);
+      final doc = await DocumentParser.parse(book.path);
       final pages = <Uint8List>[];
       for (final chapter in doc.chapters) {
         for (final img in chapter.images) {
