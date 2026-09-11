@@ -8,16 +8,22 @@ import 'package:share_plus/share_plus.dart';
 
 import '../db/database.dart' as db;
 import '../models/book.dart';
+import '../models/library_enums.dart';
 import '../services/import_helper.dart';
 import '../services/library_service.dart';
 import '../services/scan_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
-import '../widgets/pill_chip.dart';
 import '../utils/date_format.dart';
+import '../utils/file_size.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
-import '../widgets/progress_bar.dart';
+import '../widgets/library_filter_widgets.dart';
+import '../widgets/library_header.dart';
+import '../widgets/library_sheet_widgets.dart';
+import '../widgets/library_state_widgets.dart';
+import '../widgets/library_tile_widgets.dart';
+import '../widgets/pill_chip.dart';
 import 'author_screen.dart';
 import 'book_info_screen.dart';
 import 'collection_screen.dart';
@@ -26,15 +32,7 @@ import 'settings_screen.dart';
 import 'smart_group_screen.dart';
 import 'stats_screen.dart';
 
-enum _SortMode { recent, added, title }
-
-enum _LayoutMode { grid, list }
-
-enum _LibraryTab { books, authors, collections }
-
 enum _ReadingStatus { all, reading, finished, new_ }
-
-enum _StatusType { scanning, importing, extracting, completed }
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key, required this.library});
@@ -51,21 +49,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   String _query = '';
   BookFormat? _filter;
-  _SortMode _sort = _SortMode.recent;
-  late _LayoutMode _layout;
-  _LibraryTab _tab = _LibraryTab.books;
+  SortMode _sort = SortMode.recent;
+  late LayoutMode _layout;
+  LibraryTab _tab = LibraryTab.books;
   _ReadingStatus _statusFilter = _ReadingStatus.all;
   String? _genreFilter;
   String? _seriesFilter;
 
-  // Persistent status bar state.
-  _StatusType? _activeStatus;
+  StatusType? _activeStatus;
   int _statusCompleted = 0;
   int _statusTotal = 0;
   String? _statusBookTitle;
   String? _statusResult;
 
-  // Cached visible books.
   List<Book>? _cachedVisibleBooks;
   String? _cacheKey;
 
@@ -78,22 +74,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void initState() {
     super.initState();
     final saved = widget.library.libraryLayout;
-    _layout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
+    _layout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     widget.library.addListener(_onLibraryChanged);
-    
-    // Listen to metadata extraction status events.
+
     _metadataSubscription = widget.library.metadataStatus.listen((status) {
       if (!mounted) return;
       setState(() {
         switch (status.type) {
           case MetadataStatusType.started:
-            _activeStatus = _StatusType.extracting;
+            _activeStatus = StatusType.extracting;
             _statusTotal = status.total;
             _statusCompleted = status.completed;
             _statusBookTitle = null;
             break;
           case MetadataStatusType.progress:
-            _activeStatus = _StatusType.extracting;
+            _activeStatus = StatusType.extracting;
             _statusTotal = status.total;
             _statusCompleted = status.completed;
             _statusBookTitle = status.bookTitle;
@@ -118,15 +113,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _onLibraryChanged() {
     if (!mounted) return;
     final saved = widget.library.libraryLayout;
-    final newLayout = saved == 'list' ? _LayoutMode.list : _LayoutMode.grid;
+    final newLayout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     _cacheKey = null;
     setState(() => _layout = newLayout);
   }
 
   String get _sortLabel => switch (_sort) {
-        _SortMode.recent => 'Recent',
-        _SortMode.added => 'Added',
-        _SortMode.title => 'A–Z',
+        SortMode.recent => 'Recent',
+        SortMode.added => 'Added',
+        SortMode.title => 'A–Z',
       };
 
   int get _activeFilterCount {
@@ -141,12 +136,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _FilterSheet(
-        statusFilter: _statusFilter,
+      builder: (context) => FilterSheet(
+        statusFilter: _statusFilter == _ReadingStatus.all
+            ? ReadingStatus.all
+            : _statusFilter == _ReadingStatus.reading
+                ? ReadingStatus.reading
+                : _statusFilter == _ReadingStatus.finished
+                    ? ReadingStatus.finished
+                    : ReadingStatus.new_,
         genreFilter: _genreFilter,
         seriesFilter: _seriesFilter,
         books: widget.library.books,
-        onStatusChanged: (s) => setState(() => _statusFilter = s),
+        onStatusChanged: (s) => setState(() {
+          _statusFilter = switch (s) {
+            ReadingStatus.all => _ReadingStatus.all,
+            ReadingStatus.reading => _ReadingStatus.reading,
+            ReadingStatus.finished => _ReadingStatus.finished,
+            ReadingStatus.new_ => _ReadingStatus.new_,
+          };
+        }),
         onGenreChanged: (g) => setState(() => _genreFilter = g),
         onSeriesChanged: (s) => setState(() => _seriesFilter = s),
         onClearAll: () => setState(() {
@@ -158,7 +166,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// Books after applying search, format filter and local sorting.
   List<Book> get _visibleBooks {
     final key = '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
@@ -201,11 +208,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }).toList();
 
     switch (_sort) {
-      case _SortMode.recent:
-        break; // Already ordered by the service.
-      case _SortMode.added:
+      case SortMode.recent:
+        break;
+      case SortMode.added:
         books.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-      case _SortMode.title:
+      case SortMode.title:
         books.sort((a, b) => a.displayTitle
             .toLowerCase()
             .compareTo(b.displayTitle.toLowerCase()));
@@ -245,7 +252,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       }
       return;
     }
-    if (mounted) setState(() {}); // Refresh progress labels after returning.
+    if (mounted) setState(() {});
   }
 
   Future<void> _openBookInfo(Book book, {String? heroTag}) async {
@@ -288,7 +295,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Set<String> _knownPaths() => widget.library.books.map((b) => b.path).toSet();
 
-  /// Exports the library and opens the system share sheet with the file.
   Future<void> _exportLibrary() async {
     try {
       final path = await widget.library.exportLibrary();
@@ -305,7 +311,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
-  /// Picks a previously exported backup file and restores it.
   Future<void> _importLibrary() async {
     final files = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -330,7 +335,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() {
       _busy = true;
       _fabOpen = false;
-      _activeStatus = _StatusType.scanning;
+      _activeStatus = StatusType.scanning;
       _statusCompleted = 0;
       _statusTotal = 0;
       _statusBookTitle = null;
@@ -344,7 +349,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           if (!mounted) return;
           setState(() {
             if (pathCount > 0) {
-              _activeStatus = _StatusType.importing;
+              _activeStatus = StatusType.importing;
               _statusTotal = pathCount;
               _statusCompleted = 0;
             }
@@ -364,7 +369,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           : 'Added ${added.length} book${added.length == 1 ? '' : 's'}'
               '${failed > 0 ? ', $failed unreadable' : ''}';
       setState(() {
-        _activeStatus = _StatusType.completed;
+        _activeStatus = StatusType.completed;
         _statusResult = msg;
       });
       await Future<void>.delayed(const Duration(seconds: 2));
@@ -378,7 +383,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       debugPrint('Scan failed: $e');
       if (mounted) {
         setState(() {
-          _activeStatus = _StatusType.completed;
+          _activeStatus = StatusType.completed;
           _statusResult = 'Scan failed. Please try again.';
         });
         Future<void>.delayed(const Duration(seconds: 2), () {
@@ -452,7 +457,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             const SizedBox(height: 4),
-            _SheetAction(
+            SheetAction(
               icon: Icons.menu_book_outlined,
               label: 'Read now',
               iconColor: scheme.onSecondaryContainer,
@@ -462,7 +467,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _openBook(book);
               },
             ),
-            _SheetAction(
+            SheetAction(
               icon: Icons.edit_outlined,
               label: 'Edit metadata',
               iconColor: scheme.onTertiaryContainer,
@@ -472,7 +477,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _showEditMetadataSheet(book);
               },
             ),
-            _SheetAction(
+            SheetAction(
               icon: Icons.info_outline_rounded,
               label: 'Book details',
               iconColor: scheme.onSurfaceVariant,
@@ -482,7 +487,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _showBookDetailsSheet(book);
               },
             ),
-            _SheetAction(
+            SheetAction(
               icon: Icons.collections_bookmark_outlined,
               label: 'Add to collection',
               iconColor: scheme.onPrimaryContainer,
@@ -492,7 +497,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _showAddToCollectionSheet(book);
               },
             ),
-            _SheetAction(
+            SheetAction(
               icon: Icons.delete_outline_rounded,
               label: 'Remove from library',
               iconColor: scheme.onErrorContainer,
@@ -596,7 +601,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final file = File(book.path);
     String fileSize;
     try {
-      fileSize = _formatFileSize(await file.length());
+      fileSize = formatFileSize(await file.length());
     } catch (_) {
       fileSize = 'Unknown';
     }
@@ -628,22 +633,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             const Divider(indent: 16, endIndent: 16),
-            _DetailRow(label: 'Format', value: book.format.name.toUpperCase()),
-            _DetailRow(label: 'File size', value: fileSize),
-            _DetailRow(
+            DetailRow(label: 'Format', value: book.format.name.toUpperCase()),
+            DetailRow(label: 'File size', value: fileSize),
+            DetailRow(
               label: 'Added',
               value: formatDate(book.addedAt),
             ),
             if (book.lastReadAt > 0)
-              _DetailRow(
+              DetailRow(
                 label: 'Last read',
                 value: formatDate(book.lastReadAt),
               ),
-            _DetailRow(
+            DetailRow(
               label: 'Progress',
               value: book.progressLabel,
             ),
-            _DetailRow(label: 'Path', value: book.path, isFile: true),
+            DetailRow(label: 'Path', value: book.path, isFile: true),
             const SizedBox(height: 8),
           ],
         ),
@@ -750,7 +755,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 )
               else
-                ...collections.map((c) => _CollectionPickerTile(
+                ...collections.map((c) => CollectionPickerTile(
                       collection: c,
                       isInCollection: widget.library.isBookInCollection(c.id, book.id),
                       onToggle: () async {
@@ -866,7 +871,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final allBooks = widget.library.books;
     final books = _visibleBooks;
     final recent =
@@ -884,7 +888,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           children: [
             CustomScrollView(
               slivers: [
-                _BurrowHeader(
+                BurrowHeader(
                   tab: _tab,
                   onTabChanged: (tab) => setState(() {
                     _tab = tab;
@@ -914,15 +918,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: _busy
-                        ? const _BusyState()
-                        : _EmptyState(
+                        ? const BusyState()
+                        : EmptyState(
                             onPickFile: _pickFile,
                             onScan: _scanDevice,
                           ),
                   ),
               ],
             ),
-            // Scrim behind the FAB menu.
             Positioned.fill(
               child: IgnorePointer(
                 ignoring: !_fabOpen,
@@ -932,20 +935,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   curve: Curves.easeOut,
                   child: DecoratedBox(
                     decoration:
-                        BoxDecoration(color: scheme.scrim.withValues(alpha: 0.45)),
+                        BoxDecoration(color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.45)),
                     child:
                         GestureDetector(onTap: () => setState(() => _fabOpen = false)),
                   ),
                 ),
               ),
             ),
-            // Persistent status bar at the bottom.
             if (_activeStatus != null)
               Positioned(
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: _StatusBanner(
+                child: StatusBanner(
                   status: _activeStatus!,
                   completed: _statusCompleted,
                   total: _statusTotal,
@@ -955,7 +957,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
           ],
         ),
-        floatingActionButton: _tab == _LibraryTab.books ? _buildFab(context) : null,
+        floatingActionButton: _tab == LibraryTab.books ? _buildFab(context) : null,
       ),
     );
   }
@@ -967,9 +969,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     bool filtered,
   ) {
     return switch (_tab) {
-      _LibraryTab.books => _libraryContent(context, books, recent, filtered),
-      _LibraryTab.authors => _authorsContent(context),
-      _LibraryTab.collections => _collectionsContent(context),
+      LibraryTab.books => _libraryContent(context, books, recent, filtered),
+      LibraryTab.authors => _authorsContent(context),
+      LibraryTab.collections => _collectionsContent(context),
     };
   }
 
@@ -981,13 +983,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
   ) {
     return [
       SliverToBoxAdapter(
-        child: _SearchField(
+        child: SearchField(
           controller: _searchController,
           onChanged: (v) => setState(() => _query = v),
         ),
       ),
       SliverToBoxAdapter(
-        child: _FilterRow(
+        child: FilterRow(
           filter: _filter,
           onFilter: (f) => setState(() => _filter = f),
           activeFilterCount: _activeFilterCount,
@@ -998,7 +1000,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
           sliver: SliverToBoxAdapter(
-            child: _ContinueCard(
+            child: ContinueCard(
               book: recent,
               onTap: () => _openBookInfo(recent, heroTag: 'hero-${recent.id}'),
             ),
@@ -1007,7 +1009,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (books.isEmpty)
         const SliverFillRemaining(
           hasScrollBody: false,
-          child: _NoResults(),
+          child: NoResults(),
         )
       else ...[
         SliverPadding(
@@ -1032,18 +1034,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   icon: Icons.sort_rounded,
                   onTap: () => setState(() {
                     _sort =
-                        _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
+                        SortMode.values[(_sort.index + 1) % SortMode.values.length];
                   }),
                 ),
                 const SizedBox(width: 8),
                 PillChip(
-                  label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
-                  icon: _layout == _LayoutMode.grid
+                  label: _layout == LayoutMode.grid ? 'Grid' : 'List',
+                  icon: _layout == LayoutMode.grid
                       ? Icons.grid_view_rounded
                       : Icons.view_list_rounded,
                   onTap: () {
-                    final next = _LayoutMode
-                        .values[(_layout.index + 1) % _LayoutMode.values.length];
+                    final next = LayoutMode
+                        .values[(_layout.index + 1) % LayoutMode.values.length];
                     setState(() => _layout = next);
                     widget.library.saveLibraryLayout(next.name);
                   },
@@ -1054,7 +1056,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: _layout == _LayoutMode.grid
+          sliver: _layout == LayoutMode.grid
               ? SliverLayoutBuilder(
                   builder: (context, constraints) =>
                       _bookGrid(constraints.crossAxisExtent, books),
@@ -1062,7 +1064,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               : _bookList(books),
         ),
       ],
-      // Reserve the FAB zone so the docked button never covers the last row.
       const SliverPadding(padding: EdgeInsets.only(bottom: Burrow.fabClearance)),
     ];
   }
@@ -1073,7 +1074,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return [
         const SliverFillRemaining(
           hasScrollBody: false,
-          child: _EmptyTabState(
+          child: EmptyTabState(
             icon: Icons.person_outline_rounded,
             message: 'No authors yet',
             detail: 'Books with author metadata will appear here',
@@ -1101,7 +1102,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           itemBuilder: (context, i) {
             final author = authors[i];
             final count = widget.library.authorBookCount(author);
-            return _AuthorTile(
+            return AuthorTile(
               name: author,
               bookCount: count,
               onTap: () => _openAuthorScreen(author),
@@ -1139,24 +1140,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       ),
-      // Smart groups
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         sliver: SliverList(
           delegate: SliverChildListDelegate([
-            _SmartGroupTile(
+            SmartGroupTile(
               icon: Icons.auto_stories_outlined,
               label: 'Reading',
               count: widget.library.books.where((b) => b.isStarted && !b.isFinished).length,
               onTap: () => _openSmartGroup('Reading'),
             ),
-            _SmartGroupTile(
+            SmartGroupTile(
               icon: Icons.check_circle_outline_rounded,
               label: 'Finished',
               count: widget.library.books.where((b) => b.isFinished).length,
               onTap: () => _openSmartGroup('Finished'),
             ),
-            _SmartGroupTile(
+            SmartGroupTile(
               icon: Icons.fiber_new_outlined,
               label: 'New',
               count: widget.library.books.where((b) => !b.isStarted).length,
@@ -1165,14 +1165,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ]),
         ),
       ),
-      // User collections
       if (collections.isEmpty)
         const SliverPadding(
           padding: EdgeInsets.symmetric(horizontal: 20),
           sliver: SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
-              child: _EmptyTabState(
+              child: EmptyTabState(
                 icon: Icons.collections_bookmark_outlined,
                 message: 'No collections yet',
                 detail: 'Tap + to create one and organize your books',
@@ -1187,7 +1186,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             itemCount: collections.length,
             itemBuilder: (context, i) {
               final c = collections[i];
-              return _CollectionTile(
+              return CollectionTile(
                 collection: c,
                 library: widget.library,
                 onTap: () => _openCollectionScreen(c),
@@ -1225,7 +1224,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _openSmartGroup(String group) async {
-    // Build a synthetic list of books for the smart group.
     List<Book> books;
     switch (group) {
       case 'Reading':
@@ -1341,7 +1339,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-            _SheetAction(
+            SheetAction(
               icon: Icons.edit_outlined,
               label: 'Rename',
               iconColor: scheme.onTertiaryContainer,
@@ -1351,7 +1349,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _showRenameCollectionSheet(collection);
               },
             ),
-            _SheetAction(
+            SheetAction(
               icon: Icons.delete_outline_rounded,
               label: 'Delete collection',
               iconColor: scheme.onErrorContainer,
@@ -1440,16 +1438,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// Grid whose tiles are sized so every cover is exactly
-  /// [Burrow.coverAspectRatio] (2:3): column count adapts to screen width,
-  /// then the fixed main-axis extent derives from the resulting tile width.
   Widget _bookGrid(double width, List<Book> books) {
     const maxTileExtent = 200.0;
     const crossSpacing = 12.0;
     const mainSpacing = 14.0;
     const cardPadding = 6.0;
-    // Fixed-height text block under the cover: gap 7 + two title lines 30 +
-    // gap 2 + status line 13 + bottom padding 6.
     const textBlock = 58.0;
 
     final columns = math.max(1, (width / maxTileExtent).ceil());
@@ -1498,7 +1491,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         if (_fabOpen) ...[
-          _FabMenuItem(
+          FabMenuItem(
             icon: Icons.upload_file_outlined,
             label: 'Import file',
             scheme: scheme,
@@ -1506,7 +1499,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onTap: () => _runFromFab(_pickFile),
           ),
           const SizedBox(height: 12),
-          _FabMenuItem(
+          FabMenuItem(
             icon: Icons.folder_open_outlined,
             label: 'Scan folder…',
             scheme: scheme,
@@ -1514,7 +1507,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onTap: () => _runFromFab(_pickFolderAndScan),
           ),
           const SizedBox(height: 12),
-          _FabMenuItem(
+          FabMenuItem(
             icon: Icons.travel_explore_outlined,
             label: 'Scan device',
             scheme: scheme,
@@ -1539,1371 +1532,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
-
-/// Compact large-title app bar: plain lowercase wordmark, no icon, with a
-/// shorter expanded height than [SliverAppBar.large] so more shelf shows.
-class _BurrowHeader extends StatelessWidget {
-  const _BurrowHeader({
-    required this.tab,
-    required this.onTabChanged,
-    this.onStats,
-    this.onExport,
-    this.onImportBackup,
-    this.onSettings,
-  });
-
-  final _LibraryTab tab;
-  final ValueChanged<_LibraryTab> onTabChanged;
-  final VoidCallback? onStats;
-  final VoidCallback? onExport;
-  final VoidCallback? onImportBackup;
-  final VoidCallback? onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SliverAppBar(
-      pinned: true,
-      title: Text(
-        'burrow',
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-              color: scheme.onSurface,
-            ),
-      ),
-      actions: [
-        if (onStats != null)
-          IconButton(
-            icon: Icon(Icons.bar_chart_rounded, color: scheme.onSurface),
-            onPressed: onStats,
-            tooltip: 'Reading stats',
-          ),
-        if (onExport != null && onImportBackup != null)
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface),
-            tooltip: 'More options',
-            onSelected: (key) {
-              if (key == 'export') onExport!();
-              if (key == 'import') onImportBackup!();
-              if (key == 'settings') onSettings?.call();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'export',
-                child: ListTile(
-                  leading: Icon(Icons.ios_share_rounded),
-                  title: Text('Export library'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'import',
-                child: ListTile(
-                  leading: Icon(Icons.restore_rounded),
-                  title: Text('Restore backup'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
-                ),
-              ),
-            ],
-          ),
-      ],
-      bottom: TabBar(
-        onTap: (i) => onTabChanged(_LibraryTab.values[i]),
-        tabs: const [
-          Tab(text: 'Books'),
-          Tab(text: 'Authors'),
-          Tab(text: 'Collections'),
-        ],
-        labelColor: scheme.primary,
-        unselectedLabelColor: scheme.onSurfaceVariant,
-        indicatorColor: scheme.primary,
-        indicatorSize: TabBarIndicatorSize.label,
-        labelStyle: const TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-          letterSpacing: 0.2,
-        ),
-        unselectedLabelStyle: const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Pieces
-// ---------------------------------------------------------------------------
-
-/// Staggered entrance: fades, slides and scales its child in once.
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: Theme.of(context).textTheme.bodyLarge,
-        decoration: InputDecoration(
-          hintText: 'Search your burrow',
-          prefixIcon: const Icon(Icons.search_rounded),
-          suffixIcon: controller.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  onPressed: () {
-                    controller.clear();
-                    onChanged('');
-                  },
-                ),
-          filled: true,
-          fillColor: scheme.surfaceContainerHighest,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: OutlineInputBorder(
-            borderRadius: Burrow.r(Burrow.shapeLg),
-            borderSide: BorderSide(color: scheme.primary, width: 2),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterRow extends StatelessWidget {
-  const _FilterRow({
-    required this.filter,
-    required this.onFilter,
-    required this.activeFilterCount,
-    required this.onFilterTap,
-  });
-
-  final BookFormat? filter;
-  final ValueChanged<BookFormat?> onFilter;
-  final int activeFilterCount;
-  final VoidCallback onFilterTap;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget chip(String label, BookFormat? value) {
-      return PillChip(
-        label: label,
-        selected: filter == value,
-        onTap: () => onFilter(value),
-      );
-    }
-
-    return SizedBox(
-      height: 64,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        children: [
-          chip('All', null),
-          const SizedBox(width: 8),
-          chip('EPUB', BookFormat.epub),
-          const SizedBox(width: 8),
-          chip('TXT', BookFormat.txt),
-          const SizedBox(width: 8),
-          chip('PDF', BookFormat.pdf),
-          const SizedBox(width: 8),
-          _FilterIconButton(
-            activeCount: activeFilterCount,
-            onTap: onFilterTap,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterIconButton extends StatelessWidget {
-  const _FilterIconButton({
-    required this.activeCount,
-    required this.onTap,
-  });
-
-  final int activeCount;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      label: 'Filters${activeCount > 0 ? ' ($activeCount active)' : ''}',
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        child: Material(
-          color: activeCount > 0 ? scheme.primary : Colors.transparent,
-          shape: StadiumBorder(
-            side: BorderSide(
-               color: activeCount > 0 ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Icon(
-                      Icons.tune_rounded,
-                      size: 18,
-                      color: activeCount > 0
-                          ? scheme.onPrimary
-                          : scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (activeCount > 0)
-                    Positioned(
-                      top: -6,
-                      right: -8,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: scheme.onPrimary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '$activeCount',
-                          style: TextStyle(
-                            color: scheme.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            height: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterSheet extends StatefulWidget {
-  const _FilterSheet({
-    required this.statusFilter,
-    required this.genreFilter,
-    required this.seriesFilter,
-    required this.books,
-    required this.onStatusChanged,
-    required this.onGenreChanged,
-    required this.onSeriesChanged,
-    required this.onClearAll,
-  });
-
-  final _ReadingStatus statusFilter;
-  final String? genreFilter;
-  final String? seriesFilter;
-  final List<Book> books;
-  final ValueChanged<_ReadingStatus> onStatusChanged;
-  final ValueChanged<String?> onGenreChanged;
-  final ValueChanged<String?> onSeriesChanged;
-  final VoidCallback onClearAll;
-
-  @override
-  State<_FilterSheet> createState() => _FilterSheetState();
-}
-
-class _FilterSheetState extends State<_FilterSheet> {
-  late _ReadingStatus _status;
-  late String? _genre;
-  late String? _series;
-  bool _genresExpanded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _status = widget.statusFilter;
-    _genre = widget.genreFilter;
-    _series = widget.seriesFilter;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    // Collect unique genres.
-    final genres = <String>{};
-    for (final b in widget.books) {
-      if (b.genre != null) {
-        for (final g in b.genre!.split(',')) {
-          final trimmed = g.trim();
-          if (trimmed.isNotEmpty) genres.add(trimmed);
-        }
-      }
-    }
-    final sortedGenres = genres.toList()..sort();
-
-    // Collect unique series.
-    final seriesSet = <String>{};
-    for (final b in widget.books) {
-      if (b.seriesName != null && b.seriesName!.isNotEmpty) {
-        seriesSet.add(b.seriesName!);
-      }
-    }
-    final sortedSeries = seriesSet.toList()..sort();
-
-    final hasActive = _status != _ReadingStatus.all ||
-        _genre != null ||
-        _series != null;
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.5,
-      minChildSize: 0.3,
-      maxChildSize: 0.85,
-      expand: false,
-      builder: (context, scrollController) => Column(
-        children: [
-          // Header.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Filters',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                if (hasActive)
-                  TextButton(
-                    onPressed: () {
-                      widget.onClearAll();
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text('Clear all'),
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // Content.
-          Expanded(
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-              children: [
-                // Reading status.
-                _FilterSection(
-                  label: 'Reading status',
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      PillChip(
-                        label: 'All',
-                        selected: _status == _ReadingStatus.all,
-                        onTap: () => setState(() {
-                          _status = _ReadingStatus.all;
-                          widget.onStatusChanged(_status);
-                        }),
-                      ),
-                      PillChip(
-                        label: 'Reading',
-                        selected: _status == _ReadingStatus.reading,
-                        onTap: () => setState(() {
-                          _status = _ReadingStatus.reading;
-                          widget.onStatusChanged(_status);
-                        }),
-                      ),
-                      PillChip(
-                        label: 'Finished',
-                        selected: _status == _ReadingStatus.finished,
-                        onTap: () => setState(() {
-                          _status = _ReadingStatus.finished;
-                          widget.onStatusChanged(_status);
-                        }),
-                      ),
-                      PillChip(
-                        label: 'New',
-                        selected: _status == _ReadingStatus.new_,
-                        onTap: () => setState(() {
-                          _status = _ReadingStatus.new_;
-                          widget.onStatusChanged(_status);
-                        }),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Genre.
-                if (sortedGenres.isNotEmpty)
-                  _FilterSection(
-                    label: 'Genre',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        ClipRect(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: _genresExpanded ? double.infinity : 130,
-                            ),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                PillChip(
-                                  label: 'All genres',
-                                  selected: _genre == null,
-                                  onTap: () => setState(() {
-                                    _genre = null;
-                                    widget.onGenreChanged(null);
-                                  }),
-                                ),
-                                for (final g in sortedGenres)
-                                  PillChip(
-                                    label: g,
-                                    selected: _genre?.toLowerCase() == g.toLowerCase(),
-                                    onTap: () => setState(() {
-                                      _genre = g;
-                                      widget.onGenreChanged(g);
-                                    }),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (sortedGenres.length > 6)
-                          GestureDetector(
-                            onTap: () => setState(() => _genresExpanded = !_genresExpanded),
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                _genresExpanded ? 'Show less' : 'Show more',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                if (sortedGenres.isNotEmpty) const SizedBox(height: 24),
-                // Series.
-                if (sortedSeries.isNotEmpty)
-                  _FilterSection(
-                    label: 'Series',
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        PillChip(
-                          label: 'All series',
-                          selected: _series == null,
-                          onTap: () => setState(() {
-                            _series = null;
-                            widget.onSeriesChanged(null);
-                          }),
-                        ),
-                        for (final s in sortedSeries)
-                          PillChip(
-                            label: s,
-                            selected: _series?.toLowerCase() == s.toLowerCase(),
-                            onTap: () => setState(() {
-                              _series = s;
-                              widget.onSeriesChanged(s);
-                            }),
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterSection extends StatelessWidget {
-  const _FilterSection({
-    required this.label,
-    required this.child,
-  });
-
-  final String label;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 10),
-        child,
-      ],
-    );
-  }
-}
-
-
-/// Hero "keep reading" card on a tonal primary surface. Large shape family,
-/// sharing the grid's corner-rounding direction so the hierarchy reads as
-/// one system.
-class _ContinueCard extends StatelessWidget {
-  const _ContinueCard({required this.book, required this.onTap});
-
-  final Book book;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final onCard = scheme.onPrimaryContainer;
-    return Semantics(
-      button: true,
-      label:
-          'Continue reading ${book.displayTitle}. ${book.progressSemantics}',
-      excludeSemantics: true,
-      child: PressableScale(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: Burrow.r(Burrow.shapeLg),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.25),
-                blurRadius: 22,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Material(
-            color: scheme.primaryContainer,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: Burrow.r(Burrow.shapeLg),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 86,
-                      child: Hero(
-                        tag: 'hero-${book.id}',
-                        child: BookCover(
-                          book: book,
-                          borderRadius: Burrow.shapeMd - 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.auto_stories_rounded,
-                                  size: 15,
-                                  color: onCard.withValues(alpha: 0.8)),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'CONTINUE READING',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(
-                                        color: onCard.withValues(alpha: 0.8),
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.9,
-                                      ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            book.displayTitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(
-                                    fontWeight: FontWeight.w800, color: onCard),
-                          ),
-                          if (book.author.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                book.author,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                        color: onCard.withValues(alpha: 0.75)),
-                              ),
-                            ),
-                          const SizedBox(height: 14),
-                          SegmentedProgressBar(
-                            value: book.progress.clamp(0, 1),
-                            height: 8,
-                            track: onCard.withValues(alpha: 0.22),
-                            fill: onCard,
-                          ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: onCard.withValues(alpha: 0.14),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(Icons.play_arrow_rounded,
-                                  size: 24, color: onCard),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One labelled pill + tonal round icon, as in an M3 Expressive FAB menu.
-class _FabMenuItem extends StatelessWidget {
-  const _FabMenuItem({
-    required this.icon,
-    required this.label,
-    required this.scheme,
-    required this.delay,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final ColorScheme scheme;
-
-  /// Normalized stagger start, 0..1 of the entrance duration.
-  final double delay;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 380),
-      curve: Interval(delay, 1, curve: Easing.emphasizedDecelerate),
-      builder: (context, t, child) => Opacity(
-        opacity: t,
-        child: Transform.translate(
-          offset: Offset(24 * (1 - t), 0),
-          child: Transform.scale(scale: 0.8 + 0.2 * t, child: child),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.96),
-              borderRadius: Burrow.r(Burrow.shapeSm),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Material(
-            color: scheme.primary,
-            shape: RoundedRectangleBorder(
-              borderRadius: Burrow.r(Burrow.shapeLg),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              child: SizedBox(
-                width: 54,
-                height: 54,
-                child: Icon(icon, size: 22, color: scheme.onPrimary),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SheetAction extends StatelessWidget {
-  const _SheetAction({
-    required this.icon,
-    required this.label,
-    required this.iconColor,
-    required this.iconBg,
-    required this.onTap,
-    this.labelColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color iconColor;
-  final Color iconBg;
-  final Color? labelColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: Burrow.r(Burrow.shapeMd)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration:
-                      BoxDecoration(color: iconBg, shape: BoxShape.circle),
-                  child: Icon(icon, size: 21, color: iconColor),
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color:
-                        labelColor ?? Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BusyState extends StatelessWidget {
-  const _BusyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(strokeWidth: 3),
-          const SizedBox(height: 20),
-          Text(
-            'Growing your burrow…',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).hintColor,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NoResults extends StatelessWidget {
-  const _NoResults();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.search_off_rounded,
-                size: 38, color: scheme.outline),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Nothing matches',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Try another word or clear the filters.',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: Theme.of(context).hintColor),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onPickFile, required this.onScan});
-
-  final VoidCallback onPickFile;
-  final VoidCallback onScan;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 104,
-              height: 104,
-              decoration: ShapeDecoration(
-                color: scheme.secondaryContainer,
-                shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(36)),
-              ),
-              child: Icon(Icons.auto_stories_outlined,
-                  size: 46, color: scheme.onSecondaryContainer),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Your burrow is empty',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Import a file or scan your device\nfor EPUB, TXT and PDF books.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).hintColor),
-            ),
-            const SizedBox(height: 30),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(210, 54),
-                shape: RoundedRectangleBorder(
-                  borderRadius: Burrow.r(Burrow.shapeLg),
-                ),
-                textStyle:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-              ),
-              onPressed: onPickFile,
-              icon: const Icon(Icons.upload_file_outlined),
-              label: const Text('Import file'),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(210, 54),
-                shape: RoundedRectangleBorder(
-                  borderRadius: Burrow.r(Burrow.shapeLg),
-                ),
-              ),
-              onPressed: onScan,
-              icon: const Icon(Icons.travel_explore_outlined),
-              label: const Text('Scan device'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _formatFileSize(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  if (bytes < 1024 * 1024 * 1024) {
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-    this.isFile = false,
-  });
-
-  final String label;
-  final String value;
-  final bool isFile;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                color: theme.colorScheme.onSurface,
-              ),
-              overflow: isFile ? TextOverflow.ellipsis : null,
-              maxLines: isFile ? 2 : null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Authors / Collections / Smart Groups helpers
-// ---------------------------------------------------------------------------
-
-class _AuthorTile extends StatelessWidget {
-  const _AuthorTile({
-    required this.name,
-    required this.bookCount,
-    required this.onTap,
-  });
-
-  final String name;
-  final int bookCount;
-  final VoidCallback onTap;
-
-  Color _avatarColor(ColorScheme scheme) {
-    final h = name.hashCode;
-    final hue = (h % 360).abs().toDouble();
-    return HSLColor.fromAHSL(1, hue, 0.35, 0.55).toColor();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return PressableScale(
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        leading: CircleAvatar(
-          radius: 24,
-          backgroundColor: _avatarColor(scheme),
-          child: Text(
-            name.isNotEmpty ? name[0].toUpperCase() : '?',
-            style: TextStyle(
-              color: scheme.onPrimary,
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
-            ),
-          ),
-        ),
-        title: Text(
-          name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          '$bookCount book${bookCount == 1 ? '' : 's'}',
-          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-        ),
-        trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _CollectionTile extends StatefulWidget {
-  const _CollectionTile({
-    required this.collection,
-    required this.library,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  final db.Collection collection;
-  final LibraryService library;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  State<_CollectionTile> createState() => _CollectionTileState();
-}
-
-class _CollectionTileState extends State<_CollectionTile> {
-  int? _count;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCount();
-  }
-
-  Future<void> _loadCount() async {
-    final count = await widget.library.getCollectionBookCount(widget.collection.id);
-    if (!mounted) return;
-    setState(() => _count = count);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return PressableScale(
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        leading: CircleAvatar(
-          radius: 24,
-          backgroundColor: scheme.secondaryContainer,
-          child: Icon(Icons.collections_bookmark_outlined,
-              color: scheme.onSecondaryContainer),
-        ),
-        title: Text(
-          widget.collection.name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: _count != null && _count! > 0
-            ? Text(
-                '$_count book${_count == 1 ? '' : 's'}',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              )
-            : null,
-        trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-        onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
-      ),
-    );
-  }
-}
-
-class _SmartGroupTile extends StatelessWidget {
-  const _SmartGroupTile({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final int count;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return PressableScale(
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        leading: CircleAvatar(
-          radius: 24,
-          backgroundColor: scheme.tertiaryContainer,
-          child: Icon(icon, color: scheme.onTertiaryContainer),
-        ),
-        title: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          '$count book${count == 1 ? '' : 's'}',
-          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-        ),
-        trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _EmptyTabState extends StatelessWidget {
-  const _EmptyTabState({
-    required this.icon,
-    required this.message,
-    required this.detail,
-  });
-
-  final IconData icon;
-  final String message;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 64, color: scheme.outlineVariant),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            detail,
-            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CollectionPickerTile extends StatefulWidget {
-  const _CollectionPickerTile({
-    required this.collection,
-    required this.isInCollection,
-    required this.onToggle,
-  });
-
-  final db.Collection collection;
-  final Future<bool> isInCollection;
-  final VoidCallback onToggle;
-
-  @override
-  State<_CollectionPickerTile> createState() => _CollectionPickerTileState();
-}
-
-class _CollectionPickerTileState extends State<_CollectionPickerTile> {
-  late final Future<bool> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = widget.isInCollection;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return FutureBuilder<bool>(
-      future: _future,
-      builder: (context, snapshot) {
-        final inCollection = snapshot.data ?? false;
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-          leading: Icon(
-            inCollection
-                ? Icons.check_circle_rounded
-                : Icons.circle_outlined,
-            color: inCollection ? scheme.primary : scheme.outlineVariant,
-          ),
-          title: Text(
-            widget.collection.name,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-          onTap: widget.onToggle,
-        );
-      },
-    );
-  }
-}
-
-class _StatusBanner extends StatelessWidget {
-  const _StatusBanner({
-    required this.status,
-    required this.completed,
-    required this.total,
-    this.bookTitle,
-    this.result,
-  });
-
-  final _StatusType status;
-  final int completed;
-  final int total;
-  final String? bookTitle;
-  final String? result;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = switch (status) {
-      _StatusType.scanning => 'Scanning for books…',
-      _StatusType.importing =>
-        total > 0
-            ? 'Importing books… $completed / $total'
-            : 'Importing books…',
-      _StatusType.extracting =>
-        total > 0
-            ? 'Extracting metadata… $completed / $total'
-            : 'Extracting metadata…',
-      _StatusType.completed => result ?? 'Done',
-    };
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        border: Border(
-          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: status == _StatusType.completed
-                      ? Icon(Icons.check_circle_rounded, size: 18, color: scheme.primary)
-                      : CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: scheme.primary,
-                          value: (status != _StatusType.scanning && total > 0)
-                              ? completed / total
-                              : null,
-                        ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        text,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      if (bookTitle != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          bookTitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (total > 0 && status != _StatusType.scanning) ...[
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: Burrow.r(Burrow.shapeXs),
-                child: LinearProgressIndicator(
-                  value: completed / total,
-                  minHeight: 4,
-                  backgroundColor: scheme.primaryContainer,
-                  color: scheme.primary,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }
