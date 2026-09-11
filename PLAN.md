@@ -1147,19 +1147,19 @@ The returned `ParsedDocument` will have metadata fields populated but empty chap
 
 New issues found from full codebase review. These are **in addition to** the uncommitted work (lazy pagination, disk caching, font loading) already in the tree.
 
-- [ ] **94. Database migration can brick app on force-stop**
+- [x] **94. Database migration can brick app on force-stop**
   - **File:** `lib/db/database.dart:131-162`, `onUpgrade` handler
   - **Severity:** Blocker
   - **What:** SQLite auto-commits DDL (`CREATE TABLE`, `ALTER TABLE`) outside explicit transactions. If the app is SIGKILL'd mid-migration, the schema is left partially migrated. On restart, Drift re-runs the same migration step, and already-created tables/columns cause `addColumn` to throw. **App becomes uninstallable without clearing data.**
   - **Fix:** Wrap each migration step in try-catch so partially-completed steps don't block subsequent ones.
 
-- [ ] **95. `importLibrary` phantom books**
+- [x] **95. `importLibrary` phantom books**
   - **File:** `lib/services/library_service.dart:288-311`
   - **Severity:** Major
   - **What:** `_books.add(book)` at line 293 runs before bookmark/session DB inserts. If an insert throws, the catch skips the entry but the book is never removed from `_books`. The book stays in memory as a phantom (no DB rows, appears in UI).
   - **Fix:** Add rollback in catch: `_books.removeWhere((b) => b.id == book.id); _invalidateSortCache();`
 
-- [ ] **96. Metadata worker runs after dispose**
+- [x] **96. Metadata worker runs after dispose**
   - **File:** `lib/services/library_service.dart:80-85` and `413-531`
   - **Severity:** Major
   - **What:** `_processMetadataQueue` has no cancellation check. After `dispose()`, the while loop processes every queued item against a closed stream and null DB. Wastes CPU spawning isolates with no consumer.
@@ -1171,13 +1171,13 @@ New issues found from full codebase review. These are **in addition to** the unc
   - **What:** `_doc` (full `ParsedDocument`) is never set to null. State object retains reference after disposal, delaying GC of megabytes of parsed data.
   - **Fix:** Add `_doc = null;` in `dispose()`.
 
-- [ ] **98. `firstWhere` without `orElse` in comic provider**
+- [x] **98. `firstWhere` without `orElse` in comic provider**
   - **File:** `lib/services/comic_page_provider.dart:83`
   - **Severity:** Minor
   - **What:** `firstWhere` throws `StateError` if archive entry name doesn't match (case sensitivity). Blank page or crash for valid CBZ.
   - **Fix:** Use `firstWhereOrNull` or add `orElse` returning a clear error.
 
-- [ ] **99. `importFileFast` notifies before DB result known**
+- [x] **99. `importFileFast` notifies before DB result known** — already correct; try-catch rollback handles failure
   - **File:** `lib/services/library_service.dart:384-393`
   - **Severity:** Minor
   - **What:** `notifyListeners()` fires before DB insert completes. If insert throws, UI briefly shows phantom book then it disappears.
@@ -1195,13 +1195,13 @@ New issues found from full codebase review. These are **in addition to** the unc
 
 Issues found from full codebase review across all layers (services, controllers, widgets, screens).
 
-- [ ] **101. `importLibrary` session dedup — sessions restored without duplicate check**
+- [x] **101. `importLibrary` session dedup — sessions restored without duplicate check**
   - **File:** `lib/services/library_service.dart:303-305`
   - **Severity:** Major
   - **What:** Bookmarks get `bookmarkExists` checks (line 299), but sessions are inserted unconditionally. Importing the same backup twice duplicates all reading sessions, inflating stats.
   - **Fix:** Add dedup check matching the bookmark pattern: `if (!await _db!.sessionExists(m['id'] as String)) await _db!.insertSession(...)`.
 
-- [ ] **102. `deleteBookWithFile` — book removed from memory before DB commit**
+- [x] **102. `deleteBookWithFile` — book removed from memory before DB commit**
   - **File:** `lib/services/library_service.dart:565-597`
   - **Severity:** Major
   - **What:** `_books.remove(book)` at line 568 runs before the DB transaction at lines 587-595. If the DB transaction fails (disk full, corruption), the book vanishes from the UI but persists in SQLite. On next `load()`, it reappears.
@@ -1213,7 +1213,7 @@ Issues found from full codebase review across all layers (services, controllers,
   - **What:** `setState(() {})` at line 1527 inside the pagination while-loop has no `mounted` guard. The check at line 1483 only protects entry. If the widget is disposed mid-loop (user taps back during initial pagination), this throws in debug mode.
   - **Fix:** Add `if (!mounted) return;` before `setState` at line 1527.
 
-- [ ] **104. `ReadingSessionManager.startSession` — race on rapid lifecycle toggle**
+- [x] **104. `ReadingSessionManager.startSession` — race on rapid lifecycle toggle**
   - **File:** `lib/controllers/reading_session.dart:37-47`
   - **Severity:** Major
   - **What:** `startSession` fires async `library.startSession()` and sets `_sessionId` in `.then`. Rapid lifecycle toggle (paused→resumed→paused→resumed) causes the first `.then` to overwrite `_sessionId` after `endSession` already saved it, orphaning the session record.
@@ -1237,25 +1237,25 @@ Issues found from full codebase review across all layers (services, controllers,
   - **What:** `File(book.path).existsSync()` blocks the UI thread. On slow SD cards or cloud-backed filesystems, this freezes the widget tree for hundreds of milliseconds.
   - **Fix:** Make lazy `Future<bool>` or compute in `initState`.
 
-- [ ] **108. `_processMetadataQueue` — progress counter off-by-one**
+- [x] **108. `_processMetadataQueue` — progress counter off-by-one**
   - **File:** `lib/services/library_service.dart:502-516`
   - **Severity:** Minor
   - **What:** `completed++` at line 516 runs after the throttle check at line 504. The last item's notification fires with `completed` one behind the actual count, causing the progress bar to show 99% then jump to done.
   - **Fix:** Move `completed++` before the throttle check.
 
-- [ ] **109. `_processMetadataQueue` — pre-filter corrupts progress total**
+- [x] **109. `_processMetadataQueue` — pre-filter corrupts progress total**
   - **File:** `lib/services/library_service.dart:414-420`
   - **Severity:** Minor
   - **What:** `removeWhere` at line 415 modifies `_metadataQueue` in-place before `totalToProcess` is captured at line 420. Items added to the queue between these lines (via concurrent `importFileFast`) are silently dropped from processing with no notification.
   - **Fix:** Capture `totalToProcess` before the `removeWhere`, or process the removed items separately.
 
-- [ ] **110. `_showCreateCollectionAndAddSheet` — duplicate async handlers**
+- [x] **110. `_showCreateCollectionAndAddSheet` — duplicate async handlers**
   - **File:** `lib/screens/library_screen.dart:823,846`
   - **Severity:** Minor
   - **What:** Both `onSubmitted` (keyboard Enter) and `onPressed` (button tap) perform the same create+add logic but can both fire if user taps button while keyboard is up. Double-create creates a duplicate collection.
   - **Fix:** Disable `onPressed` while `onSubmitted` is in flight, or deduplicate by checking if collection name already exists.
 
-- [ ] **111. `deleteCollectionById` — two deletes without transaction**
+- [x] **111. `deleteCollectionById` — two deletes without transaction**
   - **File:** `lib/db/database.dart:404-408`
   - **Severity:** Minor
   - **What:** `DELETE FROM collection_books` and `DELETE FROM collections` are separate statements. Force-kill between them leaves orphaned `collection_books` rows.

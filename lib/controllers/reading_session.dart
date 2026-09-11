@@ -16,6 +16,7 @@ class ReadingSessionManager extends ChangeNotifier {
 
   int _sessionId = -1;
   int _pagesFlipped = 0;
+  int _startGeneration = 0;
 
   int get sessionId => _sessionId;
 
@@ -35,12 +36,15 @@ class ReadingSessionManager extends ChangeNotifier {
   void startSession() {
     if (_sessionId >= 0) return;
     _sessionId = -2; // sentinel: session pending
+    final gen = ++_startGeneration;
     library.startSession(book.id).then(
       (id) {
+        if (gen != _startGeneration) return; // superseded
         _sessionId = id;
         notifyListeners();
       },
       onError: (_) {
+        if (gen != _startGeneration) return;
         _sessionId = -1;
         notifyListeners();
       },

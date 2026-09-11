@@ -845,12 +845,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: FilledButton(
                     onPressed: () async {
                       final name = controller.text.trim();
-                      if (name.isNotEmpty) {
+                      if (name.isNotEmpty && sheetContext.mounted) {
+                        Navigator.pop(sheetContext);
                         final id = await widget.library.createCollection(name);
                         if (id.isNotEmpty) {
                           await widget.library.addBookToCollection(id, book.id);
                         }
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
                       }
                     },
                     child: const Text('Create & add'),

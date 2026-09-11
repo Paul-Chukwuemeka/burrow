@@ -80,7 +80,10 @@ class ComicPageProvider {
       return cached;
     }
 
-    final entry = _archive.files.firstWhere((f) => f.name == pages[index].entryName);
+    final entry = _archive.files.firstWhere(
+      (f) => f.name == pages[index].entryName,
+      orElse: () => throw FormatException('Archive entry not found: ${pages[index].entryName}'),
+    );
     final bytes = Uint8List.fromList(entry.content);
     _put(index, bytes);
     return bytes;

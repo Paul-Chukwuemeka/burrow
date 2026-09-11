@@ -60,6 +60,7 @@ class LibraryService extends ChangeNotifier {
   // Background metadata extraction queue.
   final Queue<String> _metadataQueue = Queue<String>();
   bool _metadataWorkerRunning = false;
+  bool _disposed = false;
   
   /// Stream controller for metadata extraction status events.
   final _metadataStatusController = StreamController<MetadataStatus>.broadcast();
@@ -78,6 +79,7 @@ class LibraryService extends ChangeNotifier {
   /// Releases database resources. Call when the app is shutting down.
   @override
   void dispose() {
+    _disposed = true;
     _metadataStatusController.close();
     _db?.close();
     _db = null;
@@ -286,11 +288,17 @@ class LibraryService extends ChangeNotifier {
     }
 
     for (final item in booksJson) {
+      Book book;
       try {
-        final book = Book.fromJson(item as Map<String, dynamic>);
-        if (_books.any((b) => b.id == book.id)) continue;
-        if (!_isValidBookPath(book.path)) continue;
-        _books.add(book);
+        book = Book.fromJson(item as Map<String, dynamic>);
+      } catch (e) {
+        debugPrint('Skipping malformed backup entry: $e');
+        continue;
+      }
+      if (_books.any((b) => b.id == book.id)) continue;
+      if (!_isValidBookPath(book.path)) continue;
+      _books.add(book);
+      try {
         if (_db != null) {
           await _db!.insertBook(db.bookToCompanion(book));
           // Annotations are restored only for newly imported books so
@@ -301,11 +309,16 @@ class LibraryService extends ChangeNotifier {
             }
           }
           for (final m in sessionsByBook[book.id] ?? const []) {
-            await _db!.insertSession(db.sessionFromJson(m));
+            if (!await _db!.sessionExists(
+                book.id, m['startedAt'] as int)) {
+              await _db!.insertSession(db.sessionFromJson(m));
+            }
           }
         }
         imported++;
       } catch (e) {
+        _books.removeWhere((b) => b.id == book.id);
+        _invalidateSortCache();
         debugPrint('Skipping malformed backup entry: $e');
       }
     }
@@ -411,13 +424,12 @@ class LibraryService extends ChangeNotifier {
 
   /// Processes the metadata extraction queue one book at a time.
   Future<void> _processMetadataQueue() async {
+    final totalToProcess = _metadataQueue.length;
     // Pre-filter: remove books that are already complete or no longer in the library.
     _metadataQueue.removeWhere((id) {
       final book = _books.where((b) => b.id == id).firstOrNull;
       return book == null || book.metadataComplete;
     });
-
-    final totalToProcess = _metadataQueue.length;
     var completed = 0;
     
     if (totalToProcess > 0) {
@@ -429,7 +441,7 @@ class LibraryService extends ChangeNotifier {
     }
     
     try {
-      while (_metadataQueue.isNotEmpty) {
+      while (_metadataQueue.isNotEmpty && !_disposed) {
         final bookId = _metadataQueue.removeFirst();
         final book = _books.where((b) => b.id == bookId).firstOrNull;
         if (book == null) continue;
@@ -460,7 +472,7 @@ class LibraryService extends ChangeNotifier {
 
           ParsedDocument doc;
           try {
-            doc = await DocumentParser.parse(book.path, format);
+            doc = await DocumentParser.parse(book.path);
           } on FormatException {
             debugPrint('Metadata parse skip (format): ${book.title}');
             completed++;
@@ -499,11 +511,6 @@ class LibraryService extends ChangeNotifier {
           if (_db != null) {
             await _db!.updateBook(db.bookToCompanionForUpdate(book));
           }
-          // Throttle UI rebuilds: notify at most every 5 books and always
-          // on the final one to avoid 100+ full rebuilds during batch imports.
-          if (completed % 5 == 0 || completed == totalToProcess - 1) {
-            notifyListeners();
-          }
 
           // For PDFs without covers, generate thumbnail in background.
           if (format == BookFormat.pdf && book.coverPath == null) {
@@ -514,6 +521,13 @@ class LibraryService extends ChangeNotifier {
         }
         
         completed++;
+        // Throttle UI rebuilds: notify at most every 5 books and always
+        // on the final one to avoid 100+ full rebuilds during batch imports.
+        if (completed % 5 == 0 || completed == totalToProcess) {
+          try {
+            notifyListeners();
+          } catch (_) {}
+        }
       }
     } finally {
       _metadataWorkerRunning = false;
@@ -565,8 +579,6 @@ class LibraryService extends ChangeNotifier {
   Future<void> deleteBookWithFile(String id, {bool deleteFile = false}) async {
     final book = _books.where((b) => b.id == id).firstOrNull;
     if (book == null) return;
-    _books.remove(book);
-    _invalidateSortCache();
     final cover = book.coverPath;
     if (cover != null) {
       try {
@@ -594,6 +606,8 @@ class LibraryService extends ChangeNotifier {
         await _db!.deleteBookById(id);
       });
     }
+    _books.remove(book);
+    _invalidateSortCache();
     notifyListeners();
   }
 

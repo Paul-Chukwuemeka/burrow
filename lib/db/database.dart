@@ -129,12 +129,16 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
         },
         onUpgrade: (m, from, to) async {
-          try {
-            if (from < 2) {
+          if (from < 2) {
+            try {
               await m.createTable(collections);
               await m.createTable(collectionBooks);
+            } catch (e) {
+              debugPrint('Migration step from=$from to=2 failed: $e');
             }
-            if (from < 3) {
+          }
+          if (from < 3) {
+            try {
               await m.addColumn(books, books.description);
               await m.addColumn(books, books.genre);
               await m.addColumn(books, books.seriesName);
@@ -143,8 +147,12 @@ class AppDatabase extends _$AppDatabase {
               await m.addColumn(books, books.isbn);
               await m.addColumn(books, books.language);
               await m.addColumn(books, books.review);
+            } catch (e) {
+              debugPrint('Migration step from=$from to=3 failed: $e');
             }
-            if (from < 4) {
+          }
+          if (from < 4) {
+            try {
               await m.addColumn(books, books.annotation);
               await m.addColumn(books, books.publicationDate);
               await m.addColumn(books, books.rights);
@@ -152,17 +160,24 @@ class AppDatabase extends _$AppDatabase {
               await m.addColumn(books, books.source);
               await m.addColumn(books, books.titleSort);
               await m.addColumn(books, books.authorSort);
+            } catch (e) {
+              debugPrint('Migration step from=$from to=4 failed: $e');
             }
-            if (from < 5) {
+          }
+          if (from < 5) {
+            try {
               await m.addColumn(books, books.metadataComplete);
+            } catch (e) {
+              debugPrint('Migration step from=$from to=5 failed: $e');
             }
-            if (from < 6) {
+          }
+          if (from < 6) {
+            try {
               await customStatement(
                   'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (bookId)');
+            } catch (e) {
+              debugPrint('Migration step from=$from to=6 failed: $e');
             }
-          } catch (e) {
-            debugPrint('Migration error (from=$from to=$to): $e');
-            rethrow;
           }
         },
       );
@@ -213,6 +228,13 @@ class AppDatabase extends _$AppDatabase {
 
   Future<bool> bookmarkExists(String id) async =>
       await (select(bookmarks)..where((t) => t.id.equals(id))..limit(1))
+              .getSingleOrNull() !=
+          null;
+
+  Future<bool> sessionExists(String bookId, int startedAt) async =>
+      await (select(readingSessions)
+            ..where((t) => t.bookId.equals(bookId) & t.startedAt.equals(startedAt))
+            ..limit(1))
               .getSingleOrNull() !=
           null;
 
@@ -402,9 +424,11 @@ class AppDatabase extends _$AppDatabase {
           .write(collection);
 
   Future<void> deleteCollectionById(String id) async {
-    await (delete(collectionBooks)..where((t) => t.collectionId.equals(id)))
-        .go();
-    await (delete(collections)..where((t) => t.id.equals(id))).go();
+    await transaction(() async {
+      await (delete(collectionBooks)..where((t) => t.collectionId.equals(id)))
+          .go();
+      await (delete(collections)..where((t) => t.id.equals(id))).go();
+    });
   }
 
   Future<void> addBookToCollection(String collectionId, String bookId) async {
