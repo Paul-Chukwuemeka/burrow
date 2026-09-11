@@ -293,6 +293,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await _runScan(ScanService.scanDevice(knownPaths: _knownPaths()));
   }
 
+  Future<void> _onRefresh() async {
+    await _scanDevice();
+  }
+
   Set<String> _knownPaths() => widget.library.books.map((b) => b.path).toSet();
 
   Future<void> _exportLibrary() async {
@@ -886,9 +890,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            CustomScrollView(
-              slivers: [
-                BurrowHeader(
+            RefreshIndicator(
+              onRefresh: _onRefresh,
+              child: CustomScrollView(
+                slivers: [
+                  BurrowHeader(
                   tab: _tab,
                   onTabChanged: (tab) => setState(() {
                     _tab = tab;
@@ -933,7 +939,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             onScan: _scanDevice,
                           ),
                   ),
-              ],
+                ],
+              ),
             ),
             Positioned.fill(
               child: IgnorePointer(
