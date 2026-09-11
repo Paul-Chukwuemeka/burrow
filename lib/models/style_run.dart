@@ -98,99 +98,99 @@ class ImageRun {
   /// Set to [double.infinity] to disable.
   static const double maxInlineImageHeight = 150;
 
-  /// Capped (width, height) that fits the image within [renderWidth] while
-  /// never exceeding [maxInlineImageHeight] vertically, preserving aspect
-  /// ratio.
-  Size renderedSize(double renderWidth, {double maxHeight = double.infinity}) {
-    // Use CSS dimensions as primary source when available.
-    if (css != null) {
-      var w = css!.width;
-      var h = css!.height;
+  /// Fallback height for an image whose dimensions cannot be determined.
+  static const double _unknownImageHeight = 160;
 
-      // Resolve percentage values relative to renderWidth.
+  /// Hard ceiling for full-width images when no page height is known.
+  static const double _absoluteMaxHeight = 800;
+
+  /// Capped (width, height) that fits the image within [renderWidth] and
+  /// [maxHeight] while preserving aspect ratio.
+  ///
+  /// Percentages are resolved against the available width (horizontal lengths)
+  /// or height (vertical lengths). Inline images are additionally capped at
+  /// [maxInlineImageHeight] unless [fullWidth]; full-width/cover images are
+  /// capped to [maxHeight] so a full-page illustration never overflows.
+  Size renderedSize(double renderWidth, {double maxHeight = double.infinity}) {
+    final (naturalW, naturalH) = _naturalSize(renderWidth, maxHeight);
+    if (naturalW <= 0 || naturalH <= 0) {
+      return Size(renderWidth, _unknownImageHeight);
+    }
+
+    // Accumulate every cap as a single scale factor so width and height are
+    // never clamped independently (which would distort the aspect ratio).
+    var scale = 1.0;
+    if (!fullWidth && naturalH > maxInlineImageHeight) {
+      scale = math.min(scale, maxInlineImageHeight / naturalH);
+    }
+    final heightCeiling =
+        maxHeight.isFinite && maxHeight > 0 ? maxHeight : _absoluteMaxHeight;
+    if (naturalH > heightCeiling) {
+      scale = math.min(scale, heightCeiling / naturalH);
+    }
+    if (naturalW > renderWidth) {
+      scale = math.min(scale, renderWidth / naturalW);
+    }
+
+    return Size(naturalW * scale, naturalH * scale);
+  }
+
+  /// The image's uncapped (width, height) in logical pixels: CSS dimensions
+  /// first, then HTML attributes, then intrinsic pixels, scaled to
+  /// [renderWidth] when no explicit width is given.
+  (double, double) _naturalSize(double renderWidth, double maxHeight) {
+    final heightBasis = maxHeight.isFinite && maxHeight > 0 ? maxHeight : renderWidth;
+    final style = css;
+    if (style != null) {
+      var w = style.width?.resolve(renderWidth);
+      var h = style.height?.resolve(heightBasis);
       if (w != null && w <= 0) w = null;
       if (h != null && h <= 0) h = null;
 
-      // If only one dimension is set, derive the other from aspect ratio.
-      if (w != null && h == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
-        h = w * (intrinsicHeight / intrinsicWidth);
-      } else if (h != null && w == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
-        w = h * (intrinsicWidth / intrinsicHeight);
+      // Derive the missing axis from the intrinsic aspect ratio, first from
+      // the CSS dimension, then from the HTML attribute.
+      (double?, double?) derive(double? width, double? height) {
+        if (width != null && height == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
+          height = width * intrinsicHeight / intrinsicWidth;
+        } else if (height != null && width == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
+          width = height * intrinsicWidth / intrinsicHeight;
+        }
+        return (width, height);
       }
 
-      // Fall back to HTML attributes, then intrinsic dimensions.
+      (w, h) = derive(w, h);
       w ??= htmlWidth;
       h ??= htmlHeight;
+      (w, h) = derive(w, h);
       w ??= intrinsicWidth.toDouble();
       h ??= intrinsicHeight.toDouble();
 
-      // Apply max-width / max-height caps.
-      if (css!.maxWidth != null && w > css!.maxWidth!) {
-        final scale = css!.maxWidth! / w;
-        w = css!.maxWidth!;
-        h *= scale;
+      var cssScale = 1.0;
+      final maxW = style.maxWidth?.resolve(renderWidth);
+      if (maxW != null && maxW > 0 && w * cssScale > maxW) {
+        cssScale = maxW / (w * cssScale);
       }
-      if (css!.maxHeight != null && h > css!.maxHeight!) {
-        final scale = css!.maxHeight! / h;
-        h = css!.maxHeight!;
-        w *= scale;
+      final maxH = style.maxHeight?.resolve(heightBasis);
+      if (maxH != null && maxH > 0 && h * cssScale > maxH) {
+        cssScale = maxH / (h * cssScale);
       }
-
-      // Apply inline image height cap (unless fullWidth).
-      if (!fullWidth && h > maxInlineImageHeight) {
-        final scale = maxInlineImageHeight / h;
-        h = maxInlineImageHeight;
-        w *= scale;
-      }
-
-      return Size(
-        w.clamp(40.0, renderWidth),
-        h.clamp(40.0, 800.0),
-      );
+      return (w * cssScale, h * cssScale);
     }
 
-    // HTML attribute fallback (no CSS).
     var w = htmlWidth;
     var h = htmlHeight;
     if (w != null || h != null) {
       w ??= (h != null && intrinsicWidth > 0 && intrinsicHeight > 0)
-          ? h * (intrinsicWidth / intrinsicHeight)
+          ? h * intrinsicWidth / intrinsicHeight
           : intrinsicWidth.toDouble();
       h ??= (intrinsicWidth > 0 && intrinsicHeight > 0)
-          ? w * (intrinsicHeight / intrinsicWidth)
+          ? w * intrinsicHeight / intrinsicWidth
           : intrinsicHeight.toDouble();
-
-      if (!fullWidth && h > maxInlineImageHeight) {
-        final scale = maxInlineImageHeight / h;
-        h = maxInlineImageHeight;
-        w *= scale;
-      }
-
-      return Size(
-        w.clamp(40.0, renderWidth),
-        h.clamp(40.0, 800.0),
-      );
+      return (w, h);
     }
 
-    // Original intrinsic-based sizing.
-    if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
-      return Size(renderWidth, 160);
-    }
-    final scale = renderWidth / intrinsicWidth;
-    var w2 = renderWidth;
-    var h2 = intrinsicHeight * scale;
-
-    // Cap height so decorative art does not dominate the page,
-    // unless this is a cover/full-width image.
-    if (!fullWidth && h2 > maxInlineImageHeight) {
-      h2 = maxInlineImageHeight;
-      w2 = intrinsicWidth * (h2 / intrinsicHeight);
-    }
-
-    return Size(
-      w2.clamp(40.0, renderWidth),
-      h2.clamp(40.0, 800.0),
-    );
+    if (intrinsicWidth <= 0 || intrinsicHeight <= 0) return (0, 0);
+    return (renderWidth.toDouble(), intrinsicHeight * renderWidth / intrinsicWidth);
   }
 
   /// Rendered width at [renderWidth], optionally capped by [maxHeight].

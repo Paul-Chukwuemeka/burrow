@@ -1,5 +1,33 @@
 import 'dart:ui';
 
+/// A CSS length that is either absolute (already resolved to pixels) or a
+/// percentage of the containing block.
+///
+/// Percentages must stay symbolic until render time: EPUBs overwhelmingly use
+/// `max-width: 100%` to make images fit, and resolving that to `100px` at parse
+/// time would shrink every illustration to a thumbnail.
+class CssLength {
+  const CssLength.px(this.value) : isPercent = false;
+  const CssLength.percent(this.value) : isPercent = true;
+
+  final double value;
+  final bool isPercent;
+
+  /// Pixel size against [basis] (container width for horizontal lengths,
+  /// container height for vertical ones).
+  double resolve(double basis) => isPercent ? basis * value / 100 : value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CssLength && other.value == value && other.isPercent == isPercent;
+
+  @override
+  int get hashCode => Object.hash(value, isPercent);
+
+  @override
+  String toString() => isPercent ? '${value}%' : '${value}px';
+}
+
 /// CSS-derived style properties extracted from EPUB stylesheets.
 class CssStyle {
   const CssStyle({
@@ -43,10 +71,10 @@ class CssStyle {
   final double? wordSpacing;
   final String? textTransform;
   final String? whiteSpace;
-  final double? width;
-  final double? height;
-  final double? maxWidth;
-  final double? maxHeight;
+  final CssLength? width;
+  final CssLength? height;
+  final CssLength? maxWidth;
+  final CssLength? maxHeight;
 
   CssStyle merge(CssStyle other) => CssStyle(
         fontSize: other.fontSize ?? fontSize,

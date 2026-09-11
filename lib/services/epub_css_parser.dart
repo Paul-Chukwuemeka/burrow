@@ -253,11 +253,41 @@ class EpubCssParser {
       wordSpacing: _parseLength(props['word-spacing']),
       textTransform: props['text-transform'],
       whiteSpace: props['white-space'],
-      width: _parseLength(props['width']),
-      height: _parseLength(props['height']),
-      maxWidth: _parseLength(props['max-width']),
-      maxHeight: _parseLength(props['max-height']),
+      width: _parseCssLength(props['width']),
+      height: _parseCssLength(props['height']),
+      maxWidth: _parseCssLength(props['max-width']),
+      maxHeight: _parseCssLength(props['max-height']),
     );
+  }
+
+  /// Parses a box-model length, preserving percentages for resolution at
+  /// render time. `auto`/`none` and unparseable values yield null.
+  static CssLength? _parseCssLength(String? value) {
+    if (value == null) return null;
+    final v = value.trim().toLowerCase();
+    if (v.isEmpty ||
+        v == 'auto' ||
+        v == 'none' ||
+        v == 'initial' ||
+        v == 'inherit' ||
+        v == 'unset') {
+      return null;
+    }
+    if (v.endsWith('%')) {
+      final num = double.tryParse(v.substring(0, v.length - 1).trim());
+      return num == null ? null : CssLength.percent(num);
+    }
+    // Viewport units are approximated as a percentage of the container basis.
+    if (v.endsWith('vw') || v.endsWith('vh')) {
+      final num = double.tryParse(v.substring(0, v.length - 2).trim());
+      return num == null ? null : CssLength.percent(num);
+    }
+    final numStr = v.replaceAll(RegExp(r'[a-z]+$'), '').trim();
+    final num = double.tryParse(numStr);
+    if (num == null) return null;
+    if (v.endsWith('em') || v.endsWith('rem')) return CssLength.px(num * 16);
+    if (v.endsWith('pt')) return CssLength.px(num * 1.333);
+    return CssLength.px(num);
   }
 
   static double? _parseFontSize(String? value) {
@@ -266,7 +296,10 @@ class EpubCssParser {
     final num = double.tryParse(numStr);
     if (num == null) return null;
 
-    if (value.endsWith('em') || value.endsWith('rem')) {
+    if (value.endsWith('%')) {
+      // Percentage font-size is relative to the inherited (default) size.
+      return num * 16 / 100;
+    } else if (value.endsWith('em') || value.endsWith('rem')) {
       return num * 16;
     } else if (value.endsWith('pt')) {
       return num * 1.333;
@@ -421,6 +454,12 @@ class EpubCssParser {
   static double? _parseLineHeight(String? value) {
     if (value == null) return null;
     final v = value.trim().toLowerCase();
+    if (v.endsWith('%')) {
+      // Percentage line-height is a multiple of the font size, which Flutter's
+      // unitless `height` already models.
+      final num = double.tryParse(v.substring(0, v.length - 1).trim());
+      return num == null ? null : num / 100;
+    }
     final num = double.tryParse(v);
     if (num != null) return num;
     return _parseLength(v);

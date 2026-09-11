@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/book_search.dart';
@@ -299,6 +300,48 @@ void main() {
       final size = img.renderedSize(370);
       expect(size.height, closeTo(555.0, 1));
       expect(size.width, 370);
+    });
+
+    test('max-width:100% resolves to the content width, not 100px', () {
+      final img = ImageRun(
+        offset: 0,
+        bytes: Uint8List(0),
+        intrinsicWidth: 1200,
+        intrinsicHeight: 600,
+        css: const CssStyle(maxWidth: CssLength.percent(100)),
+      );
+      final size = img.renderedSize(370, maxHeight: 860);
+      // Fits the width, then the inline cap trims it to 300x150.
+      expect(size.width, closeTo(300.0, 1));
+      expect(size.height, closeTo(150.0, 1));
+    });
+
+    test('max-width:100px stays absolute', () {
+      final img = ImageRun(
+        offset: 0,
+        bytes: Uint8List(0),
+        intrinsicWidth: 1200,
+        intrinsicHeight: 600,
+        css: const CssStyle(maxWidth: CssLength.px(100)),
+      );
+      final size = img.renderedSize(370, maxHeight: 860);
+      expect(size.width, closeTo(100.0, 1));
+      expect(size.height, closeTo(50.0, 1));
+    });
+
+    test('fullWidth image is capped to the page height, preserving aspect', () {
+      final img = ImageRun(
+        offset: 0,
+        bytes: Uint8List(0),
+        intrinsicWidth: 800,
+        intrinsicHeight: 1200,
+        fullWidth: true,
+      );
+      final size = img.renderedSize(370, maxHeight: 400);
+      // Natural 370x555; page height 400 scales both axes.
+      expect(size.height, closeTo(400.0, 0.5));
+      expect(size.width, closeTo(370 * 400 / 555, 1));
+      expect(size.width / size.height, closeTo(800 / 1200, 0.01));
     });
   });
 
