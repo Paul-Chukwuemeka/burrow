@@ -24,6 +24,7 @@ List<InlineSpan> buildPageSpans({
   List<ImageRun> images = const [],
   double renderWidth = 300,
   double maxHeight = double.infinity,
+  double devicePixelRatio = 1.0,
   List<SearchResult> matches = const [],
   SearchResult? currentMatch,
   ({int start, int end})? selectedRange,
@@ -89,6 +90,11 @@ List<InlineSpan> buildPageSpans({
         img.bytes,
         width: size.width,
         height: size.height,
+        // Decode at display resolution (physical pixels) instead of the
+        // source's full size, which can be many times larger.
+        cacheWidth: (size.width * devicePixelRatio).round().clamp(1, 1 << 14),
+        cacheHeight:
+            (size.height * devicePixelRatio).round().clamp(1, 1 << 14),
         fit: BoxFit.contain,
         errorBuilder: (_, _, _) => Container(
           width: size.width,

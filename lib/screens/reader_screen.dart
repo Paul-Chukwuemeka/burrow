@@ -2251,6 +2251,7 @@ class _PageContent extends StatelessWidget {
       images: tappedImages,
       renderWidth: renderWidth,
       maxHeight: pageMaxHeight,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
       matches: highlightMatches ?? const [],
       currentMatch: currentMatch,
       selectedRange: selectedWordRange,
