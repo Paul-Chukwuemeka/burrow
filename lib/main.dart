@@ -104,9 +104,8 @@ class _BurrowAppState extends State<BurrowApp> {
     if (library.onboardingComplete) {
       return LibraryScreen(library: library);
     }
-    return OnboardingScreen(library: library, onDone: () {
+    return OnboardingScreen(library: library, onDone: (context) {
       library.markOnboardingComplete();
-      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => LibraryScreen(library: library),

@@ -29,7 +29,7 @@ class OnboardingScreen extends StatefulWidget {
   });
 
   final LibraryService library;
-  final VoidCallback onDone;
+  final void Function(BuildContext context) onDone;
 
   /// Test/injection overrides for the platform-backed pieces.
   final PermissionFn? requestPermission;
@@ -91,7 +91,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ? DateTime.now().difference(_flowStartedAt!).inMilliseconds
         : 0;
     _analytics.onboardingCompleted(totalDurationMs: elapsed);
-    widget.onDone();
+    widget.onDone(context);
   }
 
   // -------------------------------------------------------------------------

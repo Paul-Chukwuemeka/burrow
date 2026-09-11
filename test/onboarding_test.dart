@@ -17,13 +17,13 @@ Future<void> _pumpOnboarding(
   ScanFn? scanDevice,
   ScanFn? scanFolder,
   PickFilesFn? pickFile,
-  VoidCallback? onDone,
+  void Function(BuildContext context)? onDone,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       home: OnboardingScreen(
         library: library,
-        onDone: onDone ?? () {},
+        onDone: onDone ?? (_) {},
         requestPermission: permission ?? () async => true,
         scanDevice: scanDevice ?? () async => <String>[],
         scanFolder: scanFolder ?? () async => <String>[],
@@ -152,7 +152,7 @@ void main() {
         tester,
         library,
         scanDevice: () async => ['/books/a.epub'],
-        onDone: () => done = true,
+        onDone: (_) => done = true,
       );
 
       await tester.tap(find.text('Tuck in'));
