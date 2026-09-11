@@ -4,42 +4,38 @@ import 'package:pdfrx/pdfrx.dart';
 import 'models/reader_settings.dart';
 import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/dictionary_service.dart';
 import 'services/library_service.dart';
 import 'theme/burrow_tokens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await PdfrxEntryFunctions.instance.init();
-  await DictionaryService.instance.init();
-  final library = LibraryService();
-  await library.load();
-  runApp(BurrowApp(library: library));
+  runApp(const BurrowApp());
 }
 
 class BurrowApp extends StatefulWidget {
-  const BurrowApp({super.key, required this.library});
-
-  final LibraryService library;
+  const BurrowApp({super.key});
 
   @override
   State<BurrowApp> createState() => _BurrowAppState();
 }
 
 class _BurrowAppState extends State<BurrowApp> {
-  late Widget _home;
+  LibraryService? _library;
 
   @override
   void initState() {
     super.initState();
-    _home = _buildHome();
-    widget.library.addListener(_onThemeChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _library?.addListener(_onThemeChanged);
+    });
   }
 
   @override
   void dispose() {
-    widget.library.removeListener(_onThemeChanged);
-    widget.library.dispose();
+    _library?.removeListener(_onThemeChanged);
+    _library?.dispose();
     DictionaryService.instance.close();
     super.dispose();
   }
@@ -48,37 +44,23 @@ class _BurrowAppState extends State<BurrowApp> {
     if (mounted) setState(() {});
   }
 
-  Widget _buildHome() {
-    final library = widget.library;
-    if (library.onboardingComplete) {
-      return LibraryScreen(library: library);
-    }
-    return OnboardingScreen(library: library, onDone: _finishOnboarding);
-  }
-
-  /// Called when the onboarding flow finishes: persist the flag and swap the
-  /// home widget to the library.
-  void _finishOnboarding() {
-    widget.library.markOnboardingComplete();
-    if (!mounted) return;
-    setState(() => _home = LibraryScreen(library: widget.library));
-  }
-
   @override
   Widget build(BuildContext context) {
-    final appMode = widget.library.settings.appThemeMode;
+    final library = _library;
+    final appMode = library?.settings.appThemeMode;
     final isOled = appMode == AppThemeMode.oled;
-    final settings = widget.library.settings;
+    final settings = library?.settings;
+
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(
-        textScaler: TextScaler.linear(settings.uiTextScale),
+        textScaler: TextScaler.linear(settings?.uiTextScale ?? 1.0),
       ),
       child: MaterialApp(
         title: 'burrow',
         debugShowCheckedModeBanner: false,
         theme: _expressiveTheme(
           ColorScheme.fromSeed(seedColor: const Color(0xFF2E6E4E)),
-          uiFontFamily: settings.uiFontFamily,
+          uiFontFamily: settings?.uiFontFamily,
         ),
         darkTheme: _expressiveTheme(
           isOled
@@ -96,14 +78,41 @@ class _BurrowAppState extends State<BurrowApp> {
                   seedColor: const Color(0xFF2E6E4E),
                   brightness: Brightness.dark,
                 ),
-          uiFontFamily: settings.uiFontFamily,
+          uiFontFamily: settings?.uiFontFamily,
         ),
-        themeMode: AppTheme.byMode(appMode).brightness == Brightness.light
-            ? ThemeMode.light
-            : ThemeMode.dark,
-        home: _home,
+        themeMode: library != null
+            ? AppTheme.byMode(appMode!).brightness == Brightness.light
+                ? ThemeMode.light
+                : ThemeMode.dark
+            : ThemeMode.system,
+        home: SplashScreen(onReady: _buildHome),
       ),
     );
+  }
+
+  Future<Widget> _buildHome(BuildContext context) async {
+    // Heavy initialization runs while the splash is visible.
+    await PdfrxEntryFunctions.instance.init();
+    await DictionaryService.instance.init();
+    final library = LibraryService();
+    await library.load();
+
+    // Subscribe to theme changes now that the library is loaded.
+    _library = library;
+    library.addListener(_onThemeChanged);
+
+    if (library.onboardingComplete) {
+      return LibraryScreen(library: library);
+    }
+    return OnboardingScreen(library: library, onDone: () {
+      library.markOnboardingComplete();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => LibraryScreen(library: library),
+        ),
+      );
+    });
   }
 
   // Material 3 Expressive-flavoured foundation: Roboto Flex variable type,
