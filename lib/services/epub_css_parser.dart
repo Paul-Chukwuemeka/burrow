@@ -414,7 +414,7 @@ class EpubCssParser {
         futures.add(fontLoader.load().then((_) => loaded.add(info.family)));
       } catch (_) {}
     }
-    await Future.wait(futures, eagerError: true);
+    await Future.wait(futures);
     return loaded;
   }
 

@@ -108,7 +108,7 @@ class TocEntry {
 
 class DocumentParser {
   /// Parses a document into chapters. Heavy work runs in a background isolate.
-  static Future<ParsedDocument> parse(String path, BookFormat format) {
+  static Future<ParsedDocument> parse(String path) {
     return compute(_parseIsolate, path);
   }
 
@@ -808,7 +808,12 @@ class DocumentParser {
   // --------------------------------------------------------------------------
 
   static Future<ParsedDocument> _parseTxt(String path) async {
-    final bytes = await File(path).readAsBytes();
+    final file = File(path);
+    final length = await file.length();
+    if (length > 100 * 1024 * 1024) {
+      throw const FormatException('Text file too large (limit 100 MB)');
+    }
+    final bytes = await file.readAsBytes();
     var text = utf8.decode(bytes, allowMalformed: true);
     // If malformed replacement chars dominate, retry as Latin-1.
     if ('\uFFFD'.allMatches(text).length > text.length / 64) {

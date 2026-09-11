@@ -7,7 +7,9 @@ import '../models/book.dart';
 import '../models/reader_settings.dart';
 
 class PdfReaderController extends ChangeNotifier {
-  PdfReaderController({required this.book, required this.settings});
+  PdfReaderController({required this.book, required this.settings}) {
+    _checkFileExists();
+  }
 
   final Book book;
   final ReaderSettings settings;
@@ -17,8 +19,13 @@ class PdfReaderController extends ChangeNotifier {
   int pdfPageCount = 0;
   List<PdfOutlineNode> pdfOutline = [];
   bool pdfLoading = true;
-  late final bool pdfFileExists = File(book.path).existsSync();
+  bool? pdfFileExists;
   PdfTextSearcher? pdfSearcher;
+
+  Future<void> _checkFileExists() async {
+    pdfFileExists = await File(book.path).exists();
+    if (pdfFileExists == false) notifyListeners();
+  }
 
   void onPdfViewChanged() {
     if (!pdfController.isReady) return;

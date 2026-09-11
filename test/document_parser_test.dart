@@ -710,7 +710,7 @@ More text.''';
       await file.writeAsBytes(cbz);
 
       try {
-        final doc = await DocumentParser.parse(file.path, BookFormat.cbz);
+        final doc = await DocumentParser.parse(file.path);
         expect(doc.title, 'test');
         expect(doc.chapters.length, 3);
         expect(doc.chapters[0].title, 'page1');
@@ -732,7 +732,7 @@ More text.''';
       await file.writeAsBytes(cbz);
 
       try {
-        final doc = await DocumentParser.parse(file.path, BookFormat.cbz);
+        final doc = await DocumentParser.parse(file.path);
         expect(doc.chapters.length, 3);
         // After natural sort: 1.jpg, 2.jpg, 10.jpg
         expect(doc.chapters[0].title, '1');
@@ -750,7 +750,7 @@ More text.''';
       await file.writeAsBytes(cbz);
 
       try {
-        final doc = await DocumentParser.parse(file.path, BookFormat.cbz);
+        final doc = await DocumentParser.parse(file.path);
         expect(doc.chapters.length, 2);
         expect(doc.chapters[0].images.first.bytes.isNotEmpty, true);
       } finally {
@@ -766,7 +766,7 @@ More text.''';
 
       try {
         expect(
-          () => DocumentParser.parse(file.path, BookFormat.cbz),
+          () => DocumentParser.parse(file.path),
           throwsA(isA<FormatException>()),
         );
       } finally {
@@ -781,7 +781,7 @@ More text.''';
 
       try {
         expect(
-          () => DocumentParser.parse(file.path, BookFormat.cbz),
+          () => DocumentParser.parse(file.path),
           throwsA(isA<FormatException>()),
         );
       } finally {

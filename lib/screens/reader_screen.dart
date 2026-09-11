@@ -208,7 +208,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   Future<void> _loadDocument() async {
     try {
-      final doc = await DocumentParser.parse(_book.path, _book.format);
+      final doc = await DocumentParser.parse(_book.path);
       // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
       if (doc.fontFaces.isNotEmpty) {
         await EpubCssParser.loadEmbeddedFonts(doc.fontFaces);
@@ -259,6 +259,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _searchCtrl.searchController.removeListener(_searchCtrl.onSearchTextChanged);
     _searchCtrl.dispose();
     _dictOverlay?.dismissDictionaryButton();
+    _doc = null;
     WakelockPlus.disable();
     BrightnessController.instance.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -960,7 +961,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // ------------------------------- PDF ---------------------------------------
 
   Widget _buildPdf(ReaderTheme theme) {
-    if (!_pdfCtrl.pdfFileExists) {
+    if (_pdfCtrl.pdfFileExists == false) {
       return const _ErrorView(message: 'File not found');
     }
     final viewer = PdfViewer.file(
@@ -1524,6 +1525,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       }
 
       if (stopwatch.elapsedMilliseconds > 10) {
+        if (!mounted) return;
         setState(() {});
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _paginateNextBatch(viewport, style, scaler, generation);
