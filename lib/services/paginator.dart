@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../models/reader_settings.dart';
 import '../models/style_run.dart';
 
 /// A page of text, as a [start, end) character range of the source string.
@@ -28,11 +29,17 @@ class ChapterPaginationDriver {
     TextScaler textScaler = TextScaler.noScaling,
     List<StyleRun> runs = const [],
     List<ImageRun> images = const [],
+    ReaderSettings? settings,
+    ReaderTheme? theme,
   })  : _text = text,
         _runs = runs,
         _images = images,
-        _renderWidth = maxWidth,
-        _pageHeight = maxHeight,
+        _imageHeights = [
+          for (final img in images)
+            img.renderedHeight(maxWidth, maxHeight: maxHeight),
+        ],
+        _settings = settings,
+        _theme = theme,
         _firstBudget = maxHeight - firstPageInset - _slack,
         _restBudget = maxHeight - _slack,
         _minBudget =
@@ -45,9 +52,14 @@ class ChapterPaginationDriver {
 
   final String _text;
   final List<StyleRun> _runs;
+
+  /// Images in this chapter, sorted by ascending [ImageRun.offset] (as the
+  /// parser emits them). Sortedness lets [_sliceHeight] scan only the images
+  /// that actually fall in a candidate slice instead of the whole chapter.
   final List<ImageRun> _images;
-  final double _renderWidth;
-  final double _pageHeight;
+  final List<double> _imageHeights;
+  final ReaderSettings? _settings;
+  final ReaderTheme? _theme;
   final TextStyle _style;
   final double _maxWidth;
   final double _firstBudget;
@@ -142,13 +154,13 @@ class ChapterPaginationDriver {
 
   double _sliceHeight(int start, int end) {
     if (end <= start) return 0;
-    // Replace \uFFFC placeholders with spaces for measurement, then add
-    // the actual rendered heights of any images in this slice.
+    // Images are sorted by offset, so only those landing in [start, end) are
+    // summed. Precomputed heights avoid re-measuring on every probe.
     var imageExtra = 0.0;
-    for (final img in _images) {
-      if (img.offset >= start && img.offset < end) {
-        imageExtra += img.renderedHeight(_renderWidth, maxHeight: _pageHeight);
-      }
+    for (var i = _firstImageAtOrAfter(start);
+        i < _images.length && _images[i].offset < end;
+        i++) {
+      imageExtra += _imageHeights[i];
     }
     // If the slice contains images, strip the \uFFFC so TextPainter doesn't
     // measure them as zero-height characters, then add the real heights.
@@ -161,7 +173,15 @@ class ChapterPaginationDriver {
           ? TextSpan(text: cleanText, style: _style)
           : TextSpan(
               style: _style,
-              children: buildStyledSpans(cleanText, _runs, _style, 0, cleanText.length),
+              children: buildStyledSpans(
+                cleanText,
+                _runs,
+                _style,
+                0,
+                cleanText.length,
+                quoteColor: _theme?.muted,
+                settings: _settings,
+              ),
             );
       _tp.text = cleanSpan;
     } else {
@@ -169,6 +189,21 @@ class ChapterPaginationDriver {
     }
     _tp.layout(maxWidth: _maxWidth);
     return _tp.height + imageExtra;
+  }
+
+  /// Index of the first image whose offset is >= [offset], assuming [_images]
+  /// is sorted by offset. Returns [_images].length when none qualify.
+  int _firstImageAtOrAfter(int offset) {
+    var lo = 0, hi = _images.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (_images[mid].offset < offset) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
   }
 
   /// The exact span the reader renders for this range — measurement and
@@ -179,7 +214,15 @@ class ChapterPaginationDriver {
     }
     return TextSpan(
       style: _style,
-      children: buildStyledSpans(_text, _runs, _style, start, end),
+      children: buildStyledSpans(
+        _text,
+        _runs,
+        _style,
+        start,
+        end,
+        quoteColor: _theme?.muted,
+        settings: _settings,
+      ),
     );
   }
 
@@ -229,144 +272,34 @@ class Paginator {
     TextScaler textScaler = TextScaler.noScaling,
     List<StyleRun> runs = const [],
     List<ImageRun> images = const [],
+    ReaderSettings? settings,
+    ReaderTheme? theme,
   }) {
     if (text.isEmpty) {
       return Paginator._(const [TextPage(0, 0)]);
     }
 
-    // One reusable painter: every candidate slice is measured exactly as it
-    // will render (same spans, width and scaler).
-    final tp = TextPainter(
-      textDirection: direction,
+    // One-shot pagination is just the incremental driver run to completion.
+    // Sharing one implementation guarantees identical page boundaries.
+    final driver = ChapterPaginationDriver(
+      text: text,
+      style: style,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      direction: direction,
+      firstPageInset: firstPageInset,
       textScaler: textScaler,
+      runs: runs,
+      images: images,
+      settings: settings,
+      theme: theme,
     );
-    TextSpan spanFor(int start, int end) {
-      if (runs.isEmpty) {
-        return TextSpan(text: text.substring(start, end), style: style);
-      }
-      return TextSpan(
-        style: style,
-        children: buildStyledSpans(text, runs, style, start, end),
-      );
+    while (!driver.isDone) {
+      driver.nextChunk(64);
     }
-    double sliceHeight(int start, int end) {
-      if (end <= start) return 0;
-      var imageExtra = 0.0;
-      for (final img in images) {
-        if (img.offset >= start && img.offset < end) {
-          imageExtra += img.renderedHeight(maxWidth, maxHeight: maxHeight);
-        }
-      }
-      if (imageExtra > 0) {
-        final cleanText = text.substring(start, end).replaceAll('\uFFFC', '\n');
-        final cleanSpan = runs.isEmpty
-            ? TextSpan(text: cleanText, style: style)
-            : TextSpan(
-                style: style,
-                children: buildStyledSpans(cleanText, runs, style, 0, cleanText.length),
-              );
-        tp.text = cleanSpan;
-      } else {
-        tp.text = spanFor(start, end);
-      }
-      tp.layout(maxWidth: maxWidth);
-      return tp.height + imageExtra;
-    }
-
-    bool isWhitespace(int i) {
-      final c = text.codeUnitAt(i);
-      return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
-    }
-
-    int nextContentStart(int from) {
-      var i = from;
-      while (i < text.length && isWhitespace(i)) {
-        i++;
-      }
-      return i;
-    }
-
-    const slack = 6.0;
-    final firstBudget = maxHeight - firstPageInset - slack;
-    final restBudget = maxHeight - slack;
-    // Floor so a degenerate budget (e.g. a title taller than the page) still
-    // makes progress instead of paginating one character at a time.
-    final minBudget = textScaler.scale(style.fontSize ?? 16) * 1.4;
-
-    final pages = <TextPage>[];
-    var isFirst = true;
-    var start = 0;
-    var seed = 1024; // Rough chars-per-page guess; refined after each page.
-
-    while (start < text.length) {
-      final budget = math.max(
-        isFirst ? firstBudget : restBudget,
-        minBudget,
-      );
-
-      // Largest end whose slice fits, via exponential bound + binary search.
-      int end;
-      if (sliceHeight(start, start + 1) > budget) {
-        // A single character overflows the page (unbreakable word longer
-        // than a page): hard-split. Never splits a surrogate pair.
-        end = start + 1;
-        if (end < text.length &&
-            (text.codeUnitAt(end) & 0xFC00) == 0xDC00) {
-          end++;
-        }
-      } else {
-        var bound = start + 1; // Known to fit.
-        var step = math.min(seed, 1 << 16);
-        while (bound + step < text.length &&
-            sliceHeight(start, bound + step) <= budget) {
-          bound += step;
-          step = math.min(step * 2, 1 << 16);
-        }
-        var lo = bound;
-        var hi = math.min(bound + step, text.length);
-        while (lo < hi) {
-          final mid = lo + (hi - lo + 1) ~/ 2;
-          if (sliceHeight(start, mid) <= budget) {
-            lo = mid;
-          } else {
-            hi = mid - 1;
-          }
-        }
-        end = lo;
-        // Guard against pathological non-monotonic layout: accept only a
-        // slice that truly fits.
-        while (end > start + 1 && sliceHeight(start, end) > budget) {
-          end--;
-        }
-      }
-
-      // Snap back to the last word/paragraph boundary so a page never cuts a
-      // word in half, then drop the boundary whitespace: a slice ending in
-      // '\n' would render a phantom empty line, and the next slice must not
-      // begin with one.
-      if (end < text.length &&
-          !isWhitespace(end) &&
-          !isWhitespace(end - 1)) {
-        var w = end;
-        while (w > start + 1 && !isWhitespace(w - 1)) {
-          w--;
-        }
-        if (w > start && isWhitespace(w - 1)) {
-          end = w;
-        }
-      }
-      while (end > start + 1 && isWhitespace(end - 1)) {
-        end--;
-      }
-
-      pages.add(TextPage(start, end));
-      isFirst = false;
-      seed = math.max(1, end - start);
-      start = nextContentStart(end);
-    }
-
-    tp.dispose();
-    return Paginator._(pages);
+    final result = driver.toPaginator();
+    driver.dispose();
+    return result;
   }
 
   /// Page index containing [offset]; clamps to valid range.

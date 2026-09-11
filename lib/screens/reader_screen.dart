@@ -65,6 +65,25 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   final List<Paginator> _paginators = [];
   final List<int> _charsBefore = [];
   int _totalChars = 0;
+
+  /// Prefix sums over `_paginators`: `_flatStart[c]` is the flat page index at
+  /// which chapter `c` begins, and `_flatTotal` is the number of pages in the
+  /// book. Rebuilt whenever the paginator set changes so flat<->chapter mapping
+  /// stays O(log chapters) instead of rescanning every chapter per frame.
+  List<int> _flatStart = const [];
+  int _flatTotal = 0;
+
+  void _recomputeFlatIndexes() {
+    final starts = List<int>.filled(_paginators.length, 0);
+    var acc = 0;
+    for (var i = 0; i < _paginators.length; i++) {
+      starts[i] = acc;
+      acc += _paginators[i].pages.length;
+    }
+    _flatStart = starts;
+    _flatTotal = acc;
+  }
+
   PageController? _pageController;
   int _flatPage = 0;
 
@@ -351,17 +370,30 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   /// Maps a flat page index to `(chapter, pageIndex)`, or null when out of
   /// range.
   (int, int)? _refAt(int flatIndex) {
-    var remaining = flatIndex;
-    for (var c = 0; c < _paginators.length; c++) {
-      final count = _paginators[c].pages.length;
-      if (remaining < count) return (c, remaining);
-      remaining -= count;
+    if (flatIndex < 0 || flatIndex >= _flatTotal) return null;
+    // Largest chapter whose start is <= flatIndex.
+    var lo = 0, hi = _flatStart.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (_flatStart[mid] <= flatIndex) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
     }
-    return null;
+    // A chapter with zero pages shares its start with the next one; skip
+    // forward until we land on the chapter that actually holds this page.
+    var chapter = lo;
+    var pageIndex = flatIndex - _flatStart[chapter];
+    while (pageIndex >= _paginators[chapter].pages.length) {
+      chapter++;
+      if (chapter >= _paginators.length) return null;
+      pageIndex = flatIndex - _flatStart[chapter];
+    }
+    return (chapter, pageIndex);
   }
 
-  int get _flatPageCount =>
-      _paginators.fold(0, (sum, p) => sum + p.pages.length);
+  int get _flatPageCount => _flatTotal;
 
   Size _contentViewport(Size screen) =>
       Size(screen.width - _settings.horizontalMargin * 2, screen.height - 56);
@@ -491,6 +523,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       firstPageInset: _titleInset(chapter, viewport, style, scaler),
       textScaler: scaler,
       runs: _doc!.chapters[chapter].runs,
+      images: _doc!.chapters[chapter].images,
+      settings: _settings,
+      theme: _settings.colors,
     );
     while (_paginators.length <= chapter) {
       _paginators.add(_emptyPaginator());
@@ -500,6 +535,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       _chapterStyles = List.filled(chapter + 1, style);
     }
     _chapterStyles[chapter] = style;
+    _recomputeFlatIndexes();
   }
 
   void _cancelBackground() {
@@ -545,6 +581,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           textScaler: scaler,
           runs: _doc!.chapters[c].runs,
           images: _doc!.chapters[c].images,
+          settings: _settings,
+          theme: _settings.colors,
         );
         _bgDrivers[c] = driver;
       }
@@ -594,6 +632,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       ..addAll(pages);
     _chapterStyles = List.filled(_paginators.length, style);
     if (sig != null) _layoutSignature = sig;
+    _recomputeFlatIndexes();
   }
 
   /// Jump the (persistent) controller to the page holding [position] —
@@ -1457,6 +1496,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     while (_paginators.length < _doc!.chapters.length) {
       _paginators.add(_emptyPaginator());
     }
+    _recomputeFlatIndexes();
 
     // Detach before destroying. Dropping the reference now means the frame
     // that swaps in the progress view unmounts the PageView, so disposing
@@ -1499,6 +1539,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           textScaler: scaler,
           runs: _doc!.chapters[c].runs,
           images: _doc!.chapters[c].images,
+          settings: _settings,
+          theme: _settings.colors,
         );
         _paginationDrivers[c] = driver;
       }
@@ -1507,6 +1549,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
       if (driver.isDone) {
         _paginators[c] = driver.toPaginator();
+        _recomputeFlatIndexes();
         driver.dispose();
         _paginationDrivers.remove(c);
         _paginationChapter++;
@@ -1616,11 +1659,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   /// Flat page index where [chapter] begins.
   int _flatIndexForChapter(int chapter) {
-    var flat = 0;
-    for (var c = 0; c < chapter; c++) {
-      flat += _paginators[c].pages.length;
-    }
-    return flat;
+    if (chapter <= 0) return 0;
+    if (chapter >= _flatStart.length) return _flatTotal;
+    return _flatStart[chapter];
   }
 
   /// Jump directly to the start of [chapterIndex].
@@ -2108,6 +2149,16 @@ class _PageContent extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (page.start == 0 && chapterTitle.trim().isNotEmpty) ...[
+              Text(
+                chapterTitle,
+                style: style.copyWith(
+                  fontSize: (style.fontSize ?? 18) + 4,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Expanded(
               child: Builder(
                 builder: (context) => RichText(

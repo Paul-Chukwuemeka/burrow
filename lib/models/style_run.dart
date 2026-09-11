@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'css_style.dart';
+import 'reader_settings.dart';
 
 /// A styled range of a chapter's plain text.
 ///
@@ -201,12 +202,78 @@ class ImageRun {
       renderedSize(renderWidth, maxHeight: maxHeight).height;
 }
 
+/// Applies the layout-affecting typography from [css] to [style], honoring the
+/// user's override preferences.
+///
+/// Shared by pagination measurement and page rendering so the two can never
+/// disagree about line breaking: if the renderer honors an EPUB's `font-size`
+/// or `line-height`, the paginator must measure with it too.
+TextStyle applyCssStyle(
+  TextStyle style,
+  CssStyle css,
+  ReaderSettings settings,
+) {
+  var result = style;
+  if (css.fontSize != null && !settings.overrideCssFontSize) {
+    result = result.copyWith(fontSize: css.fontSize);
+  }
+  if (css.fontFamily != null &&
+      css.fontFamily!.isNotEmpty &&
+      !settings.overrideCssFontFamily) {
+    result = result.copyWith(fontFamily: css.fontFamily);
+  }
+  if (css.color != null && !settings.overrideCssColor) {
+    result = result.copyWith(color: css.color);
+  }
+  if (css.fontWeight != null) {
+    result = result.copyWith(fontWeight: css.fontWeight);
+  }
+  if (css.fontStyle != null) {
+    result = result.copyWith(fontStyle: css.fontStyle);
+  }
+  if (css.textDecoration != null) {
+    result = result.copyWith(decoration: css.textDecoration);
+  }
+  if (css.lineHeight != null) {
+    result = result.copyWith(height: css.lineHeight);
+  }
+  if (css.letterSpacing != null) {
+    result = result.copyWith(letterSpacing: css.letterSpacing);
+  }
+  return result;
+}
+
+/// Resolves the final [TextStyle] for an optional [run] over [base].
+///
+/// This is the single place emphasis and CSS are turned into a style. Both the
+/// paginator (measurement) and the page renderer call it, so their wrapping and
+/// line heights match exactly. [quoteColor] only affects color, which has no
+/// effect on layout.
+TextStyle styleForRun(
+  TextStyle base,
+  StyleRun? run, {
+  required ReaderSettings settings,
+  Color? quoteColor,
+}) {
+  if (run == null) return base;
+  var style = base.copyWith(
+    fontWeight: run.bold ? FontWeight.w700 : null,
+    fontStyle: run.italic || run.quote ? FontStyle.italic : null,
+    color: run.quote ? (quoteColor ?? base.color) : null,
+  );
+  if (settings.respectCssStyles && run.css != null) {
+    style = applyCssStyle(style, run.css!, settings);
+  }
+  return style;
+}
+
 /// Builds the [TextSpan] children covering `text[start:end)`, applying every
 /// style run that intersects the range.
 ///
-/// Segments outside any run inherit the parent span's [base] style. Color has
-/// no effect on layout, so measurement may omit [quoteColor] while rendering
-/// supplies it — both produce identical line breaking.
+/// Segments outside any run inherit the parent span's [base] style. When
+/// [settings] is supplied, CSS-derived typography is applied too (via
+/// [styleForRun]) so the spans measure exactly as they will render. Omitting it
+/// keeps the emphasis-only behavior used by lightweight callers.
 List<TextSpan> buildStyledSpans(
   String text,
   List<StyleRun> runs,
@@ -214,6 +281,7 @@ List<TextSpan> buildStyledSpans(
   int start,
   int end, {
   Color? quoteColor,
+  ReaderSettings? settings,
 }) {
   if (runs.isEmpty || start >= end) {
     return [TextSpan(text: text.substring(start, math.max(start, end)))];
@@ -230,12 +298,19 @@ List<TextSpan> buildStyledSpans(
     }
     spans.add(TextSpan(
       text: text.substring(rs, re),
-      style: base.copyWith(
-        fontWeight: run.bold ? FontWeight.w700 : null,
-        fontStyle:
-            run.italic || run.quote ? FontStyle.italic : null,
-        color: run.quote ? (quoteColor ?? base.color) : null,
-      ),
+      style: settings == null
+          ? base.copyWith(
+              fontWeight: run.bold ? FontWeight.w700 : null,
+              fontStyle:
+                  run.italic || run.quote ? FontStyle.italic : null,
+              color: run.quote ? (quoteColor ?? base.color) : null,
+            )
+          : styleForRun(
+              base,
+              run,
+              settings: settings,
+              quoteColor: quoteColor,
+            ),
     ));
     cursor = re;
   }
