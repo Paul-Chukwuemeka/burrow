@@ -436,7 +436,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ],
       4 => switch (_ctrl.scanStatus) {
           ScanStatus.running => [
-              buildCta(context, 'Browse library', _finish),
+              buildCta(context, 'Browse library', () {
+                _ctrl.handOffScanToLibrary();
+                _finish();
+              }),
               const SizedBox(height: 6),
               buildCta(
                 context,

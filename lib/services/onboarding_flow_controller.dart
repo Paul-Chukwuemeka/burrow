@@ -196,4 +196,29 @@ class OnboardingFlowController extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// Hands off a pending device scan to [LibraryService] so it continues
+  /// after the onboarding screen is disposed. Call this when the user taps
+  /// "Browse library" while a scan is still running.
+  void handOffScanToLibrary() {
+    if (_pendingScanKind == _ScanKind.none) return;
+    final scan = _pendingScanKind == _ScanKind.device
+        ? (scanDevice ??
+              () => ScanService.scanDevice(
+                    knownPaths: _knownPaths,
+                    extensions: selectedFormats,
+                  ))
+        : (scanFolder ??
+              () async {
+                final dir = await FilePicker.getDirectoryPath();
+                if (dir == null) return const <String>[];
+                return ScanService.scanFolder(
+                  dir,
+                  knownPaths: _knownPaths,
+                  extensions: selectedFormats,
+                );
+              });
+    _pendingScanKind = _ScanKind.none;
+    library.startBackgroundScan(scan(), extensions: selectedFormats);
+  }
 }

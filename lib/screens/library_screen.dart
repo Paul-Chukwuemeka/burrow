@@ -913,11 +913,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       child: LinearProgressIndicator(minHeight: 4),
                     ),
                   ),
+                if (hasLibrary && widget.library.isScanning)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                      child: _ScanningBanner(
+                        library: widget.library,
+                      ),
+                    ),
+                  ),
                 if (hasLibrary) ..._tabContent(context, books, recent, filtered),
                 if (!hasLibrary)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: _busy
+                    child: _busy || widget.library.isScanning
                         ? const BusyState()
                         : EmptyState(
                             onPickFile: _pickFile,
@@ -1532,6 +1541,56 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Shows scan progress when a background scan (from onboarding) is running.
+class _ScanningBanner extends StatelessWidget {
+  const _ScanningBanner({required this.library});
+
+  final LibraryService library;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final total = library.scanTotal;
+    final imported = library.scanImported;
+    final hasProgress = total > 0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(Burrow.shapeSm + 4),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: scheme.primary,
+              value: hasProgress ? imported / total : null,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              hasProgress
+                  ? 'Importing books… $imported / $total'
+                  : 'Scanning for books…',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

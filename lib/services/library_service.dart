@@ -71,6 +71,64 @@ class LibraryService extends ChangeNotifier {
   /// Whether the first-run onboarding flow has been completed.
   bool onboardingComplete = false;
 
+  // ---- Background scan state (survives onboarding disposal) ---------------
+
+  /// The currently running scan future, if any. Stored here so the scan
+  /// continues after the onboarding controller is disposed.
+  Future<void>? _activeScan;
+
+  /// Whether a scan is currently in progress.
+  bool get isScanning => _activeScan != null;
+
+  /// Progress: number of files imported so far.
+  int scanImported = 0;
+
+  /// Progress: total number of files found by the scan.
+  int scanTotal = 0;
+
+  /// Starts a background scan that imports books into the library.
+  /// The scan runs independently of any screen; books appear as they are
+  /// found because [importFile] calls [notifyListeners].
+  void startBackgroundScan(Future<List<String>> scanFuture, {
+    Set<String> extensions = const {},
+  }) {
+    if (_activeScan != null) return; // already scanning
+    scanImported = 0;
+    scanTotal = 0;
+    _activeScan = _runBackgroundScan(scanFuture, extensions);
+    notifyListeners();
+  }
+
+  Future<void> _runBackgroundScan(
+    Future<List<String>> scanFuture,
+    Set<String> extensions,
+  ) async {
+    try {
+      final knownPaths = books.map((b) => b.path).toSet();
+      final paths = await scanFuture;
+      scanTotal = paths.length;
+      notifyListeners();
+
+      var completed = 0;
+      for (final path in paths) {
+        if (knownPaths.contains(path)) {
+          completed++;
+          continue;
+        }
+        try {
+          await importFile(path);
+        } catch (_) {}
+        completed++;
+        scanImported = completed;
+        // notifyListeners is called by importFile for each added book.
+      }
+    } catch (_) {}
+    _activeScan = null;
+    scanImported = 0;
+    scanTotal = 0;
+    notifyListeners();
+  }
+
   /// Test-only override so tests can supply an in-memory database before
   /// [load] runs instead of opening the real one.
   @visibleForTesting
