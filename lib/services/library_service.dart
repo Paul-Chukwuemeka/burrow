@@ -482,12 +482,12 @@ class LibraryService extends ChangeNotifier {
 
   /// Processes the metadata extraction queue one book at a time.
   Future<void> _processMetadataQueue() async {
-    final totalToProcess = _metadataQueue.length;
     // Pre-filter: remove books that are already complete or no longer in the library.
     _metadataQueue.removeWhere((id) {
       final book = _books.where((b) => b.id == id).firstOrNull;
       return book == null || book.metadataComplete;
     });
+    final totalToProcess = _metadataQueue.length;
     var completed = 0;
     
     if (totalToProcess > 0) {

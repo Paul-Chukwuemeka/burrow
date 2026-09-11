@@ -912,13 +912,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     library: widget.library,
                   ),
                 ),
-                if (hasLibrary && _busy)
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: LinearProgressIndicator(minHeight: 4),
-                    ),
-                  ),
                 if (hasLibrary && widget.library.isScanning)
                   SliverToBoxAdapter(
                     child: Padding(
