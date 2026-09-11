@@ -45,4 +45,43 @@ void main() {
       expect(css.lineHeight, closeTo(1.5, 0.01));
     });
   });
+
+  group('CssStyle JSON', () {
+    test('round-trips typography and lengths', () {
+      final original = EpubCssParser.propsToCssStyle({
+        'font-size': '20px',
+        'color': '#336699',
+        'font-weight': 'bold',
+        'font-style': 'italic',
+        'text-decoration': 'underline',
+        'line-height': '1.4',
+        'width': '50%',
+        'max-width': '100%',
+        'max-height': '2em',
+      });
+
+      final restored = CssStyle.fromJson(original.toJson());
+
+      expect(restored.fontSize, original.fontSize);
+      expect(restored.color, original.color);
+      expect(restored.fontWeight, original.fontWeight);
+      expect(restored.fontStyle, original.fontStyle);
+      expect(restored.textDecoration, original.textDecoration);
+      expect(restored.lineHeight, original.lineHeight);
+      expect(restored.width, const CssLength.percent(50));
+      expect(restored.maxWidth, const CssLength.percent(100));
+      expect(restored.maxHeight, const CssLength.px(32));
+    });
+
+    test('length JSON preserves the percent flag', () {
+      expect(
+        CssLength.fromJson(const CssLength.percent(75).toJson()),
+        const CssLength.percent(75),
+      );
+      expect(
+        CssLength.fromJson(const CssLength.px(12).toJson()),
+        const CssLength.px(12),
+      );
+    });
+  });
 }

@@ -12,6 +12,7 @@ import 'package:rar/rar.dart';
 import 'package:xml/xml.dart';
 
 import '../models/book.dart';
+import '../models/css_style.dart';
 import '../models/style_run.dart';
 import '../utils/book_title.dart';
 import 'epub_css_parser.dart';
@@ -1428,7 +1429,9 @@ class DocumentParser {
     final file = File(path);
     final mtime = file.lastModifiedSync().millisecondsSinceEpoch;
     final size = file.lengthSync();
-    final id = '${path}_${mtime}_$size';
+    // Bump the schema tag when the cached shape changes so stale entries from
+    // an older format are ignored instead of deserialized with missing fields.
+    final id = 'v2_${path}_${mtime}_$size';
     return id.hashCode.toRadixString(16);
   }
 
@@ -1481,6 +1484,7 @@ class DocumentParser {
           'b': r.bold,
           'i': r.italic,
           'q': r.quote,
+          if (r.css != null) 'css': r.css!.toJson(),
         }).toList(),
         'images': c.images.map((img) => {
           'o': img.offset,
@@ -1492,8 +1496,16 @@ class DocumentParser {
           'eid': img.elementId,
           'hw': img.htmlWidth,
           'hh': img.htmlHeight,
+          if (img.css != null) 'css': img.css!.toJson(),
         }).toList(),
       }).toList(),
+      'fontFaces': {
+        for (final e in doc.fontFaces.entries)
+          e.key: {
+            'src': e.value.src,
+            if (e.value.bytes != null) 'bytes': base64Encode(e.value.bytes!),
+          },
+      },
     };
   }
 
@@ -1508,6 +1520,9 @@ class DocumentParser {
           bold: rm['b'] as bool? ?? false,
           italic: rm['i'] as bool? ?? false,
           quote: rm['q'] as bool? ?? false,
+          css: rm['css'] is Map
+              ? CssStyle.fromJson((rm['css'] as Map).cast<String, dynamic>())
+              : null,
         );
       }).toList();
       final images = (ch['images'] as List? ?? []).map((img) {
@@ -1522,10 +1537,26 @@ class DocumentParser {
           elementId: im['eid'] as String? ?? '',
           htmlWidth: (im['hw'] as num?)?.toDouble(),
           htmlHeight: (im['hh'] as num?)?.toDouble(),
+          css: im['css'] is Map
+              ? CssStyle.fromJson((im['css'] as Map).cast<String, dynamic>())
+              : null,
         );
       }).toList();
       return Chapter(ch['title'] as String, ch['body'] as String, runs, images);
     }).toList();
+    final rawFonts = json['fontFaces'];
+    final fontFaces = <String, FontFaceInfo>{};
+    if (rawFonts is Map) {
+      for (final entry in rawFonts.entries) {
+        final info = (entry.value as Map).cast<String, dynamic>();
+        final encoded = info['bytes'] as String?;
+        fontFaces['${entry.key}'] = FontFaceInfo(
+          family: '${entry.key}',
+          src: info['src'] as String? ?? '',
+          bytes: encoded == null ? null : base64Decode(encoded),
+        );
+      }
+    }
     return ParsedDocument(
       title: json['title'] as String? ?? '',
       author: json['author'] as String? ?? '',
@@ -1544,6 +1575,7 @@ class DocumentParser {
       source: json['source'] as String?,
       titleSort: json['titleSort'] as String?,
       authorSort: json['authorSort'] as String?,
+      fontFaces: fontFaces,
     );
   }
 }
