@@ -2025,5 +2025,3 @@ class _RichTextBuilder {
   static bool _isWs(int c) =>
       c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
 }
-
-/// Incrementally builds plain text plus style runs from HTML events.
