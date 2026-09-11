@@ -1467,7 +1467,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _bookGrid(double width, List<Book> books) {
-    const maxTileExtent = 200.0;
+    const maxTileExtent = 300.0;
     const crossSpacing = 12.0;
     const mainSpacing = 14.0;
     const cardPadding = 6.0;
