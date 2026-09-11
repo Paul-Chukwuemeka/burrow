@@ -209,9 +209,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   Future<void> _loadDocument() async {
     try {
       final doc = await DocumentParser.parse(_book.path, _book.format);
-      // Load embedded fonts in parallel with setting up state/pagination.
+      // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
       if (doc.fontFaces.isNotEmpty) {
-        unawaited(EpubCssParser.loadEmbeddedFonts(doc.fontFaces));
+        await EpubCssParser.loadEmbeddedFonts(doc.fontFaces);
       }
       var cumulative = 0;
       _charsBefore.clear();
@@ -221,6 +221,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       }
       _totalChars = cumulative;
       if (!mounted) return;
+      // Pagination is kicked off by the reflowable LayoutBuilder, which owns
+      // the viewport. Deriving it from a second place risks a signature that
+      // disagrees with the layout and repaginating forever.
       setState(() => _doc = doc);
     } on FormatException catch (e) {
       if (!mounted) return;
@@ -1469,6 +1472,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginateNextBatch(viewport, style, scaler, _paginationGeneration);
   }
 
+  static const int _lazyPaginationThreshold = 3;
+
   void _paginateNextBatch(
     Size viewport,
     TextStyle style,
@@ -1506,6 +1511,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _paginationChapter++;
       }
 
+      // After the first few chapters, show the reader and paginate
+      // the rest in the background.
+      if (_paginationChapter >= _lazyPaginationThreshold &&
+          _paginationChapter < _doc!.chapters.length) {
+        _paginationRunning = false;
+        _restorePosition();
+        if (mounted) setState(() {});
+        // Continue remaining chapters in background.
+        _paginateRemainingInBackground(viewport, style, scaler, generation);
+        return;
+      }
+
       if (stopwatch.elapsedMilliseconds > 10) {
         setState(() {});
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1521,16 +1538,36 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     setState(() {});
   }
 
+  /// Paginate remaining chapters after the initial threshold in background.
+  void _paginateRemainingInBackground(
+    Size viewport,
+    TextStyle style,
+    TextScaler scaler,
+    int generation,
+  ) {
+    _bgTargetSignature = _signatureFor(viewport, style, scaler);
+    _bgPaginators = List.from(_paginators);
+    while (_bgPaginators!.length < _doc!.chapters.length) {
+      _bgPaginators!.add(_emptyPaginator());
+    }
+    _bgChapter = _paginationChapter;
+    _bgGeneration++;
+    final bgGen = _bgGeneration;
+    _bgNextBatch(viewport, style, scaler, bgGen, skipChapters: {});
+  }
+
   /// Create the initial [PageController] at the book's saved position. Called
   /// once when the initial full-book pass finishes; re-layouts keep this
   /// controller and jump the existing scroll position instead.
   void _restorePosition() {
     if (!mounted || _doc == null || _pageController != null) return;
-    if (_paginators.length < _doc!.chapters.length) return;
+    // Allow partial pagination: target chapter must be paginated.
     final pending = _pendingRestore;
-    _pendingRestore = null;
     final targetChapter =
         (pending?.$1 ?? _book.lastChapter).clamp(0, _doc!.chapters.length - 1);
+    if (targetChapter >= _paginators.length) return;
+    if (_paginators[targetChapter].pages.isEmpty) return;
+    _pendingRestore = null;
     final targetOffset = pending?.$2 ?? _book.lastOffset;
     final flat = _flatIndexForChapter(targetChapter);
     final pageIdx = targetOffset > 0
