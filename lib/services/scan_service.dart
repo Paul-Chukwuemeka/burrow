@@ -58,6 +58,25 @@ class ScanService {
         .timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
+  /// Scans multiple specific folders and merges the results.
+  /// This is the "quick refresh" counterpart to [scanDevice].
+  static Future<List<String>> scanFolders(
+    Iterable<String> folders, {
+    Set<String> knownPaths = const {},
+    Set<String>? extensions,
+  }) async {
+    final exts = extensions ?? defaultExtensions;
+    final results = <String>[];
+    for (final folder in folders) {
+      if (!await Directory(folder).exists()) continue;
+      final found = await Isolate.run(() => _walk(folder, knownPaths, exts))
+          .timeout(const Duration(minutes: 2), onTimeout: () => []);
+      results.addAll(found);
+    }
+    results.sort();
+    return results;
+  }
+
   static List<String> _walk(
     String root,
     Set<String> knownPaths,

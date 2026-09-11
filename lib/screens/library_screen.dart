@@ -294,10 +294,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _onRefresh() async {
-    await _scanDevice();
+    await _quickRefresh();
+  }
+
+  /// Quick refresh: scans only the folders that contain known books.
+  /// Much faster than a full device scan because it skips unrelated directories.
+  Future<void> _quickRefresh() async {
+    final folders = _knownFolders();
+
+    if (folders.isEmpty) {
+      // No books yet -- fall back to full device scan.
+      await _scanDevice();
+      return;
+    }
+
+    await _runScan(ScanService.scanFolders(folders, knownPaths: _knownPaths()));
   }
 
   Set<String> _knownPaths() => widget.library.books.map((b) => b.path).toSet();
+
+  /// Extracts unique parent folders from all known book paths.
+  Set<String> _knownFolders() => widget.library.books
+      .map((b) => File(b.path).parent.path)
+      .toSet();
 
   Future<void> _exportLibrary() async {
     try {
