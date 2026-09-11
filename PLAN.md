@@ -930,15 +930,15 @@ EPUBs take 1.5–10 seconds to open. Three major bottlenecks:
 
 ### Implementation
 
-- [ ] **79. Compile CSS once, query per chapter**
+- [x] **79. Compile CSS once, query per chapter**
   - **File:** `lib/services/epub_css_parser.dart:51-84`
   - **What:** Move `css.compile(combinedCss)` outside the per-chapter loop. Compile once, query each chapter's DOM with pre-compiled rules.
 
-- [ ] **80. Parallel font loading**
+- [x] **80. Parallel font loading**
   - **File:** `lib/services/epub_css_parser.dart:389-404`
   - **What:** Replace sequential `await fontLoader.load()` with `Future.wait()`.
 
-- [x] **81. Lazy pagination — show reader after first chapters**
+[-] **81. Lazy pagination — show reader after first chapters** — already implemented via `_bgNextBatch`/`_lazyRunning` system
   - **File:** `lib/screens/reader_screen.dart:1448-1525`
   - **What:** Paginate first 2-3 chapters eagerly, show reader immediately, paginate rest in background.
 
@@ -946,7 +946,7 @@ EPUBs take 1.5–10 seconds to open. Three major bottlenecks:
   - **File:** `lib/services/document_parser.dart`, `lib/screens/reader_screen.dart:209-236`
   - **What:** Serialize chapter text/runs/images to disk cache. Load from cache on subsequent opens. Cache key: book ID + file mtime.
 
-[-] **83. Background image decoding** — deferred; `ui.Image` can't be serialized across isolate boundaries. `Image.memory` decoding is already efficient via Flutter's image cache.
+[-] **83. Background image decoding** — Flutter already decodes images lazily during widget build; pre-decoding in isolate requires `image` package + `dart:ui` conversion, marginal benefit
   - **File:** `lib/services/document_parser.dart` (in `_parseIsolate`), `lib/models/style_run.dart`
   - **What:** Decode images in background isolate during parsing. Store decoded pixel data so main thread doesn't decode during widget build.
 
@@ -984,47 +984,206 @@ Review combined diff together before committing.
 
 ---
 
+## Library Performance Fixes (Round 10)
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 84 | Blocker | `lib/widgets/book_cover.dart:38` | `Image.file()` with no `cacheWidth`/`cacheHeight` — full-res bitmaps in memory | [x] |
+| 85 | Major | `lib/widgets/book_card.dart:61,174` | Double `Clip.antiAlias` per card — redundant offscreen buffers | [x] |
+| 86 | Major | `lib/utils/book_title.dart:83` | `displayTitle` runs 7 regexes per call, no cache | [x] |
+| 87 | Minor | `lib/services/library_service.dart:502` | `notifyListeners()` per book during metadata extraction | [x] |
+| 88 | Minor | `lib/screens/library_screen.dart:162-227` | `_visibleBooks` intermediate `.toList()` per filter step | [x] |
+
+---
+
+## EPUB Opening Performance (Round 11)
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 89 | Blocker | `lib/services/document_parser.dart:614-630` | CSS parser builds duplicate DOM per chapter (html_parser.parse called twice) | [x] |
+| 90 | Major | `lib/services/document_parser.dart:631-634` | `archiveEntries` map rebuilt per spine doc (100+ copies of 200-entry map) | [x] |
+| 91 | Major | `lib/screens/reader_screen.dart:213` | `loadEmbeddedFonts` awaited sequentially before first render | [x] |
+| 92 | Major | `lib/services/document_parser.dart:110` | No in-memory cache — re-parses entire EPUB on re-open | [x] |
+
+---
+
+## Memory: Lightweight EPUB Metadata Extraction
+
+### Problem
+
+During library scan of 500+ books, `DocumentParser.parse()` performs a **full EPUB parse** for every book — HTML parsing, CSS compilation, chapter splitting, image resolution, font extraction, style run building — all just to extract title/author/cover. This causes massive memory spikes:
+
+- A 10MB EPUB peaks at ~40MB (compressed bytes + decompressed archive + parsed ParsedDocument)
+- `_serializeParsedDocument` triple-sizes image bytes as JSON integers for disk cache
+- 500 sequential parses create extreme GC pressure
+
+ReadEra and other efficient readers use a two-phase approach: lightweight metadata extraction (OPF + cover only), then full content parsing on-demand when the user opens the book.
+
+### Implementation
+
+#### Agent A — Lightweight EPUB metadata parser
+
+| # | File | Effort | Description |
+|---|------|--------|-------------|
+| 89 | `lib/services/document_parser.dart` | medium | Create `_parseEpubMetadata(path)` that only reads OPF XML + cover image |
+| 90 | `lib/services/document_parser.dart:110-112` | trivial | Route metadata worker to `_parseEpubMetadata` instead of full `parse()` |
+| 91 | `lib/services/library_service.dart:413-527` | small | Update `_processMetadataQueue` to use metadata-only parse for EPUB |
+
+#### Agent B — Memory cleanup after extraction
+
+| # | File | Effort | Description |
+|---|------|--------|-------------|
+| 92 | `lib/screens/reader_screen.dart:57,239-266` | trivial | Null `_doc` in `dispose()` to free parsed data immediately |
+| 93 | `lib/services/document_parser.dart:167,225-235` | small | Skip disk cache serialization during metadata-only parse |
+
+### Merge point
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+
+---
+
+### Issue #89: `_parseEpubMetadata` — Lightweight OPF + Cover Extraction
+
+**File:** `lib/services/document_parser.dart`
+
+**What:** Create a new function that extracts only metadata and cover from an EPUB without parsing any HTML content.
+
+**Implementation:**
+1. Open the EPUB as a ZIP archive (same as current `_parseEpub`)
+2. Read `META-INF/container.xml` to find the OPF file path
+3. Parse the OPF XML to extract Dublin Core metadata:
+   - `dc:title` → title
+   - `dc:creator` → author
+   - `dc:description` → description
+   - `dc:publisher` → publisher
+   - `dc:language` → language
+   - `dc:identifier` (ISBN) → isbn
+   - `dc:date` → publicationDate
+   - `dc:rights` → rights
+   - `<meta name="genre">` or `<subject>` → genre
+   - `<meta name="calibre:series">` or series refiner → seriesName
+   - `<meta name="calibre:series_index">` → seriesIndex
+   - `<meta name="cover" content="cover-image"/>` → cover image ID
+4. From the manifest, find the cover image item by ID
+5. Extract **only** the cover image bytes from the ZIP (single file, not entire archive)
+6. Return a lightweight result (metadata fields + cover bytes)
+
+**What it skips:** HTML parsing, CSS compilation, chapter splitting, inline image extraction, font extraction, style run building, disk cache serialization.
+
+**Signature:**
+```dart
+/// Lightweight EPUB metadata + cover extraction.
+/// Returns (metadata map, cover bytes) without parsing chapter content.
+static Future<({Map<String, String> metadata, List<int>? coverBytes})>
+    _parseEpubMetadata(String path) async { ... }
+```
+
+**OPF Parsing:** Use `xml` package (already a dependency via `csslib`) or simple regex extraction for Dublin Core fields. The OPF is a small XML file (typically <10KB).
+
+**Cover Detection:**
+1. Look for `<meta name="cover" content="cover-image"/>` in OPF metadata
+2. Find the manifest item with that ID
+3. Extract the file at that href from the ZIP
+
+**Memory impact:** Per-book peak drops from ~40MB to ~2-5MB (ZIP handle + OPF XML + single cover image).
+
+### Issue #90: Route metadata worker to lightweight parser
+
+**File:** `lib/services/document_parser.dart:110-112`
+
+**What:** The `parse()` function currently routes to `_parseIsolate` which does a full parse. For the metadata worker, we need a separate entry point.
+
+**Implementation:** Add a `parseMetadata()` static method that calls `_parseEpubMetadata` for EPUB, returns minimal data for other formats (same as current behavior for PDF/TXT/CBZ).
+
+```dart
+/// Lightweight metadata extraction for library scan.
+/// For EPUB: reads OPF + cover only. For others: same as parse().
+static Future<ParsedDocument> parseMetadata(String path, BookFormat format) {
+  return compute(_parseMetadataIsolate, (path, format));
+}
+```
+
+### Issue #91: Update metadata worker
+
+**File:** `lib/services/library_service.dart:413-527`
+
+**What:** Change `_processMetadataQueue` to call `DocumentParser.parseMetadata()` instead of `DocumentParser.parse()`.
+
+**Before:**
+```dart
+doc = await DocumentParser.parse(book.path, format);
+```
+
+**After:**
+```dart
+doc = await DocumentParser.parseMetadata(book.path, format);
+```
+
+The returned `ParsedDocument` will have metadata fields populated but empty chapters (for EPUB). The metadata worker already only reads metadata fields and cover bytes, so this is a drop-in replacement.
+
+### Issue #92: Null `_doc` in reader dispose
+
+**File:** `lib/screens/reader_screen.dart:57,239-266`
+
+**What:** `_doc` holds the full `ParsedDocument` (all chapter text, images, fonts) but is never nullified in `dispose()`. This keeps the parsed data alive until the State object is GC'd.
+
+**Fix:** Add `_doc = null;` in `dispose()`.
+
+### Issue #93: Skip disk cache during metadata-only parse
+
+**File:** `lib/services/document_parser.dart:163-169`
+
+**What:** `_parseEpub` serializes the full `ParsedDocument` to disk cache (triple-sizing image bytes as JSON). During metadata-only extraction, this serialization is unnecessary and wasteful.
+
+**Fix:** The metadata-only path (`_parseEpubMetadata`) doesn't produce a `ParsedDocument` with chapters, so no cache is written. The existing disk cache in `_parseEpub` is only used when the full parser is called (reader screen), which is correct.
+
+---
+
 ## Review Round 10 — On-Call Engineer Findings
 
 New issues found from full codebase review. These are **in addition to** the uncommitted work (lazy pagination, disk caching, font loading) already in the tree.
 
-- [ ] **84. Database migration can brick app on force-stop**
+- [ ] **94. Database migration can brick app on force-stop**
   - **File:** `lib/db/database.dart:131-162`, `onUpgrade` handler
   - **Severity:** Blocker
   - **What:** SQLite auto-commits DDL (`CREATE TABLE`, `ALTER TABLE`) outside explicit transactions. If the app is SIGKILL'd mid-migration, the schema is left partially migrated. On restart, Drift re-runs the same migration step, and already-created tables/columns cause `addColumn` to throw. **App becomes uninstallable without clearing data.**
   - **Fix:** Wrap each migration step in try-catch so partially-completed steps don't block subsequent ones.
 
-- [ ] **85. `importLibrary` phantom books**
+- [ ] **95. `importLibrary` phantom books**
   - **File:** `lib/services/library_service.dart:288-311`
   - **Severity:** Major
   - **What:** `_books.add(book)` at line 293 runs before bookmark/session DB inserts. If an insert throws, the catch skips the entry but the book is never removed from `_books`. The book stays in memory as a phantom (no DB rows, appears in UI).
   - **Fix:** Add rollback in catch: `_books.removeWhere((b) => b.id == book.id); _invalidateSortCache();`
 
-- [ ] **86. Metadata worker runs after dispose**
+- [ ] **96. Metadata worker runs after dispose**
   - **File:** `lib/services/library_service.dart:80-85` and `413-531`
   - **Severity:** Major
   - **What:** `_processMetadataQueue` has no cancellation check. After `dispose()`, the while loop processes every queued item against a closed stream and null DB. Wastes CPU spawning isolates with no consumer.
   - **Fix:** Add `bool _disposed = false;` field, set `true` in `dispose()`, check in while loop.
 
-- [ ] **87. `_doc` never nullified in `ReaderScreen.dispose()`**
+- [ ] **97. `_doc` never nullified in `ReaderScreen.dispose()`**
   - **File:** `lib/screens/reader_screen.dart:239-266`
   - **Severity:** Major
   - **What:** `_doc` (full `ParsedDocument`) is never set to null. State object retains reference after disposal, delaying GC of megabytes of parsed data.
   - **Fix:** Add `_doc = null;` in `dispose()`.
 
-- [ ] **88. `firstWhere` without `orElse` in comic provider**
+- [ ] **98. `firstWhere` without `orElse` in comic provider**
   - **File:** `lib/services/comic_page_provider.dart:83`
   - **Severity:** Minor
   - **What:** `firstWhere` throws `StateError` if archive entry name doesn't match (case sensitivity). Blank page or crash for valid CBZ.
   - **Fix:** Use `firstWhereOrNull` or add `orElse` returning a clear error.
 
-- [ ] **89. `importFileFast` notifies before DB result known**
+- [ ] **99. `importFileFast` notifies before DB result known**
   - **File:** `lib/services/library_service.dart:384-393`
   - **Severity:** Minor
   - **What:** `notifyListeners()` fires before DB insert completes. If insert throws, UI briefly shows phantom book then it disappears.
   - **Fix:** Move `notifyListeners()` to after the try-catch block.
 
-- [ ] **90. `parse()` ignores `format` parameter**
+- [ ] **100. `parse()` ignores `format` parameter**
   - **File:** `lib/services/document_parser.dart:110-112`
   - **Severity:** Nit
   - **What:** `parse()` accepts `BookFormat format` but `_parseIsolate` re-derives format from file extension. Parameter is unused and misleading.
