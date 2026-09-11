@@ -1165,7 +1165,7 @@ New issues found from full codebase review. These are **in addition to** the unc
   - **What:** `_processMetadataQueue` has no cancellation check. After `dispose()`, the while loop processes every queued item against a closed stream and null DB. Wastes CPU spawning isolates with no consumer.
   - **Fix:** Add `bool _disposed = false;` field, set `true` in `dispose()`, check in while loop.
 
-- [ ] **97. `_doc` never nullified in `ReaderScreen.dispose()`**
+- [x] **97. `_doc` never nullified in `ReaderScreen.dispose()`**
   - **File:** `lib/screens/reader_screen.dart:239-266`
   - **Severity:** Major
   - **What:** `_doc` (full `ParsedDocument`) is never set to null. State object retains reference after disposal, delaying GC of megabytes of parsed data.
@@ -1183,7 +1183,7 @@ New issues found from full codebase review. These are **in addition to** the unc
   - **What:** `notifyListeners()` fires before DB insert completes. If insert throws, UI briefly shows phantom book then it disappears.
   - **Fix:** Move `notifyListeners()` to after the try-catch block.
 
-- [ ] **100. `parse()` ignores `format` parameter**
+- [x] **100. `parse()` ignores `format` parameter**
   - **File:** `lib/services/document_parser.dart:110-112`
   - **Severity:** Nit
   - **What:** `parse()` accepts `BookFormat format` but `_parseIsolate` re-derives format from file extension. Parameter is unused and misleading.
@@ -1207,7 +1207,7 @@ Issues found from full codebase review across all layers (services, controllers,
   - **What:** `_books.remove(book)` at line 568 runs before the DB transaction at lines 587-595. If the DB transaction fails (disk full, corruption), the book vanishes from the UI but persists in SQLite. On next `load()`, it reappears.
   - **Fix:** Move `_books.remove(book)` and `_invalidateSortCache()` to after the DB transaction succeeds.
 
-- [ ] **103. `_paginateNextBatch` — `setState` without `mounted` check**
+- [x] **103. `_paginateNextBatch` — `setState` without `mounted` check**
   - **File:** `lib/screens/reader_screen.dart:1527`
   - **Severity:** Major
   - **What:** `setState(() {})` at line 1527 inside the pagination while-loop has no `mounted` guard. The check at line 1483 only protects entry. If the widget is disposed mid-loop (user taps back during initial pagination), this throws in debug mode.
@@ -1219,19 +1219,19 @@ Issues found from full codebase review across all layers (services, controllers,
   - **What:** `startSession` fires async `library.startSession()` and sets `_sessionId` in `.then`. Rapid lifecycle toggle (paused→resumed→paused→resumed) causes the first `.then` to overwrite `_sessionId` after `endSession` already saved it, orphaning the session record.
   - **Fix:** Use a generation counter: increment before each `startSession`, check it in the `.then` callback before assigning `_sessionId`.
 
-- [ ] **105. `loadEmbeddedFonts` — one corrupt font aborts all font loading**
+- [x] **105. `loadEmbeddedFonts` — one corrupt font aborts all font loading**
   - **File:** `lib/services/epub_css_parser.dart:415-418`
   - **Severity:** Major
   - **What:** `Future.wait(futures, eagerError: true)` cancels remaining font futures on the first failure. A single corrupt font file among several valid ones prevents all embedded fonts from loading. The book renders with system fonts instead of the intended typeface.
   - **Fix:** Remove `eagerError: true` so all fonts load independently.
 
-- [ ] **106. `_parseTxt` — no file size limit**
+- [x] **106. `_parseTxt` — no file size limit**
   - **File:** `lib/services/document_parser.dart:811`
   - **Severity:** Minor
   - **What:** EPUB caps at 100 MB (line 155), but TXT has no size guard. A 1 GB log file imported as `.txt` fully loads into memory, decodes to Dart string (tripling memory), causing OOM on 4GB devices.
   - **Fix:** Add size check before reading: `if (length > 100 * 1024 * 1024) throw FormatException(...)`.
 
-- [ ] **107. `PdfReaderController.pdfFileExists` — synchronous `existsSync` in field initializer**
+- [x] **107. `PdfReaderController.pdfFileExists` — synchronous `existsSync` in field initializer**
   - **File:** `lib/controllers/pdf_controller.dart:20`
   - **Severity:** Minor
   - **What:** `File(book.path).existsSync()` blocks the UI thread. On slow SD cards or cloud-backed filesystems, this freezes the widget tree for hundreds of milliseconds.
