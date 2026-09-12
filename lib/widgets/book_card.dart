@@ -62,49 +62,53 @@ class BookCard extends StatelessWidget {
               child: InkWell(
                 onTap: onTap,
                 onLongPress: onLongPress,
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _CoverArea(book: book)),
-                      const SizedBox(height: 7),
-                      SizedBox(
-                        height: 16,
-                        child: Text(
-                          book.displayTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: titleStyle,
-                        ),
-                      ),
-                      if (book.author.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 1),
-                          child: Text(
-                            book.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                  fontSize: 11,
-                                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _CoverArea(book: book)),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            height: 16,
+                            child: Text(
+                              book.displayTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: titleStyle,
+                            ),
                           ),
-                        ),
-                      const SizedBox(height: 2),
-                      SizedBox(
-                        height: 13,
-                        child: subtitle != null
-                            ? _SubtitleLine(
-                                text: subtitle!,
-                              )
-                            : _StatusLine(book: book),
+                          if (book.author.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 1),
+                              child: Text(
+                                book.author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      fontSize: 11,
+                                    ),
+                              ),
+                            ),
+                          const SizedBox(height: 2),
+                          SizedBox(
+                            height: 13,
+                            child: subtitle != null
+                                ? _SubtitleLine(
+                                    text: subtitle!,
+                                  )
+                                : _StatusLine(book: book),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
