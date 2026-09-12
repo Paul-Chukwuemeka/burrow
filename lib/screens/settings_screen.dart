@@ -160,6 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: Icon(Icons.text_increase, color: scheme.onSurfaceVariant),
             title: const Text('Text size'),
             subtitle: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline),
@@ -179,7 +180,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           })
                       : null,
                 ),
-                Expanded(
+                SizedBox(
+                  width: 36,
                   child: Text(
                     '${(_s.uiTextScale * 100).round()}%',
                     style: TextStyle(

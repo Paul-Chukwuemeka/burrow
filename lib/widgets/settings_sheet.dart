@@ -265,6 +265,7 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           const SizedBox(height: 8),
           // ── Font size ────────────────────────────────────────────────
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.text_fields, color: theme.muted, size: 20),
               IconButton(
@@ -283,7 +284,8 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                       }
                     : null,
               ),
-              Expanded(
+              SizedBox(
+                width: 28,
                 child: Text(
                   '${settings.fontSize.round()}',
                   style: TextStyle(color: theme.muted, fontSize: 14),
@@ -310,28 +312,49 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           ),
           // ── Line height ─────────────────────────────────────────────
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.format_line_spacing,
                   color: theme.muted, size: 20),
-              Expanded(
-                child: Slider(
-                  value: settings.lineHeight,
-                  min: 1.2,
-                  max: 2.2,
-                  divisions: 10,
-                  activeColor: theme.accent,
-                  label: settings.lineHeight.toStringAsFixed(1),
-                  onChanged: (v) =>
-                      _preview(() => settings.lineHeight = v),
-                  onChangeEnd: (_) => _commit(),
-                ),
+              IconButton(
+                icon: Icon(Icons.remove_circle_outline,
+                    color: theme.accent, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed: settings.lineHeight > ReaderSettings.lineHeightRange.$1
+                    ? () {
+                        _preview(() => settings.lineHeight =
+                            (settings.lineHeight - 0.1)
+                                .clamp(
+                                  ReaderSettings.lineHeightRange.$1,
+                                  ReaderSettings.lineHeightRange.$2,
+                                ));
+                        _commit();
+                      }
+                    : null,
               ),
               SizedBox(
                 width: 28,
                 child: Text(
                   settings.lineHeight.toStringAsFixed(1),
-                  style: TextStyle(color: theme.muted),
+                  style: TextStyle(color: theme.muted, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
+              ),
+              IconButton(
+                icon: Icon(Icons.add_circle_outline,
+                    color: theme.accent, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed: settings.lineHeight < ReaderSettings.lineHeightRange.$2
+                    ? () {
+                        _preview(() => settings.lineHeight =
+                            (settings.lineHeight + 0.1)
+                                .clamp(
+                                  ReaderSettings.lineHeightRange.$1,
+                                  ReaderSettings.lineHeightRange.$2,
+                                ));
+                        _commit();
+                      }
+                    : null,
               ),
             ],
           ),
@@ -367,27 +390,40 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           ),
           // ── Horizontal margin ─────────────────────────────────────
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.swap_horiz, color: theme.muted, size: 20),
-              Expanded(
-                child: Slider(
-                  value: settings.horizontalMargin,
-                  min: 8,
-                  max: 40,
-                  divisions: 16,
-                  activeColor: theme.accent,
-                  label: '${settings.horizontalMargin.round()}px',
-                  onChanged: (v) =>
-                      _preview(() => settings.horizontalMargin = v),
-                  onChangeEnd: (_) => _commit(),
-                ),
+              IconButton(
+                icon: Icon(Icons.remove_circle_outline,
+                    color: theme.accent, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed: settings.horizontalMargin > 8
+                    ? () {
+                        _preview(() => settings.horizontalMargin =
+                            (settings.horizontalMargin - 2).clamp(8.0, 40.0));
+                        _commit();
+                      }
+                    : null,
               ),
               SizedBox(
-                width: 36,
+                width: 28,
                 child: Text(
                   '${settings.horizontalMargin.round()}',
-                  style: TextStyle(color: theme.muted),
+                  style: TextStyle(color: theme.muted, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
+              ),
+              IconButton(
+                icon: Icon(Icons.add_circle_outline,
+                    color: theme.accent, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed: settings.horizontalMargin < 40
+                    ? () {
+                        _preview(() => settings.horizontalMargin =
+                            (settings.horizontalMargin + 2).clamp(8.0, 40.0));
+                        _commit();
+                      }
+                    : null,
               ),
             ],
           ),
