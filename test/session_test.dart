@@ -181,18 +181,16 @@ void main() {
         ),
       );
 
-      // Session on today.
-      final today = DateTime.now();
-      final todayMs = DateTime(today.year, today.month, today.day)
-              .millisecondsSinceEpoch +
-          3600000; // 1 hour into the day
+      // Session on today, started just before it ends so the duration is
+      // always positive regardless of the wall-clock time the test runs at.
+      final now = DateTime.now().millisecondsSinceEpoch;
       final id1 = await db.insertSession(
         ReadingSessionsCompanion.insert(
           bookId: 'book1',
-          startedAt: todayMs,
+          startedAt: now,
         ),
       );
-      await db.endSession(id1, pages: 5);
+      await db.endSession(id1, pages: 5, endedAt: now + 1000);
 
       final daily = await db.getDailyReadingTime();
       expect(daily.length, 1);
@@ -210,28 +208,25 @@ void main() {
         ),
       );
 
-      // Create a session for today.
-      final today = DateTime.now();
-      final todayStart =
-          DateTime(today.year, today.month, today.day).millisecondsSinceEpoch +
-              3600000;
+      // Create a session for today, started just before it ends.
+      final now = DateTime.now().millisecondsSinceEpoch;
       final id1 = await db.insertSession(
         ReadingSessionsCompanion.insert(
           bookId: 'book1',
-          startedAt: todayStart,
+          startedAt: now,
         ),
       );
-      await db.endSession(id1, pages: 5);
+      await db.endSession(id1, pages: 5, endedAt: now + 1000);
 
       // Create a session for yesterday.
-      final yesterdayStart = todayStart - 86400000;
+      final yesterdayStart = now - 86400000;
       final id2 = await db.insertSession(
         ReadingSessionsCompanion.insert(
           bookId: 'book1',
           startedAt: yesterdayStart,
         ),
       );
-      await db.endSession(id2, pages: 3);
+      await db.endSession(id2, pages: 3, endedAt: yesterdayStart + 1000);
 
       final streak = await db.getReadingStreak();
       expect(streak, 2);

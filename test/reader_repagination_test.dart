@@ -375,8 +375,7 @@ void main() {
       expect(interleaved, _pageCount(tester));
     });
 
-    testWidgets('navigating during a layout pass is not undone', (tester) async {
-      await openReader(tester);
+    testWidgets('navigating during a layout pass is not undone', (tester) async {      await openReader(tester);
       tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(3);
       await tester.pump();
 
@@ -395,6 +394,44 @@ void main() {
 
       expect(_visibleText(tester), contains(word),
           reason: 'the page navigated to during the pass must be kept');
+    });
+
+    testWidgets('turning a page after a pass sticks', (tester) async {
+      await openReader(tester);
+      final size = tester.getSize(find.byType(PageView));
+      final before = _marker.firstMatch(_visibleText(tester))!.group(0)!;
+
+      await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final after = _marker.firstMatch(_visibleText(tester))!.group(0)!;
+      expect(after, isNot(equals(before)),
+          reason: 'the tap should turn the page');
+
+      await _settlePagination(tester);
+      expect(_marker.firstMatch(_visibleText(tester))!.group(0), equals(after),
+          reason: 'the turned page must stick');
+    });
+
+    testWidgets('turning a page during a reflow is not cancelled',
+        (tester) async {      await openReader(tester);
+      final size = tester.getSize(find.byType(PageView));
+
+      library.settings.fontSize = 28;
+      _readerState(tester).debugApplySettingsChange();
+      await tester.pump();
+
+      // Tap the right third to turn the page while the reflow is running.
+      await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final word = _marker.firstMatch(_visibleText(tester))!.group(0)!;
+      expect(word, isNot(equals('w1-0-0')),
+          reason: 'the page turn should have advanced');
+
+      await _settlePagination(tester);
+      expect(_visibleText(tester), contains(word),
+          reason: 'the turned page must survive the reflow swap');
     });
 
     testWidgets('a layout change keeps the page count complete during reflow',

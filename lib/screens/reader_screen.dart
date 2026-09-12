@@ -733,21 +733,25 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   /// Swap the completed reflow buffer in atomically.
   void _applyReflow(TextStyle style, String? signature) {
-    final pages = _reflowPages;
-    if (pages == null) return;
-    _paginators
-      ..clear()
-      ..addAll(pages);
-    _chapterStyles = List.filled(pages.length, style);
-    _paginationReady = List.filled(pages.length, true);
-    if (signature != null) _layoutSignature = signature;
-    _recomputeFlatIndexes();
-    _cancelReflow();
-    _setControllerToAnchor(recreate: true);
-    if (_allPaginatorsReady && _layoutSignature != null) {
-      _paginationCache[_layoutSignature!] = List.unmodifiable(_paginators);
-    }
-    if (mounted) setState(() {});
+    // Don't cancel a page turn the reader is making; swap once it settles.
+    _whenPageIdle(() {
+      if (!mounted) return;
+      final pages = _reflowPages;
+      if (pages == null) return;
+      _paginators
+        ..clear()
+        ..addAll(pages);
+      _chapterStyles = List.filled(pages.length, style);
+      _paginationReady = List.filled(pages.length, true);
+      if (signature != null) _layoutSignature = signature;
+      _recomputeFlatIndexes();
+      _cancelReflow();
+      _setControllerToAnchor(recreate: true);
+      if (_allPaginatorsReady && _layoutSignature != null) {
+        _paginationCache[_layoutSignature!] = List.unmodifiable(_paginators);
+      }
+      if (mounted) setState(() {});
+    });
   }
 
   void _cancelReflow() {
@@ -901,19 +905,37 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _reanchor();
   }
 
-  void _reanchor() {
-    if (_pageController == null) return;
-    final flat = _flatIndexForPosition(_anchorChapter, _anchorOffset);
-    if (flat == _flatPage) {
-      if (mounted) setState(() {});
+  /// Runs [action] once the page view is not mid-drag or mid-animation, so a
+  /// background pass can never cancel a page turn the reader is making.
+  void _whenPageIdle(VoidCallback action) {
+    final controller = _pageController;
+    if (controller != null &&
+        controller.hasClients &&
+        controller.position.isScrollingNotifier.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _whenPageIdle(action);
+      });
       return;
     }
-    _programmaticTarget = flat;
-    setState(() => _flatPage = flat);
-    final controller = _pageController;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _pageController != controller) return;
-      if (controller!.hasClients) controller.jumpToPage(flat);
+    action();
+  }
+
+  void _reanchor() {
+    if (_pageController == null) return;
+    _whenPageIdle(() {
+      if (!mounted || _pageController == null) return;
+      final flat = _flatIndexForPosition(_anchorChapter, _anchorOffset);
+      if (flat == _flatPage) {
+        setState(() {});
+        return;
+      }
+      _programmaticTarget = flat;
+      setState(() => _flatPage = flat);
+      final controller = _pageController;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _pageController != controller) return;
+        if (controller!.hasClients) controller.jumpToPage(flat);
+      });
     });
   }
 
