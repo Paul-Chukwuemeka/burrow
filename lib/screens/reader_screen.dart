@@ -1699,16 +1699,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 _programmaticTarget = null;
                 setState(() => _flatPage = i);
                 final ref = _refAt(i);
-                // Only record the position for user-driven page changes once
-                // the layout pass has settled: programmatic jumps while
-                // placeholders expand would otherwise clobber the anchor.
-                if (!programmatic &&
-                    _passSettled &&
-                    ref != null &&
-                    ref.$1 < _paginationReady.length &&
-                    _paginationReady[ref.$1]) {
-                  _onPositionChanged(
-                      ref.$1, _paginators[ref.$1].pages[ref.$2].start);
+                // Record user-driven page changes even while a background pass
+                // is running, or the pass would re-anchor back to the page the
+                // reader was on before they navigated. A not-yet-laid-out
+                // chapter contributes a single placeholder page, so its start
+                // is the intent to preserve.
+                if (!programmatic && ref != null) {
+                  final c = ref.$1;
+                  final ready =
+                      c < _paginationReady.length && _paginationReady[c];
+                  final offset =
+                      ready ? _paginators[c].pages[ref.$2].start : 0;
+                  _onPositionChanged(c, offset);
                 }
                 _bookmarkCtrl.checkBookmarkState();
               },

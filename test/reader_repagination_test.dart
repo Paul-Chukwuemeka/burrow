@@ -375,6 +375,28 @@ void main() {
       expect(interleaved, _pageCount(tester));
     });
 
+    testWidgets('navigating during a layout pass is not undone', (tester) async {
+      await openReader(tester);
+      tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(3);
+      await tester.pump();
+
+      // Change a layout setting, then navigate before the reflow settles.
+      library.settings.fontSize = 28;
+      _readerState(tester).debugApplySettingsChange();
+      await tester.pump();
+      expect(_readerState(tester).debugLazyRunning, isTrue,
+          reason: 'the reflow should still be running');
+
+      tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(6);
+      await tester.pump();
+      final word = _marker.firstMatch(_visibleText(tester))!.group(0)!;
+
+      await _settlePagination(tester);
+
+      expect(_visibleText(tester), contains(word),
+          reason: 'the page navigated to during the pass must be kept');
+    });
+
     testWidgets('a layout change keeps the page count complete during reflow',
         (tester) async {
       await openReader(tester);
