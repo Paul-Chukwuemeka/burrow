@@ -280,8 +280,8 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> getTotalReadingTimeMs(String bookId) async {
     final result = await customSelect(
-      'SELECT SUM(endedAt - startedAt) AS total FROM reading_sessions '
-      'WHERE bookId = ? AND endedAt > 0',
+      'SELECT SUM(ended_at - started_at) AS total FROM reading_sessions '
+      'WHERE book_id = ? AND ended_at > 0',
       variables: [Variable.withString(bookId)],
     ).get();
     return result.isNotEmpty ? result.first.read<int>('total') : 0;
@@ -289,7 +289,7 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> getTotalPagesRead(String bookId) async {
     final result = await customSelect(
-      'SELECT SUM(pages) AS total FROM reading_sessions WHERE bookId = ?',
+      'SELECT SUM(pages) AS total FROM reading_sessions WHERE book_id = ?',
       variables: [Variable.withString(bookId)],
     ).get();
     return result.isNotEmpty ? result.first.read<int>('total') : 0;
@@ -298,8 +298,8 @@ class AppDatabase extends _$AppDatabase {
   /// Returns sessions grouped by day (epoch day) with total time in ms.
   Future<Map<int, int>> getDailyReadingTime() async {
     final results = await customSelect(
-      'SELECT (startedAt / 86400000) AS day, SUM(endedAt - startedAt) AS total '
-      'FROM reading_sessions WHERE endedAt > 0 GROUP BY day',
+      'SELECT (started_at / 86400000) AS day, SUM(ended_at - started_at) AS total '
+      'FROM reading_sessions WHERE ended_at > 0 GROUP BY day',
     ).get();
     return {for (final r in results) r.read<int>('day'): r.read<int>('total')};
   }
@@ -321,8 +321,8 @@ class AppDatabase extends _$AppDatabase {
   /// Returns reading time grouped by hour-of-day (0–23).
   Future<Map<int, int>> getHourlyReadingTime() async {
     final results = await customSelect(
-      'SELECT (startedAt % 86400000) / 3600000 AS hour, SUM(endedAt - startedAt) AS total '
-      'FROM reading_sessions WHERE endedAt > 0 GROUP BY hour',
+      'SELECT (started_at % 86400000) / 3600000 AS hour, SUM(ended_at - started_at) AS total '
+      'FROM reading_sessions WHERE ended_at > 0 GROUP BY hour',
     ).get();
     return {for (final r in results) r.read<int>('hour'): r.read<int>('total')};
   }
@@ -330,9 +330,9 @@ class AppDatabase extends _$AppDatabase {
   /// Returns reading time grouped by "YYYY-MM" key.
   Future<Map<String, int>> getMonthlyReadingTime() async {
     final results = await customSelect(
-      "SELECT strftime('%Y-%m', startedAt / 1000, 'unixepoch') AS month, "
-      'SUM(endedAt - startedAt) AS total '
-      'FROM reading_sessions WHERE endedAt > 0 GROUP BY month',
+      "SELECT strftime('%Y-%m', started_at / 1000, 'unixepoch') AS month, "
+      'SUM(ended_at - started_at) AS total '
+      'FROM reading_sessions WHERE ended_at > 0 GROUP BY month',
     ).get();
     return {for (final r in results) r.read<String>('month'): r.read<int>('total')};
   }
@@ -340,7 +340,7 @@ class AppDatabase extends _$AppDatabase {
   /// Returns the longest single reading session in ms.
   Future<int> getLongestSessionMs() async {
     final result = await customSelect(
-      'SELECT MAX(endedAt - startedAt) AS longest FROM reading_sessions WHERE endedAt > 0',
+      'SELECT MAX(ended_at - started_at) AS longest FROM reading_sessions WHERE ended_at > 0',
     ).get();
     return result.isNotEmpty ? result.first.read<int>('longest') : 0;
   }
@@ -348,7 +348,7 @@ class AppDatabase extends _$AppDatabase {
   /// Returns the average session duration in ms.
   Future<int> getAverageSessionMs() async {
     final result = await customSelect(
-      'SELECT AVG(endedAt - startedAt) AS avg FROM reading_sessions WHERE endedAt > 0',
+      'SELECT AVG(ended_at - started_at) AS avg FROM reading_sessions WHERE ended_at > 0',
     ).get();
     if (result.isEmpty) return 0;
     final avg = result.first.read<double>('avg');
@@ -359,9 +359,9 @@ class AppDatabase extends _$AppDatabase {
   Future<int> getTodayReadingTimeMs() async {
     final todayEpoch = (DateTime.now().millisecondsSinceEpoch / 86400000).floor();
     final result = await customSelect(
-      'SELECT SUM(endedAt - startedAt) AS total '
+      'SELECT SUM(ended_at - started_at) AS total '
       'FROM reading_sessions '
-      'WHERE endedAt > 0 AND (startedAt / 86400000) = ?',
+      'WHERE ended_at > 0 AND (started_at / 86400000) = ?',
       variables: [Variable.withInt(todayEpoch)],
     ).get();
     return result.isNotEmpty ? result.first.read<int>('total') : 0;
@@ -373,9 +373,9 @@ class AppDatabase extends _$AppDatabase {
         .subtract(const Duration(days: 7))
         .millisecondsSinceEpoch;
     final result = await customSelect(
-      'SELECT SUM(endedAt - startedAt) AS total '
+      'SELECT SUM(ended_at - started_at) AS total '
       'FROM reading_sessions '
-      'WHERE endedAt > 0 AND startedAt >= ?',
+      'WHERE ended_at > 0 AND started_at >= ?',
       variables: [Variable.withInt(weekAgo)],
     ).get();
     return result.isNotEmpty ? result.first.read<int>('total') : 0;
@@ -384,13 +384,13 @@ class AppDatabase extends _$AppDatabase {
   /// Returns per-book reading stats for all started books, sorted by time desc.
   Future<List<BookStats>> getPerBookStats(List<Book> books) async {
     final results = await customSelect(
-      'SELECT bookId, SUM(endedAt - startedAt) AS totalTime, '
+      'SELECT book_id, SUM(ended_at - started_at) AS totalTime, '
       'SUM(pages) AS totalPages, COUNT(*) AS sessionCount '
-      'FROM reading_sessions WHERE endedAt > 0 GROUP BY bookId',
+      'FROM reading_sessions WHERE ended_at > 0 GROUP BY book_id',
     ).get();
     final statsByBook = <String, _PerBookAggregate>{};
     for (final r in results) {
-      statsByBook[r.read<String>('bookId')] = _PerBookAggregate(
+      statsByBook[r.read<String>('book_id')] = _PerBookAggregate(
         totalTimeMs: r.read<int>('totalTime'),
         totalPages: r.read<int>('totalPages'),
         sessionCount: r.read<int>('sessionCount'),

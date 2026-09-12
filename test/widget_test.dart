@@ -6,6 +6,7 @@ import 'package:burrow/screens/library_screen.dart';
 import 'package:burrow/services/library_service.dart';
 import 'package:burrow/services/paginator.dart';
 import 'package:burrow/utils/book_title.dart';
+import 'package:burrow/widgets/progress_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -465,8 +466,10 @@ void main() {
       // Unstarted: "NEW" badge on cover, no bar, never "0%".
       expect(find.text('NEW'), findsOneWidget);
       expect(find.text('0%'), findsNothing);
-      // Started: percent label on tile and hero.
-      expect(find.text('25%'), findsNWidgets(2));
+      // Started: the one segmented-bar convention is used on both started
+      // tiles and the hero card; there is no separate percent label.
+      expect(find.byType(SegmentedProgressBar), findsNWidgets(3));
+      expect(find.text('25%'), findsNothing);
       expect(find.text('Finished'), findsOneWidget);
     });
   });

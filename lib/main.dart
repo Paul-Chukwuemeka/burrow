@@ -15,7 +15,11 @@ Future<void> main() async {
 }
 
 class BurrowApp extends StatefulWidget {
-  const BurrowApp({super.key});
+  const BurrowApp({super.key, this.library});
+
+  /// Test seam: when provided, this library is used instead of building and
+  /// loading a fresh one, and the heavy plugin initialization is skipped.
+  final LibraryService? library;
 
   @override
   State<BurrowApp> createState() => _BurrowAppState();
@@ -92,12 +96,17 @@ class _BurrowAppState extends State<BurrowApp> {
 
   Future<Widget> _buildHome(BuildContext context) async {
     // Heavy initialization runs while the splash is visible.
-    await PdfrxEntryFunctions.instance.init();
-    await DictionaryService.instance.init();
-    final library = LibraryService();
+    final injected = widget.library;
+    if (injected == null) {
+      await PdfrxEntryFunctions.instance.init();
+      await DictionaryService.instance.init();
+    }
+    final library = injected ?? LibraryService();
     _library = library;
     library.addListener(_onThemeChanged);
-    await library.load();
+    if (injected == null) {
+      await library.load();
+    }
 
     if (library.onboardingComplete) {
       return LibraryScreen(library: library);
