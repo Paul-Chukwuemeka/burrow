@@ -315,13 +315,6 @@ class ContinueCard extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: Burrow.r(Burrow.shapeLg),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.25),
-                blurRadius: 22,
-                offset: const Offset(0, 8),
-              ),
-            ],
           ),
           child: Material(
             color: scheme.primaryContainer,
