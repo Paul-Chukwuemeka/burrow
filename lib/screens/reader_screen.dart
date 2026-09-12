@@ -93,7 +93,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   /// True when no layout pass is running and none is queued.
   bool get _passSettled =>
-      !_paginationRunning && _paginationOrderIndex >= _paginationOrder.length;
+      !_paginationRunning &&
+      _paginationOrderIndex >= _paginationOrder.length &&
+      !_reflowActive;
 
   /// Flat page index holding `(chapter, offset)`, using the current paginator
   /// mix. Used to re-anchor after a placeholder chapter gains real pages.
@@ -149,6 +151,19 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   /// Drivers for chapters being laid out incrementally.
   final Map<int, ChapterPaginationDriver> _paginationDrivers = {};
+
+  // Atomic reflow for layout-setting changes. The live paginator set stays
+  // complete (old layout) while a fully-new set is built in this buffer and
+  // swapped in at the end, so the page count and scrubber never break.
+  List<Paginator>? _reflowPages;
+  List<TextStyle>? _reflowStyles;
+  List<bool> _reflowReady = const [];
+  int _reflowNext = 0;
+  int _reflowGeneration = 0;
+  String? _reflowSignature;
+  final Map<int, ChapterPaginationDriver> _reflowDrivers = {};
+
+  bool get _reflowActive => _reflowPages != null;
 
   /// Per-frame time budget for background pagination.
   static const Duration _paginationFrameBudget = Duration(milliseconds: 8);
@@ -298,6 +313,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     widget.library.saveSettings();
     _pageController?.dispose();
     _disposeDrivers();
+    _cancelReflow();
     _paginationCache.clear();
     _pdfCtrl.dispose();
     _comicCtrl.dispose();
@@ -483,14 +499,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       return;
     }
 
-    _beginPass(
-      viewport: viewport,
-      style: style,
-      scaler: scaler,
-      anchorChapter: anchor.$1,
-      anchorOffset: anchor.$2,
-      signature: sig,
-    );
+    _startReflow(viewport, style, scaler, sig, anchor);
   }
 
   /// The `(chapter, offset)` the reader is currently on. Prefers the live page
@@ -546,6 +555,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationGeneration++;
     final generation = _paginationGeneration;
     _disposeDrivers();
+    _cancelReflow();
 
     _chapterStyles = List.filled(n, style);
     _paginators
@@ -597,6 +607,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   ) {
     _paginationGeneration++;
     _disposeDrivers();
+    _cancelReflow();
     _paginators
       ..clear()
       ..addAll(pages);
@@ -610,6 +621,146 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationOrderIndex = 0;
     _paginationRunning = false;
     _setControllerToAnchor(recreate: true);
+  }
+
+  /// Begin an atomic reflow for a new layout. The current and next chapters are
+  /// re-laid out in the live set immediately (so the new style is visible on
+  /// screen and when paging forward); the rest are built into a buffer and
+  /// swapped in when the whole pass finishes. The live set stays complete
+  /// throughout, so the page count and scrubber never break.
+  void _startReflow(
+    Size viewport,
+    TextStyle style,
+    TextScaler scaler,
+    String signature,
+    (int, int) anchor,
+  ) {
+    final n = _doc!.chapters.length;
+    // Supersede any in-flight initial pass or reflow.
+    _paginationGeneration++;
+    _disposeDrivers();
+    _cancelReflow();
+    _paginationOrder = const [];
+    _paginationOrderIndex = 0;
+    _paginationRunning = false;
+
+    // Normalize the live set to the full chapter count.
+    while (_paginators.length < n) {
+      _paginators.add(_emptyPaginator());
+    }
+    if (_paginationReady.length < n) {
+      _paginationReady = List.filled(n, false);
+    }
+    if (_chapterStyles.length < n) {
+      _chapterStyles = List.filled(n, style);
+    }
+
+    _anchorChapter = anchor.$1.clamp(0, n - 1);
+    _anchorOffset = anchor.$2;
+
+    // Re-layout the visible chapter (and the next) now so the new style shows
+    // immediately and forward paging is already correct.
+    _paginateChapterSync(_anchorChapter, viewport, style, scaler);
+    final next = _anchorChapter + 1;
+    if (next < n) _paginateChapterSync(next, viewport, style, scaler);
+    _recomputeFlatIndexes();
+    _setControllerToAnchor(recreate: true);
+
+    // Build the rest into a buffer seeded from the live (mixed) set.
+    _reflowPages = List.of(_paginators);
+    _reflowStyles = List.of(_chapterStyles);
+    _reflowReady = List.filled(n, false);
+    _reflowReady[_anchorChapter] = true;
+    if (next < n) _reflowReady[next] = true;
+    _reflowNext = 0;
+    _reflowSignature = signature;
+    _reflowGeneration++;
+    final generation = _reflowGeneration;
+    if (mounted) setState(() {});
+    _reflowNextBatch(viewport, style, scaler, generation);
+  }
+
+  /// Advance the reflow pass within the frame budget, then yield.
+  void _reflowNextBatch(
+    Size viewport,
+    TextStyle style,
+    TextScaler scaler,
+    int generation,
+  ) {
+    if (!mounted || _doc == null) return;
+    if (generation != _reflowGeneration) return;
+    final pages = _reflowPages;
+    final styles = _reflowStyles;
+    if (pages == null || styles == null) return;
+    final stopwatch = Stopwatch()..start();
+    final n = _doc!.chapters.length;
+
+    while (_reflowNext < n) {
+      final c = _reflowNext;
+      if (_reflowReady[c]) {
+        _reflowNext++;
+        continue;
+      }
+      var driver = _reflowDrivers[c];
+      driver ??= _makeDriver(c, viewport, style, scaler);
+      _reflowDrivers[c] = driver;
+
+      driver.nextChunkUntil(
+        minPages: 1,
+        budget: _paginationFrameBudget,
+      );
+
+      if (driver.isDone) {
+        pages[c] = driver.toPaginator();
+        styles[c] = style;
+        _reflowReady[c] = true;
+        driver.dispose();
+        _reflowDrivers.remove(c);
+        _reflowNext++;
+      }
+
+      if (stopwatch.elapsedMilliseconds > 12) {
+        if (mounted) setState(() {});
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _reflowNextBatch(viewport, style, scaler, generation);
+        });
+        return;
+      }
+    }
+
+    _applyReflow(style, _reflowSignature);
+  }
+
+  /// Swap the completed reflow buffer in atomically.
+  void _applyReflow(TextStyle style, String? signature) {
+    final pages = _reflowPages;
+    if (pages == null) return;
+    _paginators
+      ..clear()
+      ..addAll(pages);
+    _chapterStyles = List.filled(pages.length, style);
+    _paginationReady = List.filled(pages.length, true);
+    if (signature != null) _layoutSignature = signature;
+    _recomputeFlatIndexes();
+    _cancelReflow();
+    _setControllerToAnchor(recreate: true);
+    if (_allPaginatorsReady && _layoutSignature != null) {
+      _paginationCache[_layoutSignature!] = List.unmodifiable(_paginators);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _cancelReflow() {
+    _reflowGeneration++;
+    for (final d in _reflowDrivers.values) {
+      d.dispose();
+    }
+    _reflowDrivers.clear();
+    _reflowPages = null;
+    _reflowStyles = null;
+    _reflowReady = const [];
+    _reflowNext = 0;
+    _reflowSignature = null;
   }
 
   /// Lay out [chapter] synchronously and mark it ready. Used for the anchor
@@ -818,7 +969,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   @visibleForTesting
   bool get debugLazyRunning =>
-      _paginationRunning || _paginationOrderIndex < _paginationOrder.length;
+      _paginationRunning ||
+      _paginationOrderIndex < _paginationOrder.length ||
+      _reflowActive;
 
   @visibleForTesting
   int get debugChapterCount => _doc?.chapters.length ?? -1;
@@ -826,6 +979,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   int get debugPaginatorCount => _paginators.length;
   @visibleForTesting
   int get debugFlatPageCount => _flatPageCount;
+  @visibleForTesting
+  bool get debugAllReady => _allPaginatorsReady;
   @visibleForTesting
   bool get debugHasController => _pageController != null;
 
@@ -860,8 +1015,13 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       final style = _settings.textStyle(context);
       const scaler = TextScaler.noScaling;
       final sig = _signatureFor(viewport, style, scaler);
-      // Skip when the live layout already matches the requested style.
-      if (sig != _layoutSignature) {
+      // Repaginate when the requested style differs from the live layout, or
+      // when a reflow is still building a different one (e.g. the user changed
+      // a setting and changed it straight back).
+      final needsRepaginate = _reflowActive
+          ? sig != _reflowSignature
+          : sig != _layoutSignature;
+      if (needsRepaginate) {
         _repaginateKeepingPosition();
       }
     }
@@ -1502,7 +1662,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         // produced the current paginators.
         _lastViewport = viewport;
 
-        if (_layoutSignature != signature) {
+        if (_layoutSignature != signature && _reflowSignature != signature) {
           final needsFirstLayout = _paginators.isEmpty;
           if (needsFirstLayout) {
             // Initial layout: nothing live yet, so this signature is the

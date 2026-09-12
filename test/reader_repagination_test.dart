@@ -375,6 +375,30 @@ void main() {
       expect(interleaved, _pageCount(tester));
     });
 
+    testWidgets('a layout change keeps the page count complete during reflow',
+        (tester) async {
+      await openReader(tester);
+      final before = _pageCount(tester);
+
+      // Apply a font change but do not settle: the live set must stay complete
+      // (no placeholder chapters, no `…` total, enabled scrubber) while the
+      // new layout builds in the background.
+      library.settings.fontSize = 28;
+      _readerState(tester).debugApplySettingsChange();
+      await tester.pump();
+
+      expect(_readerState(tester).debugAllReady, isTrue,
+          reason: 'the live layout stays complete during the reflow');
+      expect(_readerState(tester).debugLazyRunning, isTrue,
+          reason: 'the reflow runs in the background');
+      expect(find.byType(PageView), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await _settlePagination(tester);
+      expect(_readerState(tester).debugAllReady, isTrue);
+      expect(_pageCount(tester), greaterThan(before));
+    });
+
     testWidgets('reader layout ignores the app-wide text size scale',
         (tester) async {
       // The reader body has its own font size; the global "Text size" must not
