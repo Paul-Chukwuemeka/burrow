@@ -1518,8 +1518,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginateNextBatch(viewport, style, scaler, _paginationGeneration);
   }
 
-  static const int _lazyPaginationThreshold = 3;
-
   void _paginateNextBatch(
     Size viewport,
     TextStyle style,
@@ -1563,18 +1561,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _paginationChapter++;
       }
 
-      // After the first few chapters, show the reader and paginate
-      // the rest in the background.
-      if (_paginationChapter >= _lazyPaginationThreshold &&
-          _paginationChapter < _doc!.chapters.length) {
-        _paginationRunning = false;
-        _restorePosition();
-        if (mounted) setState(() {});
-        // Continue remaining chapters in background.
-        _paginateRemainingInBackground(viewport, style, scaler, generation);
-        return;
-      }
-
       if (stopwatch.elapsedMilliseconds > 10) {
         if (!mounted) return;
         setState(() {});
@@ -1589,24 +1575,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationRunning = false;
     _restorePosition();
     setState(() {});
-  }
-
-  /// Paginate remaining chapters after the initial threshold in background.
-  void _paginateRemainingInBackground(
-    Size viewport,
-    TextStyle style,
-    TextScaler scaler,
-    int generation,
-  ) {
-    _bgTargetSignature = _signatureFor(viewport, style, scaler);
-    _bgPaginators = List.from(_paginators);
-    while (_bgPaginators!.length < _doc!.chapters.length) {
-      _bgPaginators!.add(_emptyPaginator());
-    }
-    _bgChapter = _paginationChapter;
-    _bgGeneration++;
-    final bgGen = _bgGeneration;
-    _bgNextBatch(viewport, style, scaler, bgGen, skipChapters: {});
   }
 
   /// Create the initial [PageController] at the book's saved position. Called

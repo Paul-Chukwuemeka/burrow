@@ -182,6 +182,9 @@ void main() {
     testWidgets('initial pagination is chunked across frames', (tester) async {
       await mountReader(tester);
       expect(_progressView, findsOneWidget);
+      // The reader must not appear until the whole book is paginated.
+      expect(find.byType(PageView), findsNothing,
+          reason: 'document opens only once pagination is complete');
 
       final frames = await _settlePagination(tester);
       expect(frames, greaterThan(1),
