@@ -374,5 +374,39 @@ void main() {
 
       expect(interleaved, _pageCount(tester));
     });
+
+    testWidgets('reader layout ignores the app-wide text size scale',
+        (tester) async {
+      // The reader body has its own font size; the global "Text size" must not
+      // change pagination or the rendered page, or pages would break early.
+      await openReader(tester);
+      final pagesAt100 = _pageCount(tester);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      tester.platformDispatcher.textScaleFactorTestValue = 1.2;
+      addTearDown(
+          tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await openReader(tester);
+
+      expect(tester.takeException(), isNull,
+          reason: 'the page must not overflow at a larger global text size');
+      expect(_pageCount(tester), pagesAt100,
+          reason: 'pagination is independent of the global text size');
+
+      final pageRichTexts = tester.widgetList<RichText>(
+        find.descendant(
+          of: find.byType(PageView),
+          matching: find.byType(RichText),
+        ),
+      );
+      expect(pageRichTexts, isNotEmpty);
+      expect(
+        pageRichTexts.every((rt) => rt.textScaler == TextScaler.noScaling),
+        isTrue,
+        reason: 'page text must render unscaled',
+      );
+    });
   });
 }

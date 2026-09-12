@@ -471,7 +471,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final viewport = _lastViewport;
     if (viewport == null) return;
     final style = _settings.textStyle(context);
-    final scaler = MediaQuery.textScalerOf(context);
+    const scaler = TextScaler.noScaling;
     final sig = _signatureFor(viewport, style, scaler);
 
     final anchor = _currentAnchor();
@@ -656,7 +656,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final style = _chapterStyles.length > chapter
         ? _chapterStyles[chapter]
         : _settings.textStyle(context);
-    final scaler = MediaQuery.textScalerOf(context);
+    const scaler = TextScaler.noScaling;
     _paginateChapterSync(chapter, viewport, style, scaler);
     _recomputeFlatIndexes();
     _onChapterReady(chapter);
@@ -700,7 +700,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       final style = _chapterStyles.length > c
           ? _chapterStyles[c]
           : _settings.textStyle(context);
-      final scaler = MediaQuery.textScalerOf(context);
+      const scaler = TextScaler.noScaling;
       var driver = _paginationDrivers[c];
       driver ??= _makeDriver(c, viewport, style, scaler);
       _paginationDrivers[c] = driver;
@@ -858,7 +858,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final viewport = _lastViewport;
     if (!_isPdf && _doc != null && viewport != null) {
       final style = _settings.textStyle(context);
-      final scaler = MediaQuery.textScalerOf(context);
+      const scaler = TextScaler.noScaling;
       final sig = _signatureFor(viewport, style, scaler);
       // Skip when the live layout already matches the requested style.
       if (sig != _layoutSignature) {
@@ -1496,7 +1496,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       builder: (context, constraints) {
         final viewport = _contentViewport(constraints.biggest);
         final style = _settings.textStyle(context);
-        final scaler = MediaQuery.textScalerOf(context);
+        const scaler = TextScaler.noScaling;
         final signature = _signatureFor(viewport, style, scaler);
         // Cache so settings changes measure against the layout that actually
         // produced the current paginators.
@@ -2210,33 +2210,43 @@ class _PageContent extends StatelessWidget {
       onLongPressStart: onLongPressWord != null
           ? (details) => _handleLongPress(context, details)
           : null,
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: 28),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (page.start == 0 && chapterTitle.trim().isNotEmpty) ...[
-              Text(
-                chapterTitle,
-                style: style.copyWith(
-                  fontSize: (style.fontSize ?? 18) + 4,
-                  fontWeight: FontWeight.w700,
+      // Reading text is independent of the app-wide "Text size" scale: the
+      // paginator measures at no scaling, so the page content must render at
+      // no scaling too (the body RichText already ignores MediaQuery).
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+        child: Padding(
+          padding:
+              EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (page.start == 0 && chapterTitle.trim().isNotEmpty) ...[
+                Text(
+                  chapterTitle,
+                  style: style.copyWith(
+                    fontSize: (style.fontSize ?? 18) + 4,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            Expanded(
-              child: Builder(
-                builder: (context) => RichText(
-                  textAlign: textAlign,
-                  text: TextSpan(
-                    style: style,
-                    children: _buildPageText(context, MediaQuery.sizeOf(context).width - horizontalMargin * 2),
+                const SizedBox(height: 16),
+              ],
+              Expanded(
+                child: Builder(
+                  builder: (context) => RichText(
+                    textAlign: textAlign,
+                    text: TextSpan(
+                      style: style,
+                      children: _buildPageText(
+                          context,
+                          MediaQuery.sizeOf(context).width -
+                              horizontalMargin * 2),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
