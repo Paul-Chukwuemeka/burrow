@@ -248,7 +248,7 @@ class ReaderSettings {
   /// corrupt or hand-edited pref can't produce a degenerate text style.
   static const fontSizeRange = (13.0, 30.0);
   static const lineHeightRange = (1.2, 2.2);
-  static const uiTextScaleRange = (0.8, 1.5);
+  static const uiTextScaleRange = (0.8, 1.2);
 
   static double _clampTo(
     (double, double) range,
