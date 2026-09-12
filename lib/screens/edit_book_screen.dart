@@ -33,7 +33,6 @@ class _EditBookScreenState extends State<EditBookScreen> {
   late final TextEditingController _languageCtrl;
   late final TextEditingController _reviewCtrl;
   late final TextEditingController _pubDateCtrl;
-  late final String _rawPubDate;
   late final TextEditingController _rightsCtrl;
   late final TextEditingController _typeCtrl;
   late final TextEditingController _sourceCtrl;
@@ -60,7 +59,6 @@ class _EditBookScreenState extends State<EditBookScreen> {
     _pubDateCtrl = TextEditingController(
       text: formatPublicationDate(b.publicationDate ?? ''),
     );
-    _rawPubDate = b.publicationDate ?? '';
     _rightsCtrl = TextEditingController(text: b.rights ?? '');
     _typeCtrl = TextEditingController(text: b.type ?? '');
     _sourceCtrl = TextEditingController(text: b.source ?? '');
@@ -119,7 +117,7 @@ class _EditBookScreenState extends State<EditBookScreen> {
     final isbn = _isbnCtrl.text.trim();
     final language = _languageCtrl.text.trim();
     final review = _reviewCtrl.text.trim();
-    final pubDate = _rawPubDate;
+    final pubDate = _pubDateCtrl.text.trim();
     final rights = _rightsCtrl.text.trim();
     final type = _typeCtrl.text.trim();
     final source = _sourceCtrl.text.trim();
