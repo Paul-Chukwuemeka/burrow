@@ -1760,6 +1760,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       settings: _settings,
       chapters: _doc!.chapters,
       paginators: _paginators,
+      readiness: _paginationReady,
       currentIndex: currentChapter,
       onJump: _jumpToChapter,
       bookmarks: _bookmarkCtrl.bookmarks,

@@ -14,6 +14,7 @@ abstract final class TocSheet {
     required ReaderSettings settings,
     required List<Chapter> chapters,
     required List<Paginator> paginators,
+    List<bool>? readiness,
     required int currentIndex,
     required ValueChanged<int> onJump,
     required List<db.Bookmark> bookmarks,
@@ -27,6 +28,7 @@ abstract final class TocSheet {
         settings: settings,
         chapters: chapters,
         paginators: paginators,
+        readiness: readiness,
         currentIndex: currentIndex,
         onJump: onJump,
         bookmarks: bookmarks,
@@ -65,6 +67,7 @@ class _TocSheetContent extends StatefulWidget {
     required this.settings,
     required this.chapters,
     required this.paginators,
+    this.readiness,
     required this.currentIndex,
     required this.onJump,
     required this.bookmarks,
@@ -83,6 +86,7 @@ class _TocSheetContent extends StatefulWidget {
     required this.onDeleteBookmark,
   })  : chapters = const [],
         paginators = const [],
+        readiness = null,
         currentIndex = 0,
         onJumpPdf = onJump,
         onJump = null,
@@ -91,6 +95,10 @@ class _TocSheetContent extends StatefulWidget {
   final ReaderSettings settings;
   final List<Chapter> chapters;
   final List<Paginator> paginators;
+
+  /// `true` for chapters whose paginator is a real layout; `null` means all
+  /// entries are real. Chapters still being laid out show a `…` count.
+  final List<bool>? readiness;
   final int currentIndex;
   final ValueChanged<int>? onJumpPdf;
   final bool isPdf;
@@ -252,6 +260,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
                     _ContentsList(
                       titled: titled,
                       paginators: widget.paginators,
+                      readiness: widget.readiness,
                       currentIndex: widget.currentIndex,
                       theme: theme,
                       scrollController: scrollController,
@@ -382,6 +391,7 @@ class _ContentsList extends StatelessWidget {
   const _ContentsList({
     required this.titled,
     required this.paginators,
+    this.readiness,
     required this.currentIndex,
     required this.theme,
     required this.scrollController,
@@ -390,6 +400,7 @@ class _ContentsList extends StatelessWidget {
 
   final List<(int index, Chapter chapter)> titled;
   final List<Paginator> paginators;
+  final List<bool>? readiness;
   final int currentIndex;
   final ReaderTheme theme;
   final ScrollController scrollController;
@@ -404,7 +415,9 @@ class _ContentsList extends StatelessWidget {
         final (chapterIndex, chapter) = titled[i];
         final isCurrent = chapterIndex == currentIndex;
         final title = chapter.title;
-        final pageCount = chapterIndex < paginators.length
+        final ready = readiness == null ||
+            (chapterIndex < readiness!.length && readiness![chapterIndex]);
+        final pageCount = ready && chapterIndex < paginators.length
             ? paginators[chapterIndex].pages.length
             : 0;
         return InkWell(
@@ -427,11 +440,19 @@ class _ContentsList extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (pageCount > 0)
+                if (ready && pageCount > 0)
                   Padding(
                     padding: const EdgeInsets.only(left: 12),
                     child: Text(
                       '$pageCount pages',
+                      style: TextStyle(fontSize: 12, color: theme.muted),
+                    ),
+                  )
+                else if (!ready)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Text(
+                      '…',
                       style: TextStyle(fontSize: 12, color: theme.muted),
                     ),
                   ),
