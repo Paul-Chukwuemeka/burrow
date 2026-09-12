@@ -352,10 +352,6 @@ class _ThemeGrid extends StatelessWidget {
         decoration: BoxDecoration(
           color: scheme.surfaceContainerLow,
           borderRadius: Burrow.r(18),
-          border: Border.all(
-            color: isSel ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
-            width: isSel ? 2 : 1,
-          ),
         ),
         child: Column(
           children: [
@@ -368,9 +364,6 @@ class _ThemeGrid extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: preview,
                   borderRadius: Burrow.r(12),
-                  border: Border.all(
-                    color: onPreview.withValues(alpha: 0.15),
-                  ),
                 ),
                 child: Center(
                   child: Icon(icon,
