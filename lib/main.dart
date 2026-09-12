@@ -95,11 +95,9 @@ class _BurrowAppState extends State<BurrowApp> {
     await PdfrxEntryFunctions.instance.init();
     await DictionaryService.instance.init();
     final library = LibraryService();
-    await library.load();
-
-    // Subscribe to theme changes now that the library is loaded.
     _library = library;
     library.addListener(_onThemeChanged);
+    await library.load();
 
     if (library.onboardingComplete) {
       return LibraryScreen(library: library);
