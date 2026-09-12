@@ -61,7 +61,11 @@ class BookCard extends StatelessWidget {
                     Expanded(child: _CoverArea(book: book)),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-                      child: Column(
+                      child: MediaQuery(
+                        data: MediaQuery.of(context).copyWith(
+                          textScaler: TextScaler.noScaling,
+                        ),
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           SizedBox(
@@ -99,6 +103,7 @@ class BookCard extends StatelessWidget {
                                 : _StatusLine(book: book),
                           ),
                         ],
+                      ),
                       ),
                     ),
                   ],
@@ -180,7 +185,11 @@ class BookListCard extends StatelessWidget {
                       Expanded(
                         child: SizedBox(
                           height: 132,
-                          child: Column(
+                          child: MediaQuery(
+                            data: MediaQuery.of(context).copyWith(
+                              textScaler: TextScaler.noScaling,
+                            ),
+                            child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -219,6 +228,7 @@ class BookListCard extends StatelessWidget {
                                 const SizedBox(height: 6),
                               ],
                             ],
+                          ),
                           ),
                         ),
                       ),
