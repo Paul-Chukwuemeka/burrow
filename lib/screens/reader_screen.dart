@@ -84,6 +84,26 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _flatTotal = acc;
   }
 
+  /// True once every chapter has a real paginator, so the flat page number is
+  /// exact. Until then the UI shows a `…` placeholder for totals.
+  bool get _allPaginatorsReady =>
+      _paginationReady.isNotEmpty &&
+      _paginationReady.length >= _paginators.length &&
+      _paginationReady.every((ready) => ready);
+
+  /// True when no layout pass is running and none is queued.
+  bool get _passSettled =>
+      !_paginationRunning && _paginationOrderIndex >= _paginationOrder.length;
+
+  /// Flat page index holding `(chapter, offset)`, using the current paginator
+  /// mix. Used to re-anchor after a placeholder chapter gains real pages.
+  int _flatIndexForPosition(int chapter, int offset) {
+    if (chapter < 0 || chapter >= _paginators.length) return 0;
+    final pageIdx =
+        offset > 0 ? _paginators[chapter].pageIndexFor(offset) : 0;
+    return _flatStart[chapter] + pageIdx;
+  }
+
   PageController? _pageController;
   int _flatPage = 0;
 
@@ -95,34 +115,47 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   /// changes re-color instantly and never affect layout).
   List<TextStyle> _chapterStyles = const [];
 
-  // Full-book pagination state.
+  // Pagination state.
   bool _paginationRunning = false;
-  int _paginationChapter = 0;
 
   /// Bumped whenever a pagination pass is superseded, so the in-flight chunk
   /// loop of the previous pass exits instead of interleaving with the new one.
   int _paginationGeneration = 0;
 
-  /// `(chapter, offsetInChapter)` to land on when the running pass finishes.
-  /// Null means "use the book's saved position".
-  (int, int)? _pendingRestore;
+  /// Whether `_paginators[i]` is a real layout (true) or a one-page placeholder
+  /// standing in for a chapter not yet paginated (false). Until every entry is
+  /// true the flat page number is only approximate, so the UI shows a `…`
+  /// placeholder rather than a wrong value.
+  List<bool> _paginationReady = const [];
 
-  // Lazy pagination: cache + background drivers.
+  /// Chapters still to lay out, in priority order. Driven by [_scheduleNext].
+  List<int> _paginationOrder = const [];
+  int _paginationOrderIndex = 0;
+
+  /// Anchor `(chapter, offsetInChapter)` of the visible page. Placeholder
+  /// chapters expanding to real page counts shift the flat page index, so the
+  /// reader is re-anchored from this after every completion.
+  int _anchorChapter = 0;
+  int _anchorOffset = 0;
+
+  /// Flat page a programmatic jump is heading to. The resulting
+  /// `onPageChanged` must not overwrite the reading anchor, or repeated
+  /// re-layouts would drift the position backwards.
+  int? _programmaticTarget;
+
+  /// Full-book layouts cached by signature, swapped in on a settings toggle
+  /// back to a previously-used layout.
   final Map<String, List<Paginator>> _paginationCache = {};
-  final Map<int, ChapterPaginationDriver> _bgDrivers = {};
-  int _bgChapter = 0;
-  int _bgGeneration = 0;
-  bool _lazyRunning = false;
 
-  /// Temporary buffer for paginators being built in the background.
-  /// Not swapped into [_paginators] until the entire pass finishes,
-  /// so the live PageView always sees a consistent set.
-  List<Paginator>? _bgPaginators;
+  /// Drivers for chapters being laid out incrementally.
+  final Map<int, ChapterPaginationDriver> _paginationDrivers = {};
 
-  /// The layout signature an in-flight background pass is building. While set,
-  /// the live paginators still describe the old signature, so rebuilds that
-  /// see this exact signature must not start another pass.
-  String? _bgTargetSignature;
+  /// Per-frame time budget for background pagination.
+  static const Duration _paginationFrameBudget = Duration(milliseconds: 8);
+
+  /// A chapter longer than this opens behind the "Laying out pages…" view
+  /// instead of blocking the first frame silently.
+  static const int _hugeChapterChars = 60000;
 
   bool _chromeVisible = false;
   Timer? _saveDebounce;
@@ -264,14 +297,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _settingsSaveDebounce?.cancel();
     widget.library.saveSettings();
     _pageController?.dispose();
-    for (final d in _paginationDrivers.values) {
-      d.dispose();
-    }
-    _paginationDrivers.clear();
-    for (final d in _bgDrivers.values) {
-      d.dispose();
-    }
-    _bgDrivers.clear();
+    _disposeDrivers();
     _paginationCache.clear();
     _pdfCtrl.dispose();
     _comicCtrl.dispose();
@@ -300,6 +326,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   void _onPositionChanged(int chapter, int offsetInChapter) {
     _sessionCtrl.onPageFlipped();
+    _anchorChapter = chapter;
+    _anchorOffset = offsetInChapter;
     final progress = _totalChars == 0
         ? 0.0
         : (_charsBefore[chapter] + offsetInChapter) / _totalChars;
@@ -327,11 +355,11 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       return;
     }
     if (_doc == null) return;
-    // Mid-repagination _paginators mixes old and new layouts, so _flatPage no
-    // longer resolves to real text. The pass already captured where we were.
-    final pending = _pendingRestore;
-    if (pending != null) {
-      _savePositionFor(pending.$1, pending.$2);
+    // The anchor is captured whenever the page changes and survives
+    // background pagination, so it is always real text even while some
+    // chapters are still placeholder layouts.
+    if (_pageController != null) {
+      _savePositionFor(_anchorChapter, _anchorOffset);
       return;
     }
     final ref = _refAt(_flatPage);
@@ -444,79 +472,155 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     if (viewport == null) return;
     final style = _settings.textStyle(context);
     final scaler = MediaQuery.textScalerOf(context);
-
-    // Capture the position only if a pass isn't already running: mid-pass
-    // _paginators mixes layouts, so re-reading _flatPage would resolve the
-    // wrong text. The first change's target is kept for the whole pass.
-    {
-      final ref = _refAt(_flatPage);
-      _pendingRestore ??= switch (ref) {
-        (final c, final p)
-            when c >= 0 &&
-                c < _paginators.length &&
-                p >= 0 &&
-                p < _paginators[c].pages.length =>
-          (c, _paginators[c].pages[p].start),
-        _ => (0, 0),
-      };
-    }
-
     final sig = _signatureFor(viewport, style, scaler);
 
-    // --- Cache hit: swap paginators instantly, no repagination needed. ---
+    final anchor = _currentAnchor();
+
+    // Cache hit: swap the full previous layout in instantly.
     final cached = _paginationCache[sig];
     if (cached != null && cached.length >= _doc!.chapters.length) {
-      _cancelBackground();
-      _applyPaginators(cached, style, sig);
-      final pending = _pendingRestore;
-      _pendingRestore = null;
-      if (pending != null) _jumpToPosition(pending);
-      setState(() {});
+      _applyFullLayout(cached, style, sig, anchor);
       return;
     }
 
-    // --- Cache miss: re-paginate the visible chapter now, the rest later. ---
-    // The chapter the reader is on (and the next one) are laid out
-    // synchronously so swiping forward feels instant; the remaining chapters
-    // paginate in the background and swap in atomically.
-    _cancelBackground();
-    _lazyRunning = true;
-    _bgTargetSignature = sig;
-
-    final pending = _pendingRestore!;
-    final currentChapter = pending.$1;
-    _paginateChapterNow(currentChapter, viewport, style, scaler);
-
-    final nextChapter = currentChapter + 1;
-    final skip = {currentChapter};
-    if (nextChapter < _doc!.chapters.length) {
-      _paginateChapterNow(nextChapter, viewport, style, scaler);
-      skip.add(nextChapter);
-    }
-
-    _jumpToPosition(pending);
-
-    _bgPaginators = List.generate(
-      _doc!.chapters.length,
-      (i) => _paginators.length > i ? _paginators[i] : _emptyPaginator(),
+    _beginPass(
+      viewport: viewport,
+      style: style,
+      scaler: scaler,
+      anchorChapter: anchor.$1,
+      anchorOffset: anchor.$2,
+      signature: sig,
     );
-
-    _bgChapter = 0;
-    _bgGeneration++;
-    final bgGen = _bgGeneration;
-    _bgNextBatch(viewport, style, scaler, bgGen, skipChapters: skip);
   }
 
-  /// Replace one chapter's paginator in place with a fresh layout at [style].
-  /// The anchor chapter is the only one the reader is looking at, so this
-  /// stays on the UI thread; the rest of the book is paginated lazily.
-  void _paginateChapterNow(
+  /// The `(chapter, offset)` the reader is currently on. Prefers the live page
+  /// when it points at a real paginator, falling back to the stored anchor
+  /// while a pass is mid-flight.
+  (int, int) _currentAnchor() {
+    // Mid-pass the live page is from a partially-changed layout; the first
+    // change's target is kept for the whole pass instead.
+    if (!_passSettled) return (_anchorChapter, _anchorOffset);
+    // If the stored anchor is still on the page the reader is looking at,
+    // keep its exact offset. Re-deriving the page start here would lose
+    // intra-page position and drift backwards on every re-layout.
+    final c = _anchorChapter;
+    if (c >= 0 &&
+        c < _paginators.length &&
+        c < _paginationReady.length &&
+        _paginationReady[c]) {
+      final pages = _paginators[c].pages;
+      final idx = _flatPage - _flatStart[c];
+      if (idx >= 0 &&
+          idx < pages.length &&
+          pages[idx].start <= _anchorOffset &&
+          _anchorOffset < pages[idx].end) {
+        return (c, _anchorOffset);
+      }
+    }
+    final ref = _refAt(_flatPage);
+    if (ref == null) return (_anchorChapter, _anchorOffset);
+    final rc = ref.$1;
+    if (rc < 0 ||
+        rc >= _paginators.length ||
+        rc >= _paginationReady.length ||
+        !_paginationReady[rc]) {
+      return (_anchorChapter, _anchorOffset);
+    }
+    return (rc, _paginators[rc].pages[ref.$2].start);
+  }
+
+  /// Start a fresh layout for the current style: placeholders for every
+  /// chapter, the anchor chapter laid out immediately, the rest scheduled.
+  ///
+  /// The anchor chapter is paginated synchronously unless it is very large, in
+  /// which case the progress view is shown while it lays out across frames.
+  void _beginPass({
+    required Size viewport,
+    required TextStyle style,
+    required TextScaler scaler,
+    required int anchorChapter,
+    required int anchorOffset,
+    String? signature,
+  }) {
+    final n = _doc!.chapters.length;
+    _paginationGeneration++;
+    final generation = _paginationGeneration;
+    _disposeDrivers();
+
+    _chapterStyles = List.filled(n, style);
+    _paginators
+      ..clear()
+      ..addAll(List.generate(n, (_) => _emptyPaginator()));
+    _paginationReady = List.filled(n, false);
+    _layoutSignature = signature ?? _signatureFor(viewport, style, scaler);
+    _anchorChapter = anchorChapter.clamp(0, n - 1);
+    _anchorOffset = anchorOffset;
+    // Anchor first, then forward so reading stays ahead, then the prefix that
+    // resolves the global page number.
+    _paginationOrder = [
+      for (var i = _anchorChapter; i < n; i++) i,
+      for (var i = 0; i < _anchorChapter; i++) i,
+    ];
+    _paginationOrderIndex = 0;
+    _recomputeFlatIndexes();
+
+    final old = _pageController;
+    _pageController = null;
+    if (old != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    }
+
+    final anchorHuge =
+        _doc!.chapters[_anchorChapter].body.length > _hugeChapterChars;
+    if (anchorHuge) {
+      // Lay the anchor out across frames behind the progress view.
+      _paginationRunning = true;
+      if (mounted) setState(() {});
+      _scheduleNext(generation);
+      return;
+    }
+
+    _paginateChapterSync(_anchorChapter, viewport, style, scaler);
+    _recomputeFlatIndexes();
+    _paginationRunning = false;
+    _setControllerToAnchor(recreate: true);
+    _scheduleNext(generation);
+  }
+
+  /// Adopt a fully-built layout (cache hit or completed pass) and land on
+  /// [anchor] without further work.
+  void _applyFullLayout(
+    List<Paginator> pages,
+    TextStyle style,
+    String? signature,
+    (int, int) anchor,
+  ) {
+    _paginationGeneration++;
+    _disposeDrivers();
+    _paginators
+      ..clear()
+      ..addAll(pages);
+    _chapterStyles = List.filled(_paginators.length, style);
+    _paginationReady = List.filled(_paginators.length, true);
+    if (signature != null) _layoutSignature = signature;
+    _recomputeFlatIndexes();
+    _anchorChapter = anchor.$1.clamp(0, _paginators.length - 1);
+    _anchorOffset = anchor.$2;
+    _paginationOrder = const [];
+    _paginationOrderIndex = 0;
+    _paginationRunning = false;
+    _setControllerToAnchor(recreate: true);
+  }
+
+  /// Lay out [chapter] synchronously and mark it ready. Used for the anchor
+  /// chapter at open time and for on-demand jumps (TOC, search, bookmarks).
+  void _paginateChapterSync(
     int chapter,
     Size viewport,
     TextStyle style,
     TextScaler scaler,
   ) {
-    final paginator = Paginator.paginate(
+    _paginators[chapter] = Paginator.paginate(
       text: _doc!.chapters[chapter].body,
       style: style,
       maxWidth: viewport.width,
@@ -529,136 +633,174 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       settings: _settings,
       theme: _settings.colors,
     );
-    while (_paginators.length <= chapter) {
-      _paginators.add(_emptyPaginator());
-    }
-    _paginators[chapter] = paginator;
-    if (_chapterStyles.length <= chapter) {
-      _chapterStyles = List.filled(chapter + 1, style);
-    }
     _chapterStyles[chapter] = style;
-    _recomputeFlatIndexes();
+    _paginationReady[chapter] = true;
   }
 
-  void _cancelBackground() {
-    _bgGeneration++;
-    for (final d in _bgDrivers.values) {
-      d.dispose();
+  /// Ensure [chapter] has a real paginator, paginating it now if necessary.
+  void _ensureChapter(int chapter) {
+    if (_doc == null ||
+        chapter < 0 ||
+        chapter >= _paginators.length ||
+        (chapter < _paginationReady.length && _paginationReady[chapter])) {
+      return;
     }
-    _bgDrivers.clear();
-    _lazyRunning = false;
-    _bgPaginators = null;
-    _bgTargetSignature = null;
+    // The scheduler is already laying this chapter out; let it finish rather
+    // than starting a second, conflicting layout.
+    if (_paginationDrivers.containsKey(chapter)) return;
+    if (_paginationReady.length <= chapter) {
+      _paginationReady = List.filled(_paginators.length, false);
+    }
+    final viewport = _lastViewport;
+    if (viewport == null) return;
+    final style = _chapterStyles.length > chapter
+        ? _chapterStyles[chapter]
+        : _settings.textStyle(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    _paginateChapterSync(chapter, viewport, style, scaler);
+    _recomputeFlatIndexes();
+    _onChapterReady(chapter);
   }
 
-  void _bgNextBatch(
+  ChapterPaginationDriver _makeDriver(
+    int chapter,
     Size viewport,
     TextStyle style,
     TextScaler scaler,
-    int generation, {
-    required Set<int> skipChapters,
-  }) {
+  ) {
+    return ChapterPaginationDriver(
+      text: _doc!.chapters[chapter].body,
+      style: style,
+      maxWidth: viewport.width,
+      maxHeight: viewport.height,
+      direction: TextDirection.ltr,
+      firstPageInset: _titleInset(chapter, viewport, style, scaler),
+      textScaler: scaler,
+      runs: _doc!.chapters[chapter].runs,
+      images: _doc!.chapters[chapter].images,
+      settings: _settings,
+      theme: _settings.colors,
+    );
+  }
+
+  /// Advance the scheduled layout pass within the frame budget, then yield.
+  void _scheduleNext(int generation) {
     if (!mounted || _doc == null) return;
-    if (generation != _bgGeneration) return;
-    final bg = _bgPaginators;
-    if (bg == null) return;
+    if (generation != _paginationGeneration) return;
+    final viewport = _lastViewport;
+    if (viewport == null) return;
     final stopwatch = Stopwatch()..start();
 
-    while (_bgChapter < _doc!.chapters.length) {
-      final c = _bgChapter;
-      if (skipChapters.contains(c)) {
-        _bgChapter++;
+    while (_paginationOrderIndex < _paginationOrder.length) {
+      final c = _paginationOrder[_paginationOrderIndex];
+      if (_paginationReady[c]) {
+        _paginationOrderIndex++;
         continue;
       }
-
-      var driver = _bgDrivers[c];
-      if (driver == null) {
-        driver = ChapterPaginationDriver(
-          text: _doc!.chapters[c].body,
-          style: style,
-          maxWidth: viewport.width,
-          maxHeight: viewport.height,
-          direction: TextDirection.ltr,
-          firstPageInset: _titleInset(c, viewport, style, scaler),
-          textScaler: scaler,
-          runs: _doc!.chapters[c].runs,
-          images: _doc!.chapters[c].images,
-          settings: _settings,
-          theme: _settings.colors,
-        );
-        _bgDrivers[c] = driver;
-      }
+      final style = _chapterStyles.length > c
+          ? _chapterStyles[c]
+          : _settings.textStyle(context);
+      final scaler = MediaQuery.textScalerOf(context);
+      var driver = _paginationDrivers[c];
+      driver ??= _makeDriver(c, viewport, style, scaler);
+      _paginationDrivers[c] = driver;
 
       driver.nextChunkUntil(
         minPages: 1,
-        budget: const Duration(milliseconds: 8),
+        budget: _paginationFrameBudget,
       );
 
       if (driver.isDone) {
-        bg[c] = driver.toPaginator();
+        _paginators[c] = driver.toPaginator();
+        _chapterStyles[c] = style;
+        _paginationReady[c] = true;
         driver.dispose();
-        _bgDrivers.remove(c);
-        _bgChapter++;
+        _paginationDrivers.remove(c);
+        _recomputeFlatIndexes();
+        _onChapterReady(c);
+        _paginationOrderIndex++;
       }
 
-      if (stopwatch.elapsedMilliseconds > 10) {
+      if (stopwatch.elapsedMilliseconds > 12) {
         if (mounted) setState(() {});
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _bgGeneration == generation) {
-            _bgNextBatch(viewport, style, scaler, generation,
-                skipChapters: skipChapters);
-          }
+          _scheduleNext(generation);
         });
         return;
       }
     }
 
-    // All background chapters done — swap the buffer into live paginators.
-    final pending = _pendingRestore;
-    _pendingRestore = null;
-    _bgPaginators = null;
-    _lazyRunning = false;
-
-    final doneSig = _bgTargetSignature;
-    _bgTargetSignature = null;
-    _applyPaginators(bg, style, doneSig);
-    if (doneSig != null) {
-      _paginationCache[doneSig] = List.unmodifiable(_paginators);
+    // Pass complete.
+    _paginationRunning = false;
+    if (_allPaginatorsReady && _layoutSignature != null) {
+      _paginationCache[_layoutSignature!] = List.unmodifiable(_paginators);
     }
-
-    if (pending != null) _jumpToPosition(pending);
     if (mounted) setState(() {});
   }
 
-  /// Swap a full paginator set in as the live layout and record its style.
-  void _applyPaginators(List<Paginator> pages, TextStyle style, String? sig) {
-    _paginators
-      ..clear()
-      ..addAll(pages);
-    _chapterStyles = List.filled(_paginators.length, style);
-    if (sig != null) _layoutSignature = sig;
-    _recomputeFlatIndexes();
+  /// Called after a chapter gains real pages. Mounts the reader once the anchor
+  /// chapter is ready, and re-anchors the flat index as placeholders expand.
+  void _onChapterReady(int chapter) {
+    if (_pageController == null) {
+      if (chapter != _anchorChapter) return;
+      _paginationRunning = false;
+      _setControllerToAnchor(recreate: true);
+      return;
+    }
+    _reanchor();
   }
 
-  /// Jump the (persistent) controller to the page holding [position] —
-  /// `(chapter, offsetInChapter)`. The jump is deferred to a post-frame
-  /// callback because the controller's max extent only updates once the next
-  /// layout sees the changed page count, and `jumpTo` clamps to it.
-  void _jumpToPosition((int, int) position) {
+  void _reanchor() {
+    if (_pageController == null) return;
+    final flat = _flatIndexForPosition(_anchorChapter, _anchorOffset);
+    if (flat == _flatPage) {
+      if (mounted) setState(() {});
+      return;
+    }
+    _programmaticTarget = flat;
+    setState(() => _flatPage = flat);
     final controller = _pageController;
-    if (controller == null || _doc == null) return;
-    final chapter = position.$1.clamp(0, _doc!.chapters.length - 1);
-    final offset = position.$2;
-    final flat = _flatIndexForChapter(chapter);
-    final pageIdx = math.max(
-      0,
-      offset > 0 ? _paginators[chapter].pageIndexFor(offset) : 0,
-    );
-    setState(() => _flatPage = flat + pageIdx);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _pageController != controller) return;
-      controller.jumpToPage(flat + pageIdx);
+      if (controller!.hasClients) controller.jumpToPage(flat);
     });
+  }
+
+  void _setControllerToAnchor({required bool recreate}) {
+    final flat = _flatIndexForPosition(_anchorChapter, _anchorOffset);
+    _programmaticTarget = flat;
+    if (recreate) {
+      final old = _pageController;
+      _pageController = null;
+      if (old != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      }
+      setState(() {
+        _pageController = PageController(initialPage: flat, keepPage: false);
+        _flatPage = flat;
+      });
+      final controller = _pageController;
+      // Scroll-offset retention can restore the previous controller's page
+      // instead of [initialPage]; jump explicitly after the first frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _pageController != controller) return;
+        if (controller!.hasClients) controller.jumpToPage(flat);
+      });
+      return;
+    }
+    setState(() => _flatPage = flat);
+    final controller = _pageController;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pageController != controller) return;
+      if (controller!.hasClients) controller.jumpToPage(flat);
+    });
+  }
+
+  void _disposeDrivers() {
+    for (final d in _paginationDrivers.values) {
+      d.dispose();
+    }
+    _paginationDrivers.clear();
   }
 
   /// Test-only: runs the same path [SettingsSheet]'s `onChanged` callback does
@@ -675,7 +817,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool get debugPaginationRunning => _paginationRunning;
 
   @visibleForTesting
-  bool get debugLazyRunning => _lazyRunning;
+  bool get debugLazyRunning =>
+      _paginationRunning || _paginationOrderIndex < _paginationOrder.length;
 
   @visibleForTesting
   int get debugChapterCount => _doc?.chapters.length ?? -1;
@@ -717,9 +860,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       final style = _settings.textStyle(context);
       final scaler = MediaQuery.textScalerOf(context);
       final sig = _signatureFor(viewport, style, scaler);
-      // Skip when the live layout already matches, or a background pass for
-      // exactly this signature is already in flight.
-      if (sig != _layoutSignature && sig != _bgTargetSignature) {
+      // Skip when the live layout already matches the requested style.
+      if (sig != _layoutSignature) {
         _repaginateKeepingPosition();
       }
     }
@@ -773,10 +915,16 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _searchCtrl.jumpToResult(index);
     if (!_isPdf) {
       final result = _searchCtrl.searchResults[index];
+      _ensureChapter(result.chapter);
       final pag = _paginators[result.chapter];
-      final pageIndex = pag.pageIndexFor(result.offset);
+      final pageIndex =
+          result.offset > 0 ? pag.pageIndexFor(result.offset) : 0;
       final flat = _flatIndexForChapter(result.chapter) + pageIndex;
+      _anchorChapter = result.chapter;
+      _anchorOffset = result.offset;
+      _programmaticTarget = flat;
       _pageController?.jumpToPage(flat);
+      setState(() => _flatPage = flat);
     }
     if (!_chromeVisible) {
       setState(() => _chromeVisible = true);
@@ -1323,9 +1471,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
 
     if (_paginationRunning) {
-      final progress = _doc!.chapters.isEmpty
-          ? 0.0
-          : _paginationChapter / _doc!.chapters.length;
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 48),
@@ -1333,13 +1478,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             mainAxisSize: MainAxisSize.min,
             children: [
               LinearProgressIndicator(
-                value: progress,
                 backgroundColor: theme.muted.withValues(alpha: 0.2),
                 valueColor: AlwaysStoppedAnimation(theme.accent),
               ),
               const SizedBox(height: 16),
               Text(
-                'Laying out pages… ${(progress * 100).round()}%',
+                'Laying out pages…',
                 style: TextStyle(fontSize: 14, color: theme.muted),
               ),
             ],
@@ -1358,8 +1502,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         // produced the current paginators.
         _lastViewport = viewport;
 
-        if (_layoutSignature != signature && _bgTargetSignature != signature) {
-          final needsFirstLayout = _paginators.length < _doc!.chapters.length;
+        if (_layoutSignature != signature) {
+          final needsFirstLayout = _paginators.isEmpty;
           if (needsFirstLayout) {
             // Initial layout: nothing live yet, so this signature is the
             // layout being built. Record it so later frames don't re-schedule.
@@ -1391,9 +1535,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               controller: controller,
               itemCount: itemCount,
               onPageChanged: (i) {
+                final programmatic = _programmaticTarget == i;
+                _programmaticTarget = null;
                 setState(() => _flatPage = i);
                 final ref = _refAt(i);
-                if (ref != null) {
+                // Only record the position for user-driven page changes once
+                // the layout pass has settled: programmatic jumps while
+                // placeholders expand would otherwise clobber the anchor.
+                if (!programmatic &&
+                    _passSettled &&
+                    ref != null &&
+                    ref.$1 < _paginationReady.length &&
+                    _paginationReady[ref.$1]) {
                   _onPositionChanged(
                       ref.$1, _paginators[ref.$1].pages[ref.$2].start);
                 }
@@ -1403,6 +1556,16 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 final ref = _refAt(i);
                 if (ref == null) return const SizedBox.shrink();
                 final chapter = ref.$1;
+                // Not yet paginated: show a spinner and lay it out on demand.
+                if (chapter >= _paginationReady.length ||
+                    !_paginationReady[chapter]) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _ensureChapter(chapter);
+                  });
+                  return Center(
+                    child: CircularProgressIndicator(color: theme.accent),
+                  );
+                }
                 final page = _paginators[chapter].pages[ref.$2];
                 // Compute highlights for this page.
                 List<SearchResult>? highlights;
@@ -1464,10 +1627,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               ignoring: !_chromeVisible,
               child: _chrome(
                 centerLabel: _pageLabel(),
-                sliderMax: (itemCount - 1).clamp(0, 1 << 30),
-                sliderValue: _flatPage.clamp(0, itemCount - 1),
+                sliderMax: _allPaginatorsReady
+                    ? (itemCount - 1).clamp(0, 1 << 30)
+                    : 0,
+                sliderValue:
+                    _allPaginatorsReady ? _flatPage.clamp(0, itemCount - 1) : 0,
                 sliderLabel: _progressPercent(),
                 onSliderChanged: (v) {
+                  if (!_allPaginatorsReady) return;
                   if (v != _flatPage) controller.jumpToPage(v);
                 },
               ),
@@ -1480,124 +1647,31 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   // ---------------------------------------------------------------------------
-  // Full-book chunked pagination
+  // Initial pagination
   // ---------------------------------------------------------------------------
 
-  final Map<int, ChapterPaginationDriver> _paginationDrivers = {};
-
-  /// Begin (or restart) a chunked full-book pagination pass.
-  ///
-  /// Any pass already in flight is orphaned via [_paginationGeneration] rather
-  /// than left to interleave with this one and write chapters at two different
-  /// styles into [_paginators].
+  /// Open the book at the saved position, laying out only the anchor chapter
+  /// up front. The remaining chapters are scheduled in the background.
   void _restartPagination(Size viewport, TextStyle style, TextScaler scaler) {
-    _paginationGeneration++;
-    _chapterStyles = List.filled(_doc!.chapters.length, style);
-    for (final d in _paginationDrivers.values) {
-      d.dispose();
-    }
-    _paginationDrivers.clear();
+    final n = _doc!.chapters.length;
+    final target = _book.lastChapter.clamp(0, n - 1);
+    final offset = _book.lastOffset;
+    final sig = _signatureFor(viewport, style, scaler);
 
-    while (_paginators.length < _doc!.chapters.length) {
-      _paginators.add(_emptyPaginator());
-    }
-    _recomputeFlatIndexes();
-
-    // Detach before destroying. Dropping the reference now means the frame
-    // that swaps in the progress view unmounts the PageView, so disposing
-    // afterwards can't leave it holding a dead controller mid-gesture.
-    final old = _pageController;
-    _pageController = null;
-    if (old != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    final cached = _paginationCache[sig];
+    if (cached != null && cached.length >= n) {
+      _applyFullLayout(cached, style, sig, (target, offset));
+      return;
     }
 
-    _paginationChapter = 0;
-    _paginationRunning = true;
-    if (mounted) setState(() {});
-    _paginateNextBatch(viewport, style, scaler, _paginationGeneration);
-  }
-
-  void _paginateNextBatch(
-    Size viewport,
-    TextStyle style,
-    TextScaler scaler,
-    int generation,
-  ) {
-    if (!mounted || _doc == null) return;
-    if (generation != _paginationGeneration) return; // superseded
-    final stopwatch = Stopwatch()..start();
-
-    while (_paginationChapter < _doc!.chapters.length) {
-      final c = _paginationChapter;
-      var driver = _paginationDrivers[c];
-      if (driver == null) {
-        driver = ChapterPaginationDriver(
-          text: _doc!.chapters[c].body,
-          style: style,
-          maxWidth: viewport.width,
-          maxHeight: viewport.height,
-          direction: TextDirection.ltr,
-          firstPageInset: _titleInset(c, viewport, style, scaler),
-          textScaler: scaler,
-          runs: _doc!.chapters[c].runs,
-          images: _doc!.chapters[c].images,
-          settings: _settings,
-          theme: _settings.colors,
-        );
-        _paginationDrivers[c] = driver;
-      }
-
-      driver.nextChunkUntil(
-        minPages: 1,
-        budget: const Duration(milliseconds: 8),
-      );
-
-      if (driver.isDone) {
-        _paginators[c] = driver.toPaginator();
-        _recomputeFlatIndexes();
-        driver.dispose();
-        _paginationDrivers.remove(c);
-        _paginationChapter++;
-      }
-
-      if (stopwatch.elapsedMilliseconds > 10) {
-        if (!mounted) return;
-        setState(() {});
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _paginateNextBatch(viewport, style, scaler, generation);
-        });
-        return;
-      }
-    }
-
-    // All chapters paginated — restore position and show reader.
-    _paginationRunning = false;
-    _restorePosition();
-    setState(() {});
-  }
-
-  /// Create the initial [PageController] at the book's saved position. Called
-  /// once when the initial full-book pass finishes; re-layouts keep this
-  /// controller and jump the existing scroll position instead.
-  void _restorePosition() {
-    if (!mounted || _doc == null || _pageController != null) return;
-    // Allow partial pagination: target chapter must be paginated.
-    final pending = _pendingRestore;
-    final targetChapter =
-        (pending?.$1 ?? _book.lastChapter).clamp(0, _doc!.chapters.length - 1);
-    if (targetChapter >= _paginators.length) return;
-    if (_paginators[targetChapter].pages.isEmpty) return;
-    _pendingRestore = null;
-    final targetOffset = pending?.$2 ?? _book.lastOffset;
-    final flat = _flatIndexForChapter(targetChapter);
-    final pageIdx = targetOffset > 0
-        ? _paginators[targetChapter].pageIndexFor(targetOffset)
-        : 0;
-    setState(() {
-      _pageController = PageController(initialPage: flat + pageIdx);
-      _flatPage = flat + pageIdx;
-    });
+    _beginPass(
+      viewport: viewport,
+      style: style,
+      scaler: scaler,
+      anchorChapter: target,
+      anchorOffset: offset,
+      signature: sig,
+    );
   }
 
   void _flip(int direction) {
@@ -1624,8 +1698,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
     final controller = _pageController;
     if (controller == null) return;
-    final target = _flatPage + direction;
+    var target = _flatPage + direction;
     if (target < 0 || target >= _flatPageCount) return;
+    // If the neighbouring page belongs to a chapter that isn't laid out yet,
+    // paginate it now; that may shift the flat index, so re-read the target.
+    final ref = _refAt(target);
+    if (ref != null &&
+        (ref.$1 >= _paginationReady.length || !_paginationReady[ref.$1])) {
+      _ensureChapter(ref.$1);
+      target = _flatPage + direction;
+      if (target < 0 || target >= _flatPageCount) return;
+    }
     controller.animateToPage(
       target,
       duration: const Duration(milliseconds: 220),
@@ -1643,7 +1726,11 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   /// Jump directly to the start of [chapterIndex].
   void _jumpToChapter(int chapterIndex) {
     if (_doc == null || _pageController == null) return;
+    _ensureChapter(chapterIndex);
     final flat = _flatIndexForChapter(chapterIndex);
+    _anchorChapter = chapterIndex;
+    _anchorOffset = 0;
+    _programmaticTarget = flat;
     _pageController!.jumpToPage(flat);
     setState(() => _flatPage = flat);
   }
@@ -1690,8 +1777,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   }
 
   String _progressPercent() {
-    if (_lazyRunning) return '-/-';
     if (_flatPageCount == 0) return '';
+    // Until every chapter is laid out the flat index is only approximate, so
+    // show a placeholder rather than a number that would change.
+    if (!_allPaginatorsReady) return '… / …';
     return '${_flatPage + 1} / $_flatPageCount';
   }
 

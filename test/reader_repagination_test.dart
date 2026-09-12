@@ -179,17 +179,19 @@ void main() {
   }
 
   group('Reader repagination', () {
-    testWidgets('initial pagination is chunked across frames', (tester) async {
+    testWidgets('opens immediately and paginates the rest in the background',
+        (tester) async {
       await mountReader(tester);
-      expect(_progressView, findsOneWidget);
-      // The reader must not appear until the whole book is paginated.
-      expect(find.byType(PageView), findsNothing,
-          reason: 'document opens only once pagination is complete');
-
-      final frames = await _settlePagination(tester);
-      expect(frames, greaterThan(1),
-          reason: 'a blocking pass would finish in a single frame');
+      // The reader is shown without waiting for the whole book.
+      expect(_progressView, findsNothing,
+          reason: 'normal chapters open without a progress view');
       expect(find.byType(PageView), findsOneWidget);
+      expect(_readerState(tester).debugLazyRunning, isTrue,
+          reason: 'remaining chapters paginate in the background');
+
+      await _settlePagination(tester);
+      expect(find.byType(PageView), findsOneWidget);
+      expect(_readerState(tester).debugLazyRunning, isFalse);
     });
 
     testWidgets('a font-size change does not block the frame', (tester) async {
