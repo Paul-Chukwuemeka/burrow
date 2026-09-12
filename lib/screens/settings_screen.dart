@@ -140,7 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.font_download_outlined, color: scheme.onSurfaceVariant),
-            title: const Text('Font'),
+            title: const Text('Font', softWrap: false),
             trailing: DropdownButton<String>(
               value: _s.uiFontFamily,
               underline: const SizedBox.shrink(),
