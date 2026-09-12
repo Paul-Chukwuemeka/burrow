@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/book.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
+import '../utils/date_format.dart';
 import '../widgets/book_cover.dart';
 
 class EditBookScreen extends StatefulWidget {
@@ -32,6 +33,7 @@ class _EditBookScreenState extends State<EditBookScreen> {
   late final TextEditingController _languageCtrl;
   late final TextEditingController _reviewCtrl;
   late final TextEditingController _pubDateCtrl;
+  late final String _rawPubDate;
   late final TextEditingController _rightsCtrl;
   late final TextEditingController _typeCtrl;
   late final TextEditingController _sourceCtrl;
@@ -55,7 +57,10 @@ class _EditBookScreenState extends State<EditBookScreen> {
     _isbnCtrl = TextEditingController(text: b.isbn ?? '');
     _languageCtrl = TextEditingController(text: b.language ?? '');
     _reviewCtrl = TextEditingController(text: b.review ?? '');
-    _pubDateCtrl = TextEditingController(text: b.publicationDate ?? '');
+    _pubDateCtrl = TextEditingController(
+      text: formatPublicationDate(b.publicationDate ?? ''),
+    );
+    _rawPubDate = b.publicationDate ?? '';
     _rightsCtrl = TextEditingController(text: b.rights ?? '');
     _typeCtrl = TextEditingController(text: b.type ?? '');
     _sourceCtrl = TextEditingController(text: b.source ?? '');
@@ -114,7 +119,7 @@ class _EditBookScreenState extends State<EditBookScreen> {
     final isbn = _isbnCtrl.text.trim();
     final language = _languageCtrl.text.trim();
     final review = _reviewCtrl.text.trim();
-    final pubDate = _pubDateCtrl.text.trim();
+    final pubDate = _rawPubDate;
     final rights = _rightsCtrl.text.trim();
     final type = _typeCtrl.text.trim();
     final source = _sourceCtrl.text.trim();
