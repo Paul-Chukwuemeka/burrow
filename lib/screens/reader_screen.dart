@@ -357,7 +357,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   String _signatureFor(Size viewport, TextStyle style, TextScaler scaler) =>
       '${viewport.width}x${viewport.height}|${style.fontSize}|'
       '${style.height}|${style.fontFamily}|${scaler.scale(10)}|'
-      '${_settings.textJustification.name}|${_settings.horizontalMargin}';
+      '${_settings.textJustification.name}|${_settings.horizontalMargin}|'
+      '${_settings.respectCssStyles}|${_settings.overrideCssFontSize}|'
+      '${_settings.overrideCssFontFamily}|${_settings.overrideCssColor}';
 
   Paginator _emptyPaginator() => Paginator.paginate(
         text: '',
@@ -587,7 +589,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _bgDrivers[c] = driver;
       }
 
-      driver.nextChunk(5);
+      driver.nextChunkUntil(
+        minPages: 1,
+        budget: const Duration(milliseconds: 8),
+      );
 
       if (driver.isDone) {
         bg[c] = driver.toPaginator();
@@ -1545,7 +1550,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         _paginationDrivers[c] = driver;
       }
 
-      driver.nextChunk(5);
+      driver.nextChunkUntil(
+        minPages: 1,
+        budget: const Duration(milliseconds: 8),
+      );
 
       if (driver.isDone) {
         _paginators[c] = driver.toPaginator();

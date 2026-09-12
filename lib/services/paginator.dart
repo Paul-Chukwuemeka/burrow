@@ -13,11 +13,42 @@ class TextPage {
   final int end;
 }
 
+/// A single laid-out line: the source range it covers plus its rendered
+/// height. Synthetic blank lines (paragraph breaks) have `start == end`.
+class _Line {
+  const _Line(this.start, this.end, this.height);
+  final int start;
+  final int end;
+  final double height;
+}
+
 /// Drives chapter pagination incrementally, yielding control between chunks
 /// to keep the UI responsive on large books.
 ///
-/// Create one per chapter, call [nextChunk] repeatedly until [isDone], then
-/// call [toPaginator] to get the final result. Dispose when done.
+/// Create one per chapter, call [nextChunk] (or [nextChunkUntil]) repeatedly
+/// until [isDone], then call [toPaginator] to get the final result. Dispose
+/// when done.
+///
+/// ## Layout model
+///
+/// The chapter is laid out one paragraph at a time. Forced breaks at `\n`
+/// make paragraphs independent for line breaking, so laying each one out in
+/// isolation yields exactly the same lines as laying out the whole chapter at
+/// once — but lets the driver yield between paragraphs instead of blocking a
+/// frame on a single huge layout. Each paragraph's `TextPainter` line metrics
+/// give the line boundaries and heights directly, so a page is simply the run
+/// of lines that fits the vertical budget. Line breaking (including CJK and
+/// grapheme clusters) is delegated to Flutter's ICU line breaker, so no manual
+/// whitespace or code-unit snapping is needed or correct.
+///
+/// Inline images are `\uFFFC` placeholders in the body; their rendered size is
+/// supplied to `TextPainter.setPlaceholderDimensions` so measurement and the
+/// `WidgetSpan`s that actually render them agree exactly. This is also cheaper
+/// and more accurate than substituting the placeholder for a newline.
+///
+/// Known limitation: the body is modelled as one styled string with inline
+/// placeholders, so block-level structure (lists, tables, nested margins) is
+/// not represented. Fine for narrative prose; revisit for textbook-style EPUBs.
 class ChapterPaginationDriver {
   ChapterPaginationDriver({
     required String text,
@@ -32,218 +63,296 @@ class ChapterPaginationDriver {
     ReaderSettings? settings,
     ReaderTheme? theme,
   })  : _text = text,
-        _measureText = images.isEmpty ? text : text.replaceAll('\uFFFC', '\n'),
         _runs = runs,
         _images = images,
-        _imageHeights = [
-          for (final img in images)
-            img.renderedHeight(maxWidth, maxHeight: maxHeight),
-        ],
         _settings = settings,
         _theme = theme,
+        _maxHeight = maxHeight,
         _firstBudget = maxHeight - firstPageInset - _slack,
         _restBudget = maxHeight - _slack,
-        _minBudget =
-            textScaler.scale(style.fontSize ?? 16) * 1.4,
-        _tp = TextPainter(textDirection: direction, textScaler: textScaler),
+        _minBudget = textScaler.scale(style.fontSize ?? 16) * 1.4,
+        _tp = TextPainter(
+          textDirection: direction,
+          textScaler: textScaler,
+        ),
         _style = style,
         _maxWidth = maxWidth;
 
   static const double _slack = 6.0;
 
   final String _text;
-
-  /// [_text] with image placeholders swapped for line breaks, used only for
-  /// measurement. Length is unchanged, so style-run offsets stay valid.
-  final String _measureText;
   final List<StyleRun> _runs;
 
   /// Images in this chapter, sorted by ascending [ImageRun.offset] (as the
-  /// parser emits them). Sortedness lets [_sliceHeight] scan only the images
-  /// that actually fall in a candidate slice instead of the whole chapter.
+  /// parser emits them), matching the order of `\uFFFC` in [_text].
   final List<ImageRun> _images;
-  final List<double> _imageHeights;
   final ReaderSettings? _settings;
   final ReaderTheme? _theme;
   final TextStyle _style;
   final double _maxWidth;
+  final double _maxHeight;
   final double _firstBudget;
   final double _restBudget;
   final double _minBudget;
   final TextPainter _tp;
 
   final List<TextPage> _pages = [];
-  int _offset = 0;
+
+  /// Laid-out lines not yet consumed by a page, in reading order.
+  final List<_Line> _pending = [];
+
+  /// Next source offset whose paragraph has not been laid out yet.
+  int _cursor = 0;
+  bool _exhausted = false;
   bool _isFirst = true;
-  int _seed = 1024;
+  bool _done = false;
+
+  /// Height of a blank line, measured once from the base style. Used for the
+  /// synthetic empty line that a paragraph break (`\n\n`) contributes.
+  late final double _baseLineHeight = _measureBaseLineHeight();
 
   List<TextPage> get pages => _pages;
-  bool get isDone => _offset >= _text.length || _text.isEmpty;
+  bool get isDone => _done || _text.isEmpty;
 
-  /// Produce up to [count] more pages. Returns the pages added in this chunk.
+  /// Produce up to [count] more pages. Deterministic: page boundaries do not
+  /// depend on how the work is chunked.
   List<TextPage> nextChunk(int count) {
-    if (isDone) return const [];
-
     final added = <TextPage>[];
-    var produced = 0;
-    while (produced < count && !isDone) {
-      final page = _paginateOnePage();
+    while (added.length < count && !_done) {
+      final page = _buildNextPage();
       if (page == null) break;
       _pages.add(page);
       added.add(page);
-      produced++;
     }
     return added;
   }
 
-  TextPage? _paginateOnePage() {
-    if (_offset >= _text.length) return null;
+  /// Produce pages until at least [minPages] are added or [budget] elapses.
+  /// Used to yield between frames without assuming uniform page cost.
+  List<TextPage> nextChunkUntil({
+    int minPages = 1,
+    Duration budget = const Duration(milliseconds: 8),
+  }) {
+    final stopwatch = Stopwatch()..start();
+    final added = <TextPage>[];
+    while (!_done &&
+        (added.length < minPages || stopwatch.elapsed < budget)) {
+      final page = _buildNextPage();
+      if (page == null) break;
+      _pages.add(page);
+      added.add(page);
+    }
+    return added;
+  }
 
-    final budget = math.max(
-      _isFirst ? _firstBudget : _restBudget,
-      _minBudget,
-    );
+  TextPage? _buildNextPage() {
+    while (true) {
+      // Drop whitespace-only lines at a page boundary so pages never begin
+      // with a phantom empty line.
+      while (_pending.isNotEmpty && _isBlankLine(_pending.first)) {
+        _pending.removeAt(0);
+      }
+      _fillPending(_restBudget);
+      while (_pending.isEmpty && !_exhausted) {
+        _layoutNextParagraph();
+        _fillPending(_restBudget);
+      }
+      if (_pending.isEmpty) {
+        _done = true;
+        return null;
+      }
 
-    int end;
-    if (_sliceHeight(_offset, _offset + 1) > budget) {
-      end = _offset + 1;
-      if (end < _text.length &&
-          (_text.codeUnitAt(end) & 0xFC00) == 0xDC00) {
-        end++;
+      final budget = math.max(
+        _isFirst ? _firstBudget : _restBudget,
+        _minBudget,
+      );
+
+      var height = 0.0;
+      var last = -1;
+      for (var i = 0; i < _pending.length; i++) {
+        final line = _pending[i];
+        if (last >= 0 && height + line.height > budget) break;
+        height += line.height;
+        last = i;
       }
-    } else {
-      var bound = _offset + 1;
-      var step = math.min(_seed, 1 << 16);
-      while (bound + step < _text.length &&
-          _sliceHeight(_offset, bound + step) <= budget) {
-        bound += step;
-        step = math.min(step * 2, 1 << 16);
-      }
-      var lo = bound;
-      var hi = math.min(bound + step, _text.length);
-      while (lo < hi) {
-        final mid = lo + (hi - lo + 1) ~/ 2;
-        if (_sliceHeight(_offset, mid) <= budget) {
-          lo = mid;
-        } else {
-          hi = mid - 1;
-        }
-      }
-      end = lo;
-      while (end > _offset + 1 && _sliceHeight(_offset, end) > budget) {
+
+      final start = _pending.first.start;
+      var end = _pending[last].end;
+      _pending.removeRange(0, last + 1);
+
+      // Trailing whitespace belongs to no page; leaving it out avoids a
+      // phantom empty line when the slice renders on its own.
+      while (end > start && _isWhitespaceAt(end - 1)) {
         end--;
       }
-    }
 
-    if (end < _text.length &&
-        !_isWhitespaceAt(end) &&
-        !_isWhitespaceAt(end - 1)) {
-      var w = end;
-      while (w > _offset + 1 && !_isWhitespaceAt(w - 1)) {
-        w--;
-      }
-      if (w > _offset && _isWhitespaceAt(w - 1)) {
-        end = w;
-      }
-    }
-    while (end > _offset + 1 && _isWhitespaceAt(end - 1)) {
-      end--;
-    }
+      if (end <= start) continue;
 
-    final page = TextPage(_offset, end);
-    _isFirst = false;
-    _seed = math.max(1, end - _offset);
-    _offset = _nextContentStart(end);
-    return page;
+      _isFirst = false;
+      return TextPage(start, end);
+    }
   }
 
-  double _sliceHeight(int start, int end) {
-    if (end <= start) return 0;
-    // Images are sorted by offset, so only those landing in [start, end) are
-    // summed. Precomputed heights avoid re-measuring on every probe. The
-    // rendered image also carries [ImageRun.verticalPadding] above and below,
-    // which must be reserved here or pages containing images overflow.
-    var imageExtra = 0.0;
-    for (var i = _firstImageAtOrAfter(start);
-        i < _images.length && _images[i].offset < end;
-        i++) {
-      imageExtra += _imageHeights[i] + 2 * ImageRun.verticalPadding;
+  /// Lay out paragraphs until the pending line buffer holds at least [needed]
+  /// vertical pixels, or the chapter is exhausted.
+  void _fillPending(double needed) {
+    while (!_exhausted) {
+      var total = 0.0;
+      for (final line in _pending) {
+        total += line.height;
+      }
+      if (total >= needed) return;
+      _layoutNextParagraph();
     }
-    // If the slice contains images, strip the \uFFFC so TextPainter doesn't
-    // measure them as zero-height characters, then add the real heights.
-    final span = _spanFor(start, end);
-    if (imageExtra > 0) {
-      // Build against the placeholder-substituted text with the original
-      // offsets: replacing one code unit with another keeps lengths equal, so
-      // the chapter-global [StyleRun]s still line up.
-      final cleanSpan = _runs.isEmpty
-          ? TextSpan(text: _measureText.substring(start, end), style: _style)
-          : TextSpan(
-              style: _style,
-              children: buildStyledSpans(
-                _measureText,
-                _runs,
-                _style,
-                start,
-                end,
-                quoteColor: _theme?.muted,
-                settings: _settings,
-              ),
-            );
-      _tp.text = cleanSpan;
-    } else {
-      _tp.text = span;
+  }
+
+  /// Lay out the paragraph starting at [_cursor] and append its lines to
+  /// [_pending]. Paragraphs are separated by `\n`; an empty segment between two
+  /// newlines contributes one blank line, while a trailing newline does not.
+  void _layoutNextParagraph() {
+    if (_exhausted) return;
+    if (_cursor >= _text.length) {
+      _exhausted = true;
+      return;
     }
+
+    final newline = _text.indexOf('\n', _cursor);
+    final segEnd = newline == -1 ? _text.length : newline;
+    final hasBreak = newline != -1;
+
+    if (segEnd > _cursor) {
+      _pending.addAll(_layoutText(_cursor, segEnd));
+    } else if (hasBreak) {
+      // Empty paragraph between two newlines — one blank line. Attribute it to
+      // the newline so it participates in whitespace trimming.
+      _pending.add(_Line(newline, newline, _baseLineHeight));
+    }
+
+    _cursor = hasBreak ? newline + 1 : _text.length;
+    if (_cursor >= _text.length) _exhausted = true;
+  }
+
+  /// Lay out `text[start:end)` with the chapter's styles and images, returning
+  /// one [_Line] per rendered line, in source order.
+  List<_Line> _layoutText(int start, int end) {
+    _tp.text = TextSpan(style: _style, children: _measureChildren(start, end));
+    _tp.setPlaceholderDimensions(_placeholdersIn(start, end));
     _tp.layout(maxWidth: _maxWidth);
-    return _tp.height + imageExtra;
+
+    final metrics = _tp.computeLineMetrics();
+    if (metrics.isEmpty) return const [];
+
+    // Start offset of each line, probed at the line's vertical midpoint.
+    final starts = <int>[];
+    for (final m in metrics) {
+      final top = m.baseline - m.ascent;
+      final bottom = m.baseline + m.descent;
+      final y = ((top + bottom) / 2)
+          .clamp(0.0, math.max(0.0, _tp.height - 0.001))
+          .toDouble();
+      starts.add(_tp.getPositionForOffset(Offset(0, y)).offset);
+    }
+    for (var i = 1; i < starts.length; i++) {
+      if (starts[i] < starts[i - 1]) starts[i] = starts[i - 1];
+    }
+
+    final length = end - start;
+    final lines = <_Line>[];
+    for (var i = 0; i < metrics.length; i++) {
+      final localStart = starts[i];
+      final localEnd = i + 1 < starts.length ? starts[i + 1] : length;
+      lines.add(_Line(
+        start + localStart,
+        start + math.max(localEnd, localStart),
+        metrics[i].height,
+      ));
+    }
+    return lines;
   }
 
-  /// Index of the first image whose offset is >= [offset], assuming [_images]
-  /// is sorted by offset. Returns [_images].length when none qualify.
-  int _firstImageAtOrAfter(int offset) {
-    var lo = 0, hi = _images.length;
-    while (lo < hi) {
-      final mid = (lo + hi) >> 1;
-      if (_images[mid].offset < offset) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
+  /// Builds the measurement span tree for `[start, end)`, turning each
+  /// `\uFFFC` image placeholder into a [WidgetSpan] so its box participates in
+  /// line layout. The actual size comes from [_placeholdersIn]; the dummy child
+  /// is never built by [TextPainter].
+  List<InlineSpan> _measureChildren(int start, int end) {
+    final source = buildStyledSpans(
+      _text,
+      _runs,
+      _style,
+      start,
+      end,
+      quoteColor: _theme?.muted,
+      settings: _settings,
+    );
+    final children = <InlineSpan>[];
+    for (final span in source) {
+      final text = span.text ?? '';
+      if (text.isEmpty) {
+        children.add(span);
+        continue;
+      }
+      var cursor = 0;
+      while (true) {
+        final idx = text.indexOf('\uFFFC', cursor);
+        if (idx == -1) {
+          children.add(TextSpan(text: text.substring(cursor), style: span.style));
+          break;
+        }
+        if (idx > cursor) {
+          children.add(
+              TextSpan(text: text.substring(cursor, idx), style: span.style));
+        }
+        children.add(const WidgetSpan(
+          child: SizedBox.shrink(),
+          alignment: PlaceholderAlignment.middle,
+        ));
+        cursor = idx + 1;
       }
     }
-    return lo;
+    return children;
   }
 
-  /// The exact span the reader renders for this range — measurement and
-  /// rendering must never diverge.
-  TextSpan _spanFor(int start, int end) {
-    if (_runs.isEmpty) {
-      return TextSpan(text: _text.substring(start, end), style: _style);
+  /// Placeholder dimensions for the `\uFFFC` images inside `[start, end)`, in
+  /// the order they appear in the text. Sizes match the `WidgetSpan`s built by
+  /// `buildPageSpans`, including the vertical padding it applies.
+  List<PlaceholderDimensions> _placeholdersIn(int start, int end) {
+    final dims = <PlaceholderDimensions>[];
+    for (final img in _images) {
+      if (img.offset < start) continue;
+      if (img.offset >= end) break;
+      final size = img.renderedSize(_maxWidth, maxHeight: _maxHeight);
+      dims.add(PlaceholderDimensions(
+        size: Size(size.width, size.height + 2 * ImageRun.verticalPadding),
+        alignment: PlaceholderAlignment.middle,
+      ));
     }
-    return TextSpan(
-      style: _style,
-      children: buildStyledSpans(
-        _text,
-        _runs,
-        _style,
-        start,
-        end,
-        quoteColor: _theme?.muted,
-        settings: _settings,
-      ),
-    );
+    return dims;
+  }
+
+  double _measureBaseLineHeight() {
+    final probe = TextPainter(
+      text: TextSpan(text: 'X', style: _style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final metrics = probe.computeLineMetrics();
+    final height = metrics.isNotEmpty
+        ? metrics.first.height
+        : (_style.fontSize ?? 16) * (_style.height ?? 1.2);
+    probe.dispose();
+    return height;
+  }
+
+  bool _isBlankLine(_Line line) {
+    if (line.start == line.end) return true;
+    for (var i = line.start; i < line.end; i++) {
+      if (!_isWhitespaceAt(i)) return false;
+    }
+    return true;
   }
 
   bool _isWhitespaceAt(int i) {
     final c = _text.codeUnitAt(i);
     return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
-  }
-
-  int _nextContentStart(int from) {
-    var i = from;
-    while (i < _text.length && _isWhitespaceAt(i)) {
-      i++;
-    }
-    return i;
   }
 
   Paginator toPaginator() => Paginator._(List.unmodifiable(_pages));
@@ -253,17 +362,18 @@ class ChapterPaginationDriver {
 
 /// Splits a chapter's text into pages that fit a given viewport and style.
 ///
-/// Strategy: each page is built by finding the largest slice starting at the
-/// current offset whose own [TextPainter] layout fits the page's vertical
-/// budget (exponential bound + binary search). Because every page is measured
-/// exactly as it is sliced, re-wrap drift between a whole-chapter layout and
-/// isolated page slices cannot cause overflow by construction.
+/// Strategy: paragraphs are laid out once each (see [ChapterPaginationDriver])
+/// and their line metrics are accumulated until the page's vertical budget is
+/// exceeded. Because line breaking is a pure function of width and every page
+/// ends on a line boundary, an isolated page slice wraps exactly as it did in
+/// the full-chapter layout. Line breaks come from Flutter's ICU line breaker,
+/// so word, CJK, and grapheme boundaries are handled correctly without manual
+/// snapping.
 ///
-/// Slice boundaries snap to word/paragraph edges, and the whitespace at a
-/// boundary belongs to neither page: slices never begin or end with a
-/// newline, which would otherwise render a phantom empty line and skew the
-/// measurement. Consecutive pages therefore tile the text with gaps that are
-/// whitespace only.
+/// Whitespace at a boundary belongs to neither page: pages never begin or end
+/// with whitespace, which would otherwise render a phantom empty line and skew
+/// the measurement. Consecutive pages therefore tile the text with gaps that
+/// are whitespace only.
 class Paginator {
   Paginator._(this.pages);
 
