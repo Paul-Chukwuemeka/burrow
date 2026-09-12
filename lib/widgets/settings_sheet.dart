@@ -265,9 +265,14 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           const SizedBox(height: 8),
           // ── Font size ────────────────────────────────────────────────
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.text_fields, color: theme.muted, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Font size',
+                style: TextStyle(fontSize: 14, color: theme.text),
+              ),
+              const Spacer(),
               IconButton(
                 icon: Icon(Icons.remove_circle_outline,
                     color: theme.accent, size: 20),
@@ -312,10 +317,15 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           ),
           // ── Line height ─────────────────────────────────────────────
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.format_line_spacing,
                   color: theme.muted, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Line height',
+                style: TextStyle(fontSize: 14, color: theme.text),
+              ),
+              const Spacer(),
               IconButton(
                 icon: Icon(Icons.remove_circle_outline,
                     color: theme.accent, size: 20),
@@ -390,9 +400,14 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           ),
           // ── Horizontal margin ─────────────────────────────────────
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.swap_horiz, color: theme.muted, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'Margin',
+                style: TextStyle(fontSize: 14, color: theme.text),
+              ),
+              const Spacer(),
               IconButton(
                 icon: Icon(Icons.remove_circle_outline,
                     color: theme.accent, size: 20),
