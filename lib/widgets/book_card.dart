@@ -43,13 +43,6 @@ class BookCard extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: scheme.scrim.withValues(alpha: 0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
             ),
             child: Material(
               color: scheme.surfaceContainerLow,
@@ -160,13 +153,6 @@ class BookListCard extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: scheme.scrim.withValues(alpha: 0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
             ),
             child: Material(
               color: scheme.surfaceContainerLow,
