@@ -267,25 +267,44 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           Row(
             children: [
               Icon(Icons.text_fields, color: theme.muted, size: 20),
-              Expanded(
-                child: Slider(
-                  value: settings.fontSize,
-                  min: 13,
-                  max: 30,
-                  divisions: 17,
-                  activeColor: theme.accent,
-                  label: settings.fontSize.round().toString(),
-                  onChanged: (v) =>
-                      _preview(() => settings.fontSize = v),
-                  onChangeEnd: (_) => _commit(),
-                ),
+              IconButton(
+                icon: Icon(Icons.remove_circle_outline,
+                    color: theme.accent, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed: settings.fontSize > ReaderSettings.fontSizeRange.$1
+                    ? () {
+                        _preview(() => settings.fontSize =
+                            (settings.fontSize - 1)
+                                .clamp(
+                                  ReaderSettings.fontSizeRange.$1,
+                                  ReaderSettings.fontSizeRange.$2,
+                                ));
+                        _commit();
+                      }
+                    : null,
               ),
-              SizedBox(
-                width: 28,
+              Expanded(
                 child: Text(
                   '${settings.fontSize.round()}',
-                  style: TextStyle(color: theme.muted),
+                  style: TextStyle(color: theme.muted, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
+              ),
+              IconButton(
+                icon: Icon(Icons.add_circle_outline,
+                    color: theme.accent, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed: settings.fontSize < ReaderSettings.fontSizeRange.$2
+                    ? () {
+                        _preview(() => settings.fontSize =
+                            (settings.fontSize + 1)
+                                .clamp(
+                                  ReaderSettings.fontSizeRange.$1,
+                                  ReaderSettings.fontSizeRange.$2,
+                                ));
+                        _commit();
+                      }
+                    : null,
               ),
             ],
           ),

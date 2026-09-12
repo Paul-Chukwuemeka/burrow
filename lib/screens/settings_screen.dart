@@ -154,33 +154,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (v) => _update(() => _s.uiFontFamily = v),
             ),
           ),
-          // Text scale slider.
+          // Text scale stepper.
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.text_increase, color: scheme.onSurfaceVariant),
             title: const Text('Text size'),
             subtitle: Row(
               children: [
-                Expanded(
-                  child: Slider(
-                    value: _s.uiTextScale,
-                    min: ReaderSettings.uiTextScaleRange.$1,
-                    max: ReaderSettings.uiTextScaleRange.$2,
-                    divisions: 7,
-                    label: '${(_s.uiTextScale * 100).round()}%',
-                    onChanged: (v) => _update(() => _s.uiTextScale = v),
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  iconSize: 20,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _s.uiTextScale > ReaderSettings.uiTextScaleRange.$1
+                      ? () => _update(() {
+                            final step =
+                                (ReaderSettings.uiTextScaleRange.$2 -
+                                        ReaderSettings.uiTextScaleRange.$1) /
+                                    7;
+                            _s.uiTextScale = (_s.uiTextScale - step)
+                                .clamp(
+                                  ReaderSettings.uiTextScaleRange.$1,
+                                  ReaderSettings.uiTextScaleRange.$2,
+                                );
+                          })
+                      : null,
                 ),
-                SizedBox(
-                  width: 44,
+                Expanded(
                   child: Text(
                     '${(_s.uiTextScale * 100).round()}%',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
                     ),
-                    textAlign: TextAlign.right,
+                    textAlign: TextAlign.center,
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  iconSize: 20,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _s.uiTextScale < ReaderSettings.uiTextScaleRange.$2
+                      ? () => _update(() {
+                            final step =
+                                (ReaderSettings.uiTextScaleRange.$2 -
+                                        ReaderSettings.uiTextScaleRange.$1) /
+                                    7;
+                            _s.uiTextScale = (_s.uiTextScale + step)
+                                .clamp(
+                                  ReaderSettings.uiTextScaleRange.$1,
+                                  ReaderSettings.uiTextScaleRange.$2,
+                                );
+                          })
+                      : null,
                 ),
               ],
             ),
