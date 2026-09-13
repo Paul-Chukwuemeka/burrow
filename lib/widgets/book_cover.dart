@@ -197,9 +197,12 @@ class _FittedTitle extends StatelessWidget {
           size -= 0.5;
         }
         return ClipRect(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: SizedBox(
+            width: constraints.maxWidth,
+            height: constraints.maxHeight,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -230,6 +233,7 @@ class _FittedTitle extends StatelessWidget {
                   ),
                 ),
             ],
+            ),
           ),
         );
       },
