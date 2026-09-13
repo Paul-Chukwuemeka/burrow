@@ -45,25 +45,29 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   Future<void> _loadBooks() async {
-    final books = await widget.library.getBooksForCollection(widget.collection.id);
+    final books = await widget.library.getBooksForCollection(
+      widget.collection.id,
+    );
     if (!mounted) return;
     setState(() => _books = books);
   }
 
   String _sortLabel(_SortMode m) => switch (m) {
-        _SortMode.manual => 'Manual',
-        _SortMode.title => 'A–Z',
-        _SortMode.recent => 'Recent',
-      };
+    _SortMode.manual => 'Manual',
+    _SortMode.title => 'A–Z',
+    _SortMode.recent => 'Recent',
+  };
 
   void _applySort() {
     switch (_sort) {
       case _SortMode.manual:
         break; // Keep DB order
       case _SortMode.title:
-        _books.sort((a, b) => a.displayTitle
-            .toLowerCase()
-            .compareTo(b.displayTitle.toLowerCase()));
+        _books.sort(
+          (a, b) => a.displayTitle.toLowerCase().compareTo(
+            b.displayTitle.toLowerCase(),
+          ),
+        );
       case _SortMode.recent:
         _books.sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
     }
@@ -132,7 +136,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
                       onPressed: () {
                         Navigator.pop(sheetContext);
                         widget.library.removeBookFromCollection(
-                            widget.collection.id, book.id);
+                          widget.collection.id,
+                          book.id,
+                        );
                         _loadBooks();
                       },
                       child: const Text('Remove'),
@@ -162,16 +168,18 @@ class _CollectionScreenState extends State<CollectionScreen> {
             if (_books.isNotEmpty)
               Text(
                 '${_books.length} book${_books.length == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
           ],
         ),
         actions: [
           if (_sort == _SortMode.manual)
             IconButton(
-              icon: Icon(_reorderMode ? Icons.done_rounded : Icons.reorder_rounded),
+              icon: Icon(
+                _reorderMode ? Icons.done_rounded : Icons.reorder_rounded,
+              ),
               tooltip: _reorderMode ? 'Done' : 'Reorder',
               onPressed: () => setState(() => _reorderMode = !_reorderMode),
             ),
@@ -179,7 +187,8 @@ class _CollectionScreenState extends State<CollectionScreen> {
             label: _sortLabel(_sort),
             icon: Icons.sort_rounded,
             onTap: () => setState(() {
-              _sort = _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
+              _sort =
+                  _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
               if (_sort != _SortMode.manual) _reorderMode = false;
             }),
           ),
@@ -209,10 +218,10 @@ class _CollectionScreenState extends State<CollectionScreen> {
               ),
             )
           : _reorderMode
-              ? _reorderableList(context)
-              : _layout == _LayoutMode.grid
-                  ? _bookGrid(context)
-                  : _bookList(),
+          ? _reorderableList(context)
+          : _layout == _LayoutMode.grid
+          ? _bookGrid(context)
+          : _bookList(),
     );
   }
 
@@ -264,7 +273,10 @@ class _CollectionScreenState extends State<CollectionScreen> {
           child: Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
             child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
               leading: SizedBox(
                 width: 36,
                 height: 54,
@@ -293,4 +305,3 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
   }
 }
-

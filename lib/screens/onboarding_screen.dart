@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../services/library_service.dart';
 import '../services/onboarding_analytics.dart';
 import '../services/onboarding_flow_controller.dart';
-import '../widgets/onboarding/format_picker.dart';
 import '../widgets/onboarding/import_body.dart';
 import '../widgets/onboarding/onboarding_stage.dart';
 import '../widgets/onboarding/scan_status_bar.dart';
@@ -91,10 +90,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ? DateTime.now().difference(_flowStartedAt!).inMilliseconds
         : 0;
     _analytics.onboardingCompleted(totalDurationMs: elapsed);
-    // Persist the chosen formats so post-onboarding scans honour them.
-    if (_ctrl.selectedFormats.isNotEmpty) {
-      _lib.saveSelectedFormats(_ctrl.selectedFormats);
-    }
     widget.onDone(context);
   }
 
@@ -119,7 +114,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPageChanged: (i) {
                   _ctrl.goTo(i);
                   _analytics.pageViewed(i, _pageName(i));
-                  if (i == 4) _ctrl.runPendingScan();
+                  if (i == 3) _ctrl.runPendingScan();
                 },
                 itemCount: _ctrl.pageCount,
                 itemBuilder: (context, i) => _pageBody(context, i),
@@ -140,9 +135,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _pageName(int i) => switch (i) {
     0 => 'welcome',
     1 => 'permission',
-    2 => 'format',
-    3 => 'theme',
-    4 => 'import',
+    2 => 'theme',
+    3 => 'import',
     _ => 'unknown',
   };
 
@@ -205,17 +199,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             i,
             animateEntrance: i == 0,
             showPermissionCheck: i == 1 && _ctrl.permissionGranted,
-            showScanCheck: i == 3 && _ctrl.scanStatus == ScanStatus.done,
+            showScanCheck: i == 2 && _ctrl.scanStatus == ScanStatus.done,
           ),
           const SizedBox(height: 40),
           _headline(context, i),
           const SizedBox(height: 12),
           _body(context, i),
           const SizedBox(height: 28),
-          if (i == 3) _preferences(context),
-          if (i == 4) _importBody(context),
-          if (i == 1) formatChips(context),
-          if (i == 2) _formatSelection(context),
+          if (i == 2) _preferences(context),
+          if (i == 3) _importBody(context),
           const SizedBox(height: 40),
         ],
       ),
@@ -225,9 +217,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _title(int i) => switch (i) {
     0 => 'burrow',
     1 => 'let burrow find your books',
-    2 => 'what formats do you read?',
-    3 => 'make it yours',
-    4 => switch (_ctrl.scanStatus) {
+    2 => 'make it yours',
+    3 => switch (_ctrl.scanStatus) {
       ScanStatus.running => 'settling in…',
       ScanStatus.done =>
         _ctrl.scanPaths.isEmpty
@@ -242,9 +233,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _subtitle(int i) => switch (i) {
     0 => 'a cozy den for all your books.',
     1 => 'we only look for your books — nothing leaves your device.',
-    2 => 'pick the types you want to scan for.',
-    3 => 'what feels like reading?',
-    4 => switch (_ctrl.scanStatus) {
+    2 => 'what feels like reading?',
+    3 => switch (_ctrl.scanStatus) {
       ScanStatus.running => 'scanning your device…',
       ScanStatus.done =>
         '${_ctrl.added} added${_ctrl.failed > 0 ? ' · ${_ctrl.failed} unreadable' : ''}.',
@@ -281,15 +271,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         fontSize: 15,
         height: 1.45,
       ),
-    );
-  }
-
-  Widget _formatSelection(BuildContext context) {
-    return FormatPicker(
-      selectedFormats: _ctrl.selectedFormats,
-      onChanged: (formats) {
-        setState(() => _ctrl.selectedFormats = formats);
-      },
     );
   }
 
@@ -385,25 +366,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         }, variant: CtaVariant.text),
       ],
       2 => [
-        _ctrl.selectedFormats.isEmpty
-            ? buildCta(context, 'Skip for now', () {
-                _ctrl.nextPage();
-                _page.animateToPage(
-                  _ctrl.currentPageIndex,
-                  duration: const Duration(milliseconds: 520),
-                  curve: Easing.emphasizedDecelerate,
-                );
-              }, variant: CtaVariant.text)
-            : buildCta(context, 'Next', () {
-                _ctrl.nextPage();
-                _page.animateToPage(
-                  _ctrl.currentPageIndex,
-                  duration: const Duration(milliseconds: 520),
-                  curve: Easing.emphasizedDecelerate,
-                );
-              }),
-      ],
-      3 => [
         buildCta(context, 'Next', () {
           _ctrl.nextPage();
           _page.animateToPage(
@@ -413,7 +375,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           );
         }),
       ],
-      4 => switch (_ctrl.scanStatus) {
+      3 => switch (_ctrl.scanStatus) {
         ScanStatus.running => [
           buildCta(context, 'Browse library', () {
             _ctrl.handOffScanToLibrary();

@@ -14,8 +14,7 @@ class BookStats {
   final int totalPages;
   final int sessionCount;
 
-  double get avgSessionMs =>
-      sessionCount > 0 ? totalTimeMs / sessionCount : 0;
+  double get avgSessionMs => sessionCount > 0 ? totalTimeMs / sessionCount : 0;
 
   /// Pages per hour (or per session-hour), useful for speed display.
   double get pagesPerHour {

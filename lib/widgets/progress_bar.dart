@@ -34,11 +34,7 @@ class SegmentedProgressBar extends StatelessWidget {
       curve: Easing.emphasizedDecelerate,
       builder: (context, animated, _) => CustomPaint(
         size: Size.fromHeight(height),
-        painter: _ProgressBarPainter(
-          value: animated,
-          track: track,
-          fill: fill,
-        ),
+        painter: _ProgressBarPainter(value: animated, track: track, fill: fill),
       ),
     );
   }

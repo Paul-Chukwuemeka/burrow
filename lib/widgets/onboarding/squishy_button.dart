@@ -16,8 +16,7 @@ class Squishy extends StatefulWidget {
   State<Squishy> createState() => SquishyState();
 }
 
-class SquishyState extends State<Squishy>
-    with SingleTickerProviderStateMixin {
+class SquishyState extends State<Squishy> with SingleTickerProviderStateMixin {
   late final AnimationController _press = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 160),
@@ -64,52 +63,52 @@ Widget buildCta(
 
   final style = switch (variant) {
     CtaVariant.filled => FilledButton.styleFrom(
-        minimumSize: minSize,
-        shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-      ),
+      minimumSize: minSize,
+      shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
+      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    ),
     CtaVariant.outlined => OutlinedButton.styleFrom(
-        minimumSize: const Size(260, 50),
-        shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
-        foregroundColor: scheme.onSurfaceVariant,
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-      ),
+      minimumSize: const Size(260, 50),
+      shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
+      foregroundColor: scheme.onSurfaceVariant,
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+    ),
     CtaVariant.text => TextButton.styleFrom(
-        minimumSize: const Size(260, 44),
-        foregroundColor: scheme.onSurfaceVariant,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-      ),
+      minimumSize: const Size(260, 44),
+      foregroundColor: scheme.onSurfaceVariant,
+      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    ),
     CtaVariant.disabled => FilledButton.styleFrom(
-        minimumSize: minSize,
-        shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
-        disabledBackgroundColor: scheme.surfaceContainerHighest,
-        disabledForegroundColor: scheme.onSurfaceVariant,
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-      ),
+      minimumSize: minSize,
+      shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
+      disabledBackgroundColor: scheme.surfaceContainerHighest,
+      disabledForegroundColor: scheme.onSurfaceVariant,
+      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    ),
   };
 
   final button = switch (variant) {
     CtaVariant.filled => FilledButton(
-        onPressed: onTap,
-        style: style,
-        child: Text(label),
-      ),
+      onPressed: onTap,
+      style: style,
+      child: Text(label),
+    ),
     CtaVariant.outlined => OutlinedButton(
-        onPressed: onTap,
-        style: style,
-        child: Text(label),
-      ),
+      onPressed: onTap,
+      style: style,
+      child: Text(label),
+    ),
     CtaVariant.text => TextButton(
-        onPressed: onTap,
-        style: style,
-        child: Text(label),
-      ),
+      onPressed: onTap,
+      style: style,
+      child: Text(label),
+    ),
     CtaVariant.disabled => FilledButton(
-        onPressed: null,
-        style: style,
-        child: Text(label),
-      ),
+      onPressed: null,
+      style: style,
+      child: Text(label),
+    ),
   };
 
   if (variant == CtaVariant.filled || variant == CtaVariant.disabled) {

@@ -38,7 +38,7 @@ class OnboardingFlowController extends ChangeNotifier {
   final PickFilesFn? pickFile;
 
   int _currentPageIndex = 0;
-  static const int _pageCount = 5;
+  static const int _pageCount = 4;
 
   // Scan state
   ScanStatus scanStatus = ScanStatus.none;
@@ -51,8 +51,6 @@ class OnboardingFlowController extends ChangeNotifier {
   int scanProgress = 0;
   int scanTotal = 0;
 
-  Set<String> selectedFormats = Set.from(ScanService.defaultExtensions);
-
   // ---- Derived -----------------------------------------------------------
 
   int get pageCount => _pageCount;
@@ -61,8 +59,7 @@ class OnboardingFlowController extends ChangeNotifier {
   bool get isLastPage => _currentPageIndex == _pageCount - 1;
   bool get isScanRunning => scanStatus == ScanStatus.running;
 
-  Set<String> get _knownPaths =>
-      library.books.map((b) => b.path).toSet();
+  Set<String> get _knownPaths => library.books.map((b) => b.path).toSet();
 
   // ---- Navigation --------------------------------------------------------
 
@@ -82,13 +79,12 @@ class OnboardingFlowController extends ChangeNotifier {
   // ---- Permission / scan -------------------------------------------------
 
   Future<void> grantAndProceed() async {
-    final granted =
-        await (requestPermission ?? ScanService.ensurePermission)();
+    final granted = await (requestPermission ?? ScanService.ensurePermission)();
     permissionGranted = granted;
     permissionDenied = !granted;
     if (granted) _pendingScanKind = _ScanKind.device;
     notifyListeners();
-    goTo(2); // advance to format selection
+    goTo(2); // advance to theme
   }
 
   Future<void> startFolderScan() async {
@@ -101,11 +97,7 @@ class OnboardingFlowController extends ChangeNotifier {
           () async {
             final dir = await FilePicker.getDirectoryPath();
             if (dir == null) return const <String>[];
-            return ScanService.scanFolder(
-              dir,
-              knownPaths: _knownPaths,
-              extensions: selectedFormats,
-            );
+            return ScanService.scanFolder(dir, knownPaths: _knownPaths);
           },
     );
   }
@@ -117,11 +109,7 @@ class OnboardingFlowController extends ChangeNotifier {
         return;
       case _ScanKind.device:
         await _startScan(
-          scanDevice ??
-              () => ScanService.scanDevice(
-                    knownPaths: _knownPaths,
-                    extensions: selectedFormats,
-                  ),
+          scanDevice ?? () => ScanService.scanDevice(knownPaths: _knownPaths),
         );
       case _ScanKind.folder:
         await _startScan(
@@ -129,28 +117,27 @@ class OnboardingFlowController extends ChangeNotifier {
               () async {
                 final dir = await FilePicker.getDirectoryPath();
                 if (dir == null) return const <String>[];
-                return ScanService.scanFolder(
-                  dir,
-                  knownPaths: _knownPaths,
-                  extensions: selectedFormats,
-                );
+                return ScanService.scanFolder(dir, knownPaths: _knownPaths);
               },
         );
     }
   }
 
   Future<void> pickAndImport() async {
-    final paths = await (pickFile ??
-        () async {
-          final files = await FilePicker.pickFiles(
-            type: FileType.custom,
-            allowedExtensions: const ['epub', 'txt', 'pdf'],
-          );
-          return files.map((f) => f.path).whereType<String>().toList();
-        })();
+    final paths =
+        await (pickFile ??
+            () async {
+              final files = await FilePicker.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: const ['epub', 'txt', 'pdf'],
+              );
+              return files.map((f) => f.path).whereType<String>().toList();
+            })();
     if (paths.isEmpty) return;
-    final (addedResult, failedResult) =
-        await BookImporter.importPaths(library, paths);
+    final (addedResult, failedResult) = await BookImporter.importPaths(
+      library,
+      paths,
+    );
     scanStatus = ScanStatus.done;
     scanPaths = paths;
     added = addedResult.length;
@@ -203,22 +190,14 @@ class OnboardingFlowController extends ChangeNotifier {
   void handOffScanToLibrary() {
     if (_pendingScanKind == _ScanKind.none) return;
     final scan = _pendingScanKind == _ScanKind.device
-        ? (scanDevice ??
-              () => ScanService.scanDevice(
-                    knownPaths: _knownPaths,
-                    extensions: selectedFormats,
-                  ))
+        ? (scanDevice ?? () => ScanService.scanDevice(knownPaths: _knownPaths))
         : (scanFolder ??
               () async {
                 final dir = await FilePicker.getDirectoryPath();
                 if (dir == null) return const <String>[];
-                return ScanService.scanFolder(
-                  dir,
-                  knownPaths: _knownPaths,
-                  extensions: selectedFormats,
-                );
+                return ScanService.scanFolder(dir, knownPaths: _knownPaths);
               });
     _pendingScanKind = _ScanKind.none;
-    library.startBackgroundScan(scan(), extensions: selectedFormats);
+    library.startBackgroundScan(scan());
   }
 }

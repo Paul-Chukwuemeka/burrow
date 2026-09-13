@@ -51,10 +51,7 @@ class BookCover extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
-                colors: [
-                  Color(0x59000000),
-                  Color(0x00000000),
-                ],
+                colors: [Color(0x59000000), Color(0x00000000)],
                 stops: [0, 0.14],
               ),
             ),
@@ -116,8 +113,7 @@ class _PlaceholderCover extends StatelessWidget {
     final hue = band[0] + (band[1] - band[0]) * t;
 
     // Deep enough that white ink clears WCAG AA (4.5:1) at all sizes.
-    final base =
-        HSLColor.fromAHSL(1, hue, 0.44, 0.34).toColor();
+    final base = HSLColor.fromAHSL(1, hue, 0.44, 0.34).toColor();
     final deep = HSLColor.fromAHSL(1, hue, 0.50, 0.20).toColor();
     final lift = HSLColor.fromAHSL(1, hue, 0.38, 0.44).toColor();
 
@@ -193,47 +189,49 @@ class _FittedTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      var size = _maxFontSize;
-      // Shrink until the wrapped title fits three lines within the box.
-      while (size > _minFontSize && !_fits(size, constraints)) {
-        size -= 0.5;
-      }
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: size,
-              fontWeight: FontWeight.w700,
-              height: 1.22,
-              letterSpacing: 0.1,
-            ),
-          ),
-          if (author.isNotEmpty && constraints.maxHeight > 40)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                author,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  fontSize: size * 0.58,
-                  fontWeight: FontWeight.w500,
-                  height: 1,
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var size = _maxFontSize;
+        // Shrink until the wrapped title fits three lines within the box.
+        while (size > _minFontSize && !_fits(size, constraints)) {
+          size -= 0.5;
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: size,
+                fontWeight: FontWeight.w700,
+                height: 1.22,
+                letterSpacing: 0.1,
               ),
             ),
-        ],
-      );
-    });
+            if (author.isNotEmpty && constraints.maxHeight > 40)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  author,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    fontSize: size * 0.58,
+                    fontWeight: FontWeight.w500,
+                    height: 1,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   bool _fits(double fontSize, BoxConstraints constraints) {
@@ -265,7 +263,11 @@ class _PlaceholderTexture extends CustomPainter {
       ..strokeWidth = 1;
     const step = 6.0;
     for (var x = -size.height; x < size.width + size.height; x += step) {
-      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), hatch);
+      canvas.drawLine(
+        Offset(x, size.height),
+        Offset(x + size.height, 0),
+        hatch,
+      );
     }
 
     canvas.drawRect(
@@ -274,10 +276,7 @@ class _PlaceholderTexture extends CustomPainter {
         ..shader = RadialGradient(
           center: Alignment.topLeft,
           radius: 1.4,
-          colors: [
-            Colors.white.withValues(alpha: 0.10),
-            Colors.transparent,
-          ],
+          colors: [Colors.white.withValues(alpha: 0.10), Colors.transparent],
         ).createShader(Offset.zero & size),
     );
 
@@ -288,10 +287,7 @@ class _PlaceholderTexture extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           stops: const [0.55, 1],
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.22),
-          ],
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.22)],
         ).createShader(Offset.zero & size),
     );
 

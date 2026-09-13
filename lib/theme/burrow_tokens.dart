@@ -45,32 +45,31 @@ abstract final class Burrow {
   static (Color bg, Color fg) formatTonal(
     ColorScheme scheme,
     BookFormat format,
-  ) =>
-      switch (format) {
-        BookFormat.epub => (scheme.primaryContainer, scheme.onPrimaryContainer),
-        BookFormat.txt => (
-            scheme.brightness == Brightness.light
-                ? const Color(0xFFFFE3BC)
-                : const Color(0xFF503B14),
-            scheme.brightness == Brightness.light
-                ? const Color(0xFF5A421A)
-                : const Color(0xFFFFDDA4),
-          ),
-        BookFormat.pdf => (
-            scheme.brightness == Brightness.light
-                ? const Color(0xFFFFDACF)
-                : const Color(0xFF5A2117),
-            scheme.brightness == Brightness.light
-                ? const Color(0xFF66241A)
-                : const Color(0xFFFFB5A1),
-          ),
-        BookFormat.cbz || BookFormat.cbr => (
-            scheme.brightness == Brightness.light
-                ? const Color(0xFFE8D5F5)
-                : const Color(0xFF3B1F54),
-            scheme.brightness == Brightness.light
-                ? const Color(0xFF5A2D82)
-                : const Color(0xFFD4B8F0),
-          ),
-      };
+  ) => switch (format) {
+    BookFormat.epub => (scheme.primaryContainer, scheme.onPrimaryContainer),
+    BookFormat.txt => (
+      scheme.brightness == Brightness.light
+          ? const Color(0xFFFFE3BC)
+          : const Color(0xFF503B14),
+      scheme.brightness == Brightness.light
+          ? const Color(0xFF5A421A)
+          : const Color(0xFFFFDDA4),
+    ),
+    BookFormat.pdf => (
+      scheme.brightness == Brightness.light
+          ? const Color(0xFFFFDACF)
+          : const Color(0xFF5A2117),
+      scheme.brightness == Brightness.light
+          ? const Color(0xFF66241A)
+          : const Color(0xFFFFB5A1),
+    ),
+    BookFormat.cbz || BookFormat.cbr => (
+      scheme.brightness == Brightness.light
+          ? const Color(0xFFE8D5F5)
+          : const Color(0xFF3B1F54),
+      scheme.brightness == Brightness.light
+          ? const Color(0xFF5A2D82)
+          : const Color(0xFFD4B8F0),
+    ),
+  };
 }

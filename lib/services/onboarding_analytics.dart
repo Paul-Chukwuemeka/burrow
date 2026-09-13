@@ -26,11 +26,10 @@ class OnboardingAnalytics extends ChangeNotifier {
 
   void onboardingStarted() => _record('onboarding_started');
 
-  void pageViewed(int pageIndex, String pageName) =>
-      _record('onboarding_page_viewed', {
-        'page_index': pageIndex,
-        'page_name': pageName,
-      });
+  void pageViewed(int pageIndex, String pageName) => _record(
+    'onboarding_page_viewed',
+    {'page_index': pageIndex, 'page_name': pageName},
+  );
 
   void skippedFrom(int pageIndex) =>
       _record('onboarding_skipped', {'from_page': pageIndex});
@@ -40,10 +39,7 @@ class OnboardingAnalytics extends ChangeNotifier {
   void permissionDenied() => _record('permission_denied');
 
   void formatSelected(String format, bool selected) =>
-      _record('format_selected', {
-        'format': format,
-        'selected': selected,
-      });
+      _record('format_selected', {'format': format, 'selected': selected});
 
   void themeSelected(String theme) =>
       _record('theme_selected', {'theme': theme});
@@ -55,17 +51,14 @@ class OnboardingAnalytics extends ChangeNotifier {
     required int booksFound,
     required int booksImported,
     required int durationMs,
-  }) =>
-      _record('onboarding_scan_completed', {
-        'books_found': booksFound,
-        'books_imported': booksImported,
-        'duration_ms': durationMs,
-      });
+  }) => _record('onboarding_scan_completed', {
+    'books_found': booksFound,
+    'books_imported': booksImported,
+    'duration_ms': durationMs,
+  });
 
   void onboardingCompleted({required int totalDurationMs}) =>
-      _record('onboarding_completed', {
-        'total_duration_ms': totalDurationMs,
-      });
+      _record('onboarding_completed', {'total_duration_ms': totalDurationMs});
 }
 
 class AnalyticsEvent {

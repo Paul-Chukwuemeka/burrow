@@ -62,21 +62,18 @@ class ChapterPaginationDriver {
     List<ImageRun> images = const [],
     ReaderSettings? settings,
     ReaderTheme? theme,
-  })  : _text = text,
-        _runs = runs,
-        _images = images,
-        _settings = settings,
-        _theme = theme,
-        _maxHeight = maxHeight,
-        _firstBudget = maxHeight - firstPageInset - _slack,
-        _restBudget = maxHeight - _slack,
-        _minBudget = textScaler.scale(style.fontSize ?? 16) * 1.4,
-        _tp = TextPainter(
-          textDirection: direction,
-          textScaler: textScaler,
-        ),
-        _style = style,
-        _maxWidth = maxWidth;
+  }) : _text = text,
+       _runs = runs,
+       _images = images,
+       _settings = settings,
+       _theme = theme,
+       _maxHeight = maxHeight,
+       _firstBudget = maxHeight - firstPageInset - _slack,
+       _restBudget = maxHeight - _slack,
+       _minBudget = textScaler.scale(style.fontSize ?? 16) * 1.4,
+       _tp = TextPainter(textDirection: direction, textScaler: textScaler),
+       _style = style,
+       _maxWidth = maxWidth;
 
   static const double _slack = 6.0;
 
@@ -135,8 +132,7 @@ class ChapterPaginationDriver {
   }) {
     final stopwatch = Stopwatch()..start();
     final added = <TextPage>[];
-    while (!_done &&
-        (added.length < minPages || stopwatch.elapsed < budget)) {
+    while (!_done && (added.length < minPages || stopwatch.elapsed < budget)) {
       final page = _buildNextPage();
       if (page == null) break;
       _pages.add(page);
@@ -261,11 +257,13 @@ class ChapterPaginationDriver {
     for (var i = 0; i < metrics.length; i++) {
       final localStart = starts[i];
       final localEnd = i + 1 < starts.length ? starts[i + 1] : length;
-      lines.add(_Line(
-        start + localStart,
-        start + math.max(localEnd, localStart),
-        metrics[i].height,
-      ));
+      lines.add(
+        _Line(
+          start + localStart,
+          start + math.max(localEnd, localStart),
+          metrics[i].height,
+        ),
+      );
     }
     return lines;
   }
@@ -295,17 +293,22 @@ class ChapterPaginationDriver {
       while (true) {
         final idx = text.indexOf('\uFFFC', cursor);
         if (idx == -1) {
-          children.add(TextSpan(text: text.substring(cursor), style: span.style));
+          children.add(
+            TextSpan(text: text.substring(cursor), style: span.style),
+          );
           break;
         }
         if (idx > cursor) {
           children.add(
-              TextSpan(text: text.substring(cursor, idx), style: span.style));
+            TextSpan(text: text.substring(cursor, idx), style: span.style),
+          );
         }
-        children.add(const WidgetSpan(
-          child: SizedBox.shrink(),
-          alignment: PlaceholderAlignment.middle,
-        ));
+        children.add(
+          const WidgetSpan(
+            child: SizedBox.shrink(),
+            alignment: PlaceholderAlignment.middle,
+          ),
+        );
         cursor = idx + 1;
       }
     }
@@ -321,10 +324,12 @@ class ChapterPaginationDriver {
       if (img.offset < start) continue;
       if (img.offset >= end) break;
       final size = img.renderedSize(_maxWidth, maxHeight: _maxHeight);
-      dims.add(PlaceholderDimensions(
-        size: Size(size.width, size.height + 2 * ImageRun.verticalPadding),
-        alignment: PlaceholderAlignment.middle,
-      ));
+      dims.add(
+        PlaceholderDimensions(
+          size: Size(size.width, size.height + 2 * ImageRun.verticalPadding),
+          alignment: PlaceholderAlignment.middle,
+        ),
+      );
     }
     return dims;
   }

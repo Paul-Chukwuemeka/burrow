@@ -10,9 +10,9 @@ class BrightnessController {
     Future<double> Function()? getCurrent,
     Future<void> Function(double)? setBrightness,
     Future<void> Function()? resetBrightness,
-  })  : _getCurrent = getCurrent ?? _defaultGet,
-        _setBrightness = setBrightness ?? _defaultSet,
-        _resetBrightness = resetBrightness ?? _defaultReset;
+  }) : _getCurrent = getCurrent ?? _defaultGet,
+       _setBrightness = setBrightness ?? _defaultSet,
+       _resetBrightness = resetBrightness ?? _defaultReset;
 
   final Future<double> Function() _getCurrent;
   final Future<void> Function(double) _setBrightness;

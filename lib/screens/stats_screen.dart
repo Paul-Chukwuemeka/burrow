@@ -93,9 +93,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final scheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reading Stats'),
-      ),
+      appBar: AppBar(title: const Text('Reading Stats')),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
           : _buildContent(theme, scheme),
@@ -110,8 +108,7 @@ class _StatsScreenState extends State<StatsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.bar_chart_rounded,
-                  size: 56, color: scheme.primary),
+              Icon(Icons.bar_chart_rounded, size: 56, color: scheme.primary),
               const SizedBox(height: 16),
               Text(
                 'No reading data yet',
@@ -173,10 +170,12 @@ class _StatsScreenState extends State<StatsScreen> {
           const SizedBox(height: 24),
           _SectionHeader('Per-book stats'),
           const SizedBox(height: 12),
-          ..._perBookStats.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _PerBookStatsTile(stats: s, scheme: scheme),
-              )),
+          ..._perBookStats.map(
+            (s) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _PerBookStatsTile(stats: s, scheme: scheme),
+            ),
+          ),
         ],
       ],
     );
@@ -293,9 +292,9 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       label,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
+        color: scheme.onSurfaceVariant,
+        fontWeight: FontWeight.w600,
+      ),
     );
   }
 }
@@ -320,8 +319,11 @@ class _StreakCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.local_fire_department_outlined,
-              size: 40, color: scheme.onPrimaryContainer),
+          Icon(
+            Icons.local_fire_department_outlined,
+            size: 40,
+            color: scheme.onPrimaryContainer,
+          ),
           const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,18 +394,12 @@ class _StatTile extends StatelessWidget {
           if (secondary != null)
             Text(
               secondary!,
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -528,7 +524,9 @@ class _MonthlyChart extends StatelessWidget {
     final recent = sorted.take(6).toList();
     if (recent.isEmpty) return const SizedBox.shrink();
 
-    final maxTime = recent.map((e) => e.value).fold<int>(0, (a, b) => a > b ? a : b);
+    final maxTime = recent
+        .map((e) => e.value)
+        .fold<int>(0, (a, b) => a > b ? a : b);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -602,8 +600,20 @@ class _MonthlyChart extends StatelessWidget {
   }
 
   String _monthLabel(int month) {
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const names = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return names[month - 1];
   }
 
@@ -645,10 +655,7 @@ class _HourlyHeatmap extends StatelessWidget {
                 child: Text(
                   showLabel ? '$i' : '',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 8,
-                    color: scheme.onSurfaceVariant,
-                  ),
+                  style: TextStyle(fontSize: 8, color: scheme.onSurfaceVariant),
                 ),
               );
             }),
@@ -744,7 +751,9 @@ class _PerBookStatsTile extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 4,
-                    backgroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.15),
+                    backgroundColor: scheme.onSurfaceVariant.withValues(
+                      alpha: 0.15,
+                    ),
                     color: scheme.primary,
                   ),
                 ),

@@ -70,7 +70,8 @@ class _ReaderChromeState extends State<ReaderChrome> {
     super.dispose();
   }
 
-  bool get _showToc => widget.book.format != BookFormat.cbz &&
+  bool get _showToc =>
+      widget.book.format != BookFormat.cbz &&
       widget.book.format != BookFormat.cbr;
   bool get _showSearch => _showToc;
   bool get _showBookmark => _showToc;
@@ -154,7 +155,8 @@ class _ReaderChromeState extends State<ReaderChrome> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isComic && widget.comicPreviewVisible &&
+                if (_isComic &&
+                    widget.comicPreviewVisible &&
                     widget.comicPreviewStrip != null) ...[
                   widget.comicPreviewStrip!,
                   const SizedBox(height: 8),

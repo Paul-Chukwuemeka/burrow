@@ -230,10 +230,7 @@ class _DictionaryContentState extends State<_DictionaryContent> {
                                 ),
                                 child: Text(
                                   syn,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: accent,
-                                  ),
+                                  style: TextStyle(fontSize: 12, color: accent),
                                 ),
                               ),
                           ],

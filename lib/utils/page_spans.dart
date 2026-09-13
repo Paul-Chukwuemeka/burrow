@@ -30,7 +30,10 @@ List<InlineSpan> buildPageSpans({
   ({int start, int end})? selectedRange,
 }) {
   final slice = text.substring(start, end);
-  if (runs.isEmpty && matches.isEmpty && images.isEmpty && selectedRange == null) {
+  if (runs.isEmpty &&
+      matches.isEmpty &&
+      images.isEmpty &&
+      selectedRange == null) {
     return [TextSpan(text: slice, style: base)];
   }
 
@@ -93,8 +96,7 @@ List<InlineSpan> buildPageSpans({
         // Decode at display resolution (physical pixels) instead of the
         // source's full size, which can be many times larger.
         cacheWidth: (size.width * devicePixelRatio).round().clamp(1, 1 << 14),
-        cacheHeight:
-            (size.height * devicePixelRatio).round().clamp(1, 1 << 14),
+        cacheHeight: (size.height * devicePixelRatio).round().clamp(1, 1 << 14),
         fit: BoxFit.contain,
         errorBuilder: (_, _, _) => Container(
           width: size.width,
@@ -103,8 +105,11 @@ List<InlineSpan> buildPageSpans({
             color: theme.muted.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Icon(Icons.broken_image_outlined,
-              color: theme.muted, size: 24),
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: theme.muted,
+            size: 24,
+          ),
         ),
       );
       if (img.onTap != null) {
@@ -114,14 +119,17 @@ List<InlineSpan> buildPageSpans({
           child: imageWidget,
         );
       }
-      children.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-              vertical: ImageRun.verticalPadding),
-          child: Center(child: imageWidget),
+      children.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: ImageRun.verticalPadding,
+            ),
+            child: Center(child: imageWidget),
+          ),
         ),
-      ));
+      );
       continue;
     }
 
@@ -137,9 +145,10 @@ List<InlineSpan> buildPageSpans({
 
     final run =
         runIdx < sortedRuns.length && sortedRuns[runIdx].start <= segStart
-            ? sortedRuns[runIdx]
-            : null;
-    final match = matchIdx < sortedMatches.length &&
+        ? sortedRuns[runIdx]
+        : null;
+    final match =
+        matchIdx < sortedMatches.length &&
             sortedMatches[matchIdx].offset <= segStart
         ? sortedMatches[matchIdx]
         : null;
@@ -153,8 +162,9 @@ List<InlineSpan> buildPageSpans({
     if (match != null) {
       final isCurrent = match == currentMatch;
       segStyle = segStyle.copyWith(
-        backgroundColor:
-            theme.accent.withValues(alpha: isCurrent ? 0.35 : 0.15),
+        backgroundColor: theme.accent.withValues(
+          alpha: isCurrent ? 0.35 : 0.15,
+        ),
         color: isCurrent ? theme.accent : null,
         fontWeight: isCurrent ? FontWeight.w700 : null,
       );
@@ -172,10 +182,7 @@ List<InlineSpan> buildPageSpans({
     // Skip if this is just the \uFFFC placeholder text (shouldn't reach here
     // normally, but guard against it).
     if (!textContent.contains('\uFFFC')) {
-      children.add(TextSpan(
-        text: textContent,
-        style: segStyle,
-      ));
+      children.add(TextSpan(text: textContent, style: segStyle));
     }
   }
 

@@ -16,10 +16,7 @@ import '../models/css_style.dart';
 /// 2. Inline `<style>` blocks in XHTML
 /// 3. Inline `style=""` attributes on elements
 class EpubCssParser {
-  EpubCssParser._({
-    required this.chapterStyles,
-    required this.fontFaces,
-  });
+  EpubCssParser._({required this.chapterStyles, required this.fontFaces});
 
   /// Per-chapter CSS rules. Keyed by chapter path.
   final Map<String, List<ResolvedCssRule>> chapterStyles;
@@ -97,10 +94,7 @@ class EpubCssParser {
       allRules[chapterPath] = rules;
     }
 
-    return EpubCssParser._(
-      chapterStyles: allRules,
-      fontFaces: fontFaces,
-    );
+    return EpubCssParser._(chapterStyles: allRules, fontFaces: fontFaces);
   }
 
   static List<ResolvedCssRule> _resolveRules(
@@ -120,17 +114,21 @@ class EpubCssParser {
           if (selectorText.isEmpty) continue;
           if (selectorText.startsWith('@')) continue;
 
-          final properties = _extractProperties(rule.declarationGroup.declarations);
+          final properties = _extractProperties(
+            rule.declarationGroup.declarations,
+          );
           if (properties.isEmpty) continue;
 
           final matchedElements = cas.queryAll(doc, selectorText);
 
           for (final element in matchedElements) {
-            rules.add(ResolvedCssRule(
-              selector: selectorText,
-              properties: properties,
-              element: element,
-            ));
+            rules.add(
+              ResolvedCssRule(
+                selector: selectorText,
+                properties: properties,
+                element: element,
+              ),
+            );
           }
         }
       }
@@ -146,7 +144,9 @@ class EpubCssParser {
   ) {
     final ffPattern = RegExp(r'@font-face\s*\{([^}]+)\}', dotAll: true);
     final familyPattern = RegExp(r'font-family\s*:\s*([^;]+)');
-    final srcPattern = RegExp(r'url\(\s*["\u2018\u2019]?([^"\u2018\u2019\)]+)["\u2018\u2019]?\s*\)');
+    final srcPattern = RegExp(
+      r'url\(\s*["\u2018\u2019]?([^"\u2018\u2019\)]+)["\u2018\u2019]?\s*\)',
+    );
 
     for (final match in ffPattern.allMatches(cssText)) {
       final block = match.group(1)!;
@@ -154,7 +154,10 @@ class EpubCssParser {
       final srcMatch = srcPattern.firstMatch(block);
 
       if (familyMatch != null && srcMatch != null) {
-        final family = familyMatch.group(1)!.replaceAll(RegExp(r"['\u201C\u201D]"), '').trim();
+        final family = familyMatch
+            .group(1)!
+            .replaceAll(RegExp(r"['\u201C\u201D]"), '')
+            .trim();
         var src = srcMatch.group(1)!;
         if (family.isNotEmpty && src.isNotEmpty) {
           // Resolve relative paths against archive root.
@@ -165,7 +168,11 @@ class EpubCssParser {
           try {
             bytes = readEntry(src);
           } catch (_) {}
-          fontFaces[family] = FontFaceInfo(family: family, src: src, bytes: bytes);
+          fontFaces[family] = FontFaceInfo(
+            family: family,
+            src: src,
+            bytes: bytes,
+          );
         }
       }
     }
@@ -183,11 +190,13 @@ class EpubCssParser {
       final properties = _parseInlineStyle(styleAttr);
       if (properties.isEmpty) continue;
 
-      rules.add(ResolvedCssRule(
-        selector: '[inline]',
-        properties: properties,
-        element: element,
-      ));
+      rules.add(
+        ResolvedCssRule(
+          selector: '[inline]',
+          properties: properties,
+          element: element,
+        ),
+      );
     }
   }
 
@@ -247,7 +256,9 @@ class EpubCssParser {
       fontWeight: _parseFontWeight(props['font-weight']),
       fontStyle: _parseFontStyle(props['font-style']),
       textDecoration: _parseTextDecoration(props['text-decoration']),
-      fontFamily: props['font-family']?.replaceAll(RegExp(r"['\u201C\u201D]"), '').trim(),
+      fontFamily: props['font-family']
+          ?.replaceAll(RegExp(r"['\u201C\u201D]"), '')
+          .trim(),
       lineHeight: _parseLineHeight(props['line-height']),
       letterSpacing: _parseLength(props['letter-spacing']),
       wordSpacing: _parseLength(props['word-spacing']),
@@ -331,7 +342,10 @@ class EpubCssParser {
 
     if (namedColors.containsKey(v)) return namedColors[v];
 
-    final hexMatch = RegExp(r'^#([0-9a-f]{3,8})$', caseSensitive: false).firstMatch(v);
+    final hexMatch = RegExp(
+      r'^#([0-9a-f]{3,8})$',
+      caseSensitive: false,
+    ).firstMatch(v);
     if (hexMatch != null) {
       final hex = hexMatch.group(1)!;
       if (hex.length == 3) {
@@ -353,7 +367,9 @@ class EpubCssParser {
       }
     }
 
-    final rgbMatch = RegExp(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)').firstMatch(v);
+    final rgbMatch = RegExp(
+      r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)',
+    ).firstMatch(v);
     if (rgbMatch != null) {
       final r = int.parse(rgbMatch.group(1)!);
       final g = int.parse(rgbMatch.group(2)!);

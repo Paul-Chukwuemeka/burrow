@@ -54,9 +54,7 @@ void main() {
     });
 
     test('current reads brightness via getter', () async {
-      final ctrl = BrightnessController(
-        getCurrent: () async => 0.45,
-      );
+      final ctrl = BrightnessController(getCurrent: () async => 0.45);
       expect(await ctrl.current(), 0.45);
     });
 

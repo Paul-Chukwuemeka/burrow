@@ -41,13 +41,13 @@ LibraryService _library() => LibraryService()..debugAddAll(const []);
 class _StubLibrary extends LibraryService {
   @override
   Future<Book?> importFile(String path) async => Book(
-        id: 'stub-${path.hashCode}',
-        title: 'Stub',
-        author: 'Author',
-        path: path,
-        format: BookFormat.epub,
-        addedAt: 0,
-      );
+    id: 'stub-${path.hashCode}',
+    title: 'Stub',
+    author: 'Author',
+    path: path,
+    format: BookFormat.epub,
+    addedAt: 0,
+  );
 }
 
 void main() {
@@ -56,8 +56,7 @@ void main() {
   });
 
   group('OnboardingScreen', () {
-    testWidgets('welcome page shows wordmark and primary CTA',
-        (tester) async {
+    testWidgets('welcome page shows wordmark and primary CTA', (tester) async {
       await _pumpOnboarding(tester, _library());
 
       expect(find.text('Tuck in'), findsOneWidget);
@@ -77,8 +76,9 @@ void main() {
       expect(find.text('Find my books'), findsOneWidget);
     });
 
-    testWidgets('Skip on welcome lands on the import empty state',
-        (tester) async {
+    testWidgets('Skip on welcome lands on the import empty state', (
+      tester,
+    ) async {
       await _pumpOnboarding(tester, _library());
 
       await tester.tap(find.text('Skip'));
@@ -88,8 +88,9 @@ void main() {
       expect(find.text('Add your first book'), findsOneWidget);
     });
 
-    testWidgets('theme and typeface selections seed reader settings',
-        (tester) async {
+    testWidgets('theme and typeface selections seed reader settings', (
+      tester,
+    ) async {
       final library = _library();
       await _pumpOnboarding(tester, library);
 
@@ -97,11 +98,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
-      // Format selection page.
-      expect(find.text('what formats do you read?'), findsOneWidget);
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-
+      // Theme preferences page.
       expect(find.text('make it yours'), findsOneWidget);
 
       // App theme cards are on the preferences page.
@@ -111,41 +108,38 @@ void main() {
       expect(library.settings.appThemeMode, AppThemeMode.oled);
     });
 
-    testWidgets('granted permission defers the device scan to the import page',
-        (tester) async {
-      var scanned = false;
-      final library = _library();
-      await _pumpOnboarding(
-        tester,
-        library,
-        scanDevice: () async {
-          scanned = true;
-          return <String>[];
-        },
-      );
+    testWidgets(
+      'granted permission defers the device scan to the import page',
+      (tester) async {
+        var scanned = false;
+        final library = _library();
+        await _pumpOnboarding(
+          tester,
+          library,
+          scanDevice: () async {
+            scanned = true;
+            return <String>[];
+          },
+        );
 
-      await tester.tap(find.text('Tuck in'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Find my books'));
-      await tester.pumpAndSettle();
-      // Format selection page — scan not yet run.
-      expect(find.text('what formats do you read?'), findsOneWidget);
-      expect(scanned, isFalse);
+        await tester.tap(find.text('Tuck in'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Find my books'));
+        await tester.pumpAndSettle();
+        // Theme preferences page — scan not yet run.
+        expect(find.text('make it yours'), findsOneWidget);
+        expect(scanned, isFalse);
 
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      // Preferences page.
-      expect(find.text('make it yours'), findsOneWidget);
-      expect(scanned, isFalse);
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+        expect(scanned, isTrue);
+        expect(find.text('no new books found'), findsOneWidget);
+      },
+    );
 
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      expect(scanned, isTrue);
-      expect(find.text('no new books found'), findsOneWidget);
-    });
-
-    testWidgets('full happy path runs the scan and reaches the ready screen',
-        (tester) async {
+    testWidgets('full happy path runs the scan and reaches the ready screen', (
+      tester,
+    ) async {
       var done = false;
       final library = _StubLibrary();
       await _pumpOnboarding(
@@ -159,9 +153,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
-      // Format selection page.
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
       // Theme preferences page.
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
@@ -173,23 +164,17 @@ void main() {
       expect(done, isTrue);
     });
 
-    testWidgets('denied permission keeps the import screen in empty state',
-        (tester) async {
+    testWidgets('denied permission keeps the import screen in empty state', (
+      tester,
+    ) async {
       final library = _library();
-      await _pumpOnboarding(
-        tester,
-        library,
-        permission: () async => false,
-      );
+      await _pumpOnboarding(tester, library, permission: () async => false);
 
       await tester.tap(find.text('Tuck in'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Find my books'));
       await tester.pumpAndSettle();
-      // Format selection page.
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      // Preferences page.
+      // Theme preferences page.
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
 
@@ -208,8 +193,9 @@ void main() {
       expect(find.text('a cozy den for all your books.'), findsOneWidget);
     });
 
-    testWidgets('choosing a folder scans immediately and skips preferences',
-        (tester) async {
+    testWidgets('choosing a folder scans immediately and skips preferences', (
+      tester,
+    ) async {
       final library = _StubLibrary();
       await _pumpOnboarding(
         tester,
@@ -227,8 +213,9 @@ void main() {
   });
 
   group('First-launch gate', () {
-    testWidgets('BurrowApp shows onboarding when the flow is not complete',
-        (tester) async {
+    testWidgets('BurrowApp shows onboarding when the flow is not complete', (
+      tester,
+    ) async {
       final library = _library();
       await tester.pumpWidget(BurrowApp(library: library));
       await tester.pumpAndSettle();
@@ -237,8 +224,9 @@ void main() {
       expect(find.byType(LibraryScreen).evaluate(), isEmpty);
     });
 
-    testWidgets('BurrowApp shows the library once onboarding is complete',
-        (tester) async {
+    testWidgets('BurrowApp shows the library once onboarding is complete', (
+      tester,
+    ) async {
       final library = _library()..onboardingComplete = true;
       await tester.pumpWidget(BurrowApp(library: library));
       await tester.pumpAndSettle();
@@ -247,8 +235,7 @@ void main() {
       expect(find.byType(LibraryScreen), findsOneWidget);
     });
 
-    test('markOnboardingComplete persists the flag across reloads',
-        () async {
+    test('markOnboardingComplete persists the flag across reloads', () async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final library = LibraryService()..debugAttachDatabase(db);

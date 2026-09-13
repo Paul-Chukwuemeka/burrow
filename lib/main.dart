@@ -56,9 +56,9 @@ class _BurrowAppState extends State<BurrowApp> {
     final settings = library?.settings;
 
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        textScaler: TextScaler.linear(settings?.uiTextScale ?? 1.0),
-      ),
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(settings?.uiTextScale ?? 1.0)),
       child: MaterialApp(
         title: 'burrow',
         debugShowCheckedModeBanner: false,
@@ -86,8 +86,8 @@ class _BurrowAppState extends State<BurrowApp> {
         ),
         themeMode: library != null
             ? AppTheme.byMode(appMode!).brightness == Brightness.light
-                ? ThemeMode.light
-                : ThemeMode.dark
+                  ? ThemeMode.light
+                  : ThemeMode.dark
             : ThemeMode.system,
         home: SplashScreen(onReady: _buildHome),
       ),
@@ -111,14 +111,15 @@ class _BurrowAppState extends State<BurrowApp> {
     if (library.onboardingComplete) {
       return LibraryScreen(library: library);
     }
-    return OnboardingScreen(library: library, onDone: (context) {
-      library.markOnboardingComplete();
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => LibraryScreen(library: library),
-        ),
-      );
-    });
+    return OnboardingScreen(
+      library: library,
+      onDone: (context) {
+        library.markOnboardingComplete();
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => LibraryScreen(library: library)),
+        );
+      },
+    );
   }
 
   // Material 3 Expressive-flavoured foundation: Roboto Flex variable type,
@@ -134,9 +135,7 @@ class _BurrowAppState extends State<BurrowApp> {
         scrolledUnderElevation: 0,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: Burrow.r(Burrow.shapeLg),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: Burrow.r(Burrow.shapeSm)),
@@ -147,18 +146,24 @@ class _BurrowAppState extends State<BurrowApp> {
       cardTheme: CardThemeData(
         elevation: 0,
         color: scheme.surfaceContainerLow,
-        shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(Burrow.shapeMd)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: Burrow.r(Burrow.shapeMd),
+        ),
         margin: EdgeInsets.zero,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: Burrow.r(Burrow.shapeSm + 4)),
+        shape: RoundedRectangleBorder(
+          borderRadius: Burrow.r(Burrow.shapeSm + 4),
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         showDragHandle: true,
         backgroundColor: scheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Burrow.r(Burrow.shapeXl).topLeft),
+          borderRadius: BorderRadius.vertical(
+            top: Burrow.r(Burrow.shapeXl).topLeft,
+          ),
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(

@@ -22,9 +22,9 @@ class BusyState extends StatelessWidget {
           const SizedBox(height: 20),
           Text(
             'Growing your burrow…',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).hintColor,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: Theme.of(context).hintColor),
           ),
         ],
       ),
@@ -49,24 +49,25 @@ class NoResults extends StatelessWidget {
               color: scheme.surfaceContainerHighest,
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.search_off_rounded,
-                size: 38, color: scheme.outline),
+            child: Icon(
+              Icons.search_off_rounded,
+              size: 38,
+              color: scheme.outline,
+            ),
           ),
           const SizedBox(height: 18),
           Text(
             'Nothing matches',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
             'Try another word or clear the filters.',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: Theme.of(context).hintColor),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).hintColor,
+            ),
           ),
         ],
       ),
@@ -96,25 +97,26 @@ class EmptyState extends StatelessWidget {
                 color: scheme.secondaryContainer,
                 shape: RoundedSuperellipseBorder(borderRadius: Burrow.r(36)),
               ),
-              child: Icon(Icons.auto_stories_outlined,
-                  size: 46, color: scheme.onSecondaryContainer),
+              child: Icon(
+                Icons.auto_stories_outlined,
+                size: 46,
+                color: scheme.onSecondaryContainer,
+              ),
             ),
             const SizedBox(height: 24),
             Text(
               'Your burrow is empty',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 10),
             Text(
               'Import a file or scan your device\nfor EPUB, TXT and PDF books.',
               textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).hintColor),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).hintColor,
+              ),
             ),
             const SizedBox(height: 30),
             FilledButton.icon(
@@ -123,8 +125,10 @@ class EmptyState extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: Burrow.r(Burrow.shapeLg),
                 ),
-                textStyle:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               onPressed: onPickFile,
               icon: const Icon(Icons.upload_file_outlined),
@@ -171,10 +175,9 @@ class EmptyTabState extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             message,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(
@@ -209,9 +212,7 @@ class StatusBanner extends StatelessWidget {
     final text = switch (status) {
       StatusType.scanning => 'Scanning for books…',
       StatusType.importing =>
-        total > 0
-            ? 'Importing books… $completed / $total'
-            : 'Importing books…',
+        total > 0 ? 'Importing books… $completed / $total' : 'Importing books…',
       StatusType.extracting =>
         total > 0
             ? 'Extracting metadata… $completed / $total'
@@ -238,7 +239,11 @@ class StatusBanner extends StatelessWidget {
                   width: 18,
                   height: 18,
                   child: status == StatusType.completed
-                      ? Icon(Icons.check_circle_rounded, size: 18, color: scheme.primary)
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          size: 18,
+                          color: scheme.primary,
+                        )
                       : CircularProgressIndicator(
                           strokeWidth: 2.5,
                           color: scheme.primary,
@@ -308,14 +313,11 @@ class ContinueCard extends StatelessWidget {
     final onCard = scheme.onPrimaryContainer;
     return Semantics(
       button: true,
-      label:
-          'Continue reading ${book.displayTitle}. ${book.progressSemantics}',
+      label: 'Continue reading ${book.displayTitle}. ${book.progressSemantics}',
       excludeSemantics: true,
       child: PressableScale(
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: Burrow.r(Burrow.shapeLg),
-          ),
+          decoration: BoxDecoration(borderRadius: Burrow.r(Burrow.shapeLg)),
           child: Material(
             color: scheme.primaryContainer,
             shape: RoundedSuperellipseBorder(
@@ -346,18 +348,18 @@ class ContinueCard extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.auto_stories_rounded,
-                                  size: 15,
-                                  color: onCard.withValues(alpha: 0.8)),
+                              Icon(
+                                Icons.auto_stories_rounded,
+                                size: 15,
+                                color: onCard.withValues(alpha: 0.8),
+                              ),
                               const SizedBox(width: 6),
                               Flexible(
                                 child: Text(
                                   'CONTINUE READING',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
+                                  style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
                                         color: onCard.withValues(alpha: 0.8),
                                         fontWeight: FontWeight.w800,
@@ -372,11 +374,11 @@ class ContinueCard extends StatelessWidget {
                             book.displayTitle,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
+                            style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
-                                    fontWeight: FontWeight.w800, color: onCard),
+                                  fontWeight: FontWeight.w800,
+                                  color: onCard,
+                                ),
                           ),
                           if (book.author.isNotEmpty)
                             Padding(
@@ -385,11 +387,10 @@ class ContinueCard extends StatelessWidget {
                                 book.author,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
+                                style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
-                                        color: onCard.withValues(alpha: 0.75)),
+                                      color: onCard.withValues(alpha: 0.75),
+                                    ),
                               ),
                             ),
                           const SizedBox(height: 14),
@@ -409,8 +410,11 @@ class ContinueCard extends StatelessWidget {
                                 color: onCard.withValues(alpha: 0.14),
                                 shape: BoxShape.circle,
                               ),
-                              child: Icon(Icons.play_arrow_rounded,
-                                  size: 24, color: onCard),
+                              child: Icon(
+                                Icons.play_arrow_rounded,
+                                size: 24,
+                                color: onCard,
+                              ),
                             ),
                           ),
                         ],

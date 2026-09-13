@@ -45,18 +45,20 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
   }
 
   String _sortLabel(_SortMode m) => switch (m) {
-        _SortMode.title => 'A–Z',
-        _SortMode.recent => 'Recent',
-        _SortMode.added => 'Added',
-      };
+    _SortMode.title => 'A–Z',
+    _SortMode.recent => 'Recent',
+    _SortMode.added => 'Added',
+  };
 
   List<Book> get _sortedBooks {
     final list = [...widget.books];
     switch (_sort) {
       case _SortMode.title:
-        list.sort((a, b) => a.displayTitle
-            .toLowerCase()
-            .compareTo(b.displayTitle.toLowerCase()));
+        list.sort(
+          (a, b) => a.displayTitle.toLowerCase().compareTo(
+            b.displayTitle.toLowerCase(),
+          ),
+        );
       case _SortMode.recent:
         list.sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
       case _SortMode.added:
@@ -69,7 +71,9 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
     if (!await File(book.path).exists()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${book.displayTitle}" is no longer on this device')),
+        SnackBar(
+          content: Text('"${book.displayTitle}" is no longer on this device'),
+        ),
       );
       return;
     }
@@ -104,7 +108,8 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
             label: _sortLabel(_sort),
             icon: Icons.sort_rounded,
             onTap: () => setState(() {
-              _sort = _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
+              _sort =
+                  _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
             }),
           ),
           const SizedBox(width: 8),
@@ -131,8 +136,8 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
               ),
             )
           : _layout == _LayoutMode.grid
-              ? _bookGrid(context, books)
-              : _bookList(books),
+          ? _bookGrid(context, books)
+          : _bookList(books),
     );
   }
 
@@ -197,7 +202,10 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
             ),
             const SizedBox(height: 4),
             ListTile(
-              leading: Icon(Icons.menu_book_outlined, color: scheme.onSecondaryContainer),
+              leading: Icon(
+                Icons.menu_book_outlined,
+                color: scheme.onSecondaryContainer,
+              ),
               title: const Text('Read now'),
               onTap: () {
                 Navigator.pop(sheetContext);
@@ -210,4 +218,3 @@ class _SmartGroupScreenState extends State<SmartGroupScreen> {
     );
   }
 }
-

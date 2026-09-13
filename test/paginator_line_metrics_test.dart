@@ -13,7 +13,12 @@ void main() {
   const viewport = Size(300, 400);
   const slack = 6.0;
 
-  Paginator paginate(String text, {double inset = 0, List<StyleRun> runs = const [], List<ImageRun> images = const []}) {
+  Paginator paginate(
+    String text, {
+    double inset = 0,
+    List<StyleRun> runs = const [],
+    List<ImageRun> images = const [],
+  }) {
     return Paginator.paginate(
       text: text,
       style: style,
@@ -48,8 +53,11 @@ void main() {
       )..layout(maxWidth: viewport.width);
       final height = tp.height;
       tp.dispose();
-      expect(height, lessThanOrEqualTo(budget + 0.01),
-          reason: 'page $i overflows');
+      expect(
+        height,
+        lessThanOrEqualTo(budget + 0.01),
+        reason: 'page $i overflows',
+      );
     }
   }
 
@@ -63,10 +71,16 @@ void main() {
       final p = paginate(text);
       expect(p.pages, isNotEmpty);
       for (final page in p.pages) {
-        expect(boundaries, contains(page.start),
-            reason: 'page start ${page.start} splits a cluster');
-        expect(boundaries, contains(page.end),
-            reason: 'page end ${page.end} splits a cluster');
+        expect(
+          boundaries,
+          contains(page.start),
+          reason: 'page start ${page.start} splits a cluster',
+        );
+        expect(
+          boundaries,
+          contains(page.end),
+          reason: 'page end ${page.end} splits a cluster',
+        );
       }
     });
 
@@ -78,8 +92,11 @@ void main() {
       expect(p.pages.first.start, 0);
       expect(p.pages.last.end, text.length);
       for (var i = 0; i < p.pages.length; i++) {
-        expect(p.pages[i].end, greaterThan(p.pages[i].start),
-            reason: 'page $i empty');
+        expect(
+          p.pages[i].end,
+          greaterThan(p.pages[i].start),
+          reason: 'page $i empty',
+        );
         if (i > 0) {
           expect(p.pages[i].start, greaterThanOrEqualTo(p.pages[i - 1].end));
         }
@@ -119,10 +136,9 @@ void main() {
       );
       final budgeted = <TextPage>[];
       while (!driver2.isDone) {
-        budgeted.addAll(driver2.nextChunkUntil(
-          minPages: 1,
-          budget: Duration.zero,
-        ));
+        budgeted.addAll(
+          driver2.nextChunkUntil(minPages: 1, budget: Duration.zero),
+        );
       }
       driver2.dispose();
 
@@ -150,10 +166,14 @@ void main() {
       final p = paginate(text, images: [image]);
       expect(p.pages, isNotEmpty);
 
-      final imagePageIndex =
-          p.pages.indexWhere((pg) => pg.start <= image.offset && pg.end > image.offset);
-      expect(imagePageIndex, isNot(-1),
-          reason: 'an image page should contain the placeholder');
+      final imagePageIndex = p.pages.indexWhere(
+        (pg) => pg.start <= image.offset && pg.end > image.offset,
+      );
+      expect(
+        imagePageIndex,
+        isNot(-1),
+        reason: 'an image page should contain the placeholder',
+      );
 
       // The oversized full-width image must own its page.
       final page = p.pages[imagePageIndex];
@@ -174,8 +194,7 @@ void main() {
       expect(p.pages.last.end, text.length);
       for (var i = 0; i < text.length; i++) {
         if (text[i].trim().isEmpty) continue;
-        final covered =
-            p.pages.any((pg) => pg.start <= i && i < pg.end);
+        final covered = p.pages.any((pg) => pg.start <= i && i < pg.end);
         expect(covered, isTrue, reason: 'offset $i (${text[i]}) uncovered');
       }
     });
@@ -187,12 +206,14 @@ void main() {
         buf.write('paragraph $i ');
         buf.write('word ' * 12);
         buf.write('\uFFFC');
-        images.add(ImageRun(
-          offset: buf.length - 1,
-          bytes: Uint8List(0),
-          intrinsicWidth: 120,
-          intrinsicHeight: 90,
-        ));
+        images.add(
+          ImageRun(
+            offset: buf.length - 1,
+            bytes: Uint8List(0),
+            intrinsicWidth: 120,
+            intrinsicHeight: 90,
+          ),
+        );
         buf.write('\n');
       }
       final text = buf.toString();
@@ -201,9 +222,13 @@ void main() {
       expect(text.substring(p.pages.last.end).trim(), isEmpty);
       for (final image in images) {
         final covered = p.pages.any(
-            (pg) => pg.start <= image.offset && image.offset < pg.end);
-        expect(covered, isTrue,
-            reason: 'image at ${image.offset} should be within a page');
+          (pg) => pg.start <= image.offset && image.offset < pg.end,
+        );
+        expect(
+          covered,
+          isTrue,
+          reason: 'image at ${image.offset} should be within a page',
+        );
       }
     });
 

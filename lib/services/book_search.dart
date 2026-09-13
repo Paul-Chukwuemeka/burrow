@@ -122,12 +122,14 @@ class BookSearch {
       final snippet =
           '${snippetStart > 0 ? '…' : ''}$raw${snippetEnd < body.length ? '…' : ''}';
 
-      batch.add(SearchResult(
-        chapter: chapterIndex,
-        offset: idx,
-        length: queryLower.length,
-        snippet: snippet,
-      ));
+      batch.add(
+        SearchResult(
+          chapter: chapterIndex,
+          offset: idx,
+          length: queryLower.length,
+          snippet: snippet,
+        ),
+      );
       start = idx + queryLower.length;
     }
 

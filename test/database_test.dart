@@ -22,16 +22,15 @@ void main() {
       String path = '/tmp/test.epub',
       BookFormat format = BookFormat.epub,
       double progress = 0,
-    }) =>
-        Book(
-          id: id,
-          title: title,
-          author: author,
-          path: path,
-          format: format,
-          addedAt: 1000,
-          progress: progress,
-        );
+    }) => Book(
+      id: id,
+      title: title,
+      author: author,
+      path: path,
+      format: format,
+      addedAt: 1000,
+      progress: progress,
+    );
 
     test('insert and read book', () async {
       final book = makeBook();
@@ -58,13 +57,15 @@ void main() {
 
     test('update book position', () async {
       await db.insertBook(bookToCompanion(makeBook()));
-      await db.updateBook(positionToUpdate(
-        id: 'b1',
-        lastChapter: 5,
-        lastOffset: 1234,
-        progress: 0.42,
-        lastReadAt: 9999,
-      ));
+      await db.updateBook(
+        positionToUpdate(
+          id: 'b1',
+          lastChapter: 5,
+          lastOffset: 1234,
+          progress: 0.42,
+          lastReadAt: 9999,
+        ),
+      );
 
       final all = await db.getAllBooks();
       expect(all.first.lastChapter, 5);
@@ -84,16 +85,18 @@ void main() {
     });
 
     test('bookToCompanion round-trip preserves all fields', () async {
-      final book = makeBook(
-        id: 'rt1',
-        title: 'Round Trip',
-        author: 'Writer',
-        path: '/tmp/rt.txt',
-        format: BookFormat.txt,
-        progress: 0.75,
-      )..lastChapter = 3
-        ..lastOffset = 999
-        ..lastReadAt = 5555;
+      final book =
+          makeBook(
+              id: 'rt1',
+              title: 'Round Trip',
+              author: 'Writer',
+              path: '/tmp/rt.txt',
+              format: BookFormat.txt,
+              progress: 0.75,
+            )
+            ..lastChapter = 3
+            ..lastOffset = 999
+            ..lastReadAt = 5555;
 
       await db.insertBook(bookToCompanion(book));
       final all = await db.getAllBooks();
@@ -119,13 +122,17 @@ void main() {
 
     test('default values via Value.absent()', () async {
       // Insert with Value.absent() for optional fields → drift defaults kick in.
-      await db.into(db.books).insert(BooksCompanion.insert(
-            id: 'def1',
-            title: 'Defaults',
-            path: '/tmp/def.txt',
-            format: BookFormat.txt,
-            addedAt: 0,
-          ));
+      await db
+          .into(db.books)
+          .insert(
+            BooksCompanion.insert(
+              id: 'def1',
+              title: 'Defaults',
+              path: '/tmp/def.txt',
+              format: BookFormat.txt,
+              addedAt: 0,
+            ),
+          );
       final all = await db.getAllBooks();
       expect(all.first.author, ''); // drift default
       expect(all.first.lastReadAt, 0); // drift default

@@ -43,8 +43,9 @@ class ScanService {
     Set<String>? extensions,
   }) {
     final exts = extensions ?? defaultExtensions;
-    return Isolate.run(() => _walk('/storage/emulated/0', knownPaths, exts))
-        .timeout(const Duration(minutes: 2), onTimeout: () => []);
+    return Isolate.run(
+      () => _walk('/storage/emulated/0', knownPaths, exts),
+    ).timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
   /// Recursively scans a single user-chosen folder.
@@ -54,8 +55,9 @@ class ScanService {
     Set<String>? extensions,
   }) {
     final exts = extensions ?? defaultExtensions;
-    return Isolate.run(() => _walk(folder, knownPaths, exts))
-        .timeout(const Duration(minutes: 2), onTimeout: () => []);
+    return Isolate.run(
+      () => _walk(folder, knownPaths, exts),
+    ).timeout(const Duration(minutes: 2), onTimeout: () => []);
   }
 
   /// Scans multiple specific folders and merges the results.
@@ -69,8 +71,9 @@ class ScanService {
     final results = <String>[];
     for (final folder in folders) {
       if (!await Directory(folder).exists()) continue;
-      final found = await Isolate.run(() => _walk(folder, knownPaths, exts))
-          .timeout(const Duration(minutes: 2), onTimeout: () => []);
+      final found = await Isolate.run(
+        () => _walk(folder, knownPaths, exts),
+      ).timeout(const Duration(minutes: 2), onTimeout: () => []);
       results.addAll(found);
     }
     results.sort();

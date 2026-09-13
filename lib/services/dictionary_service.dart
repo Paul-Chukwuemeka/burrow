@@ -58,7 +58,11 @@ class DictionaryService {
       final file = await _dbFile;
       if (!file.existsSync()) {
         onStatus?.call('Downloading dictionary…');
-        await _downloadDatabase(file, onProgress: onProgress, onStatus: onStatus);
+        await _downloadDatabase(
+          file,
+          onProgress: onProgress,
+          onStatus: onStatus,
+        );
       }
 
       onStatus?.call('Loading dictionary…');
@@ -133,19 +137,19 @@ class DictionaryService {
     final uri = Uri.parse(_dbUrl);
     final client = HttpClient();
     try {
-      final request = await client.getUrl(uri).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw TimeoutException('Connection timed out'),
-      );
+      final request = await client
+          .getUrl(uri)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException('Connection timed out'),
+          );
       final response = await request.close().timeout(
         const Duration(seconds: 30),
         onTimeout: () => throw TimeoutException('Download timed out'),
       );
 
       if (response.statusCode != 200) {
-        throw HttpException(
-          'Download failed: HTTP ${response.statusCode}',
-        );
+        throw HttpException('Download failed: HTTP ${response.statusCode}');
       }
 
       final contentLength = response.contentLength;

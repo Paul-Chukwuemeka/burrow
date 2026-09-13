@@ -83,7 +83,10 @@ class _PermissionDeniedHint extends StatelessWidget {
           label: const Text('Open settings'),
           style: TextButton.styleFrom(
             foregroundColor: scheme.primary,
-            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            textStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

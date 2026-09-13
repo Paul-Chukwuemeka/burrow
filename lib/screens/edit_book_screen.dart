@@ -7,11 +7,7 @@ import '../utils/date_format.dart';
 import '../widgets/book_cover.dart';
 
 class EditBookScreen extends StatefulWidget {
-  const EditBookScreen({
-    super.key,
-    required this.book,
-    required this.library,
-  });
+  const EditBookScreen({super.key, required this.book, required this.library});
 
   final Book book;
   final LibraryService library;
@@ -91,9 +87,9 @@ class _EditBookScreenState extends State<EditBookScreen> {
   Future<void> _save() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Title cannot be empty')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Title cannot be empty')));
       return;
     }
 
@@ -146,9 +142,9 @@ class _EditBookScreenState extends State<EditBookScreen> {
     );
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Metadata saved')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Metadata saved')));
     Navigator.of(context).pop();
   }
 
@@ -157,12 +153,7 @@ class _EditBookScreenState extends State<EditBookScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit book'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            child: const Text('Save'),
-          ),
-        ],
+        actions: [TextButton(onPressed: _save, child: const Text('Save'))],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -182,26 +173,15 @@ class _EditBookScreenState extends State<EditBookScreen> {
             const SizedBox(height: 28),
 
             // Title
-            _Field(
-              label: 'Title',
-              controller: _titleCtrl,
-              autofocus: true,
-            ),
+            _Field(label: 'Title', controller: _titleCtrl, autofocus: true),
             const SizedBox(height: 16),
 
             // Author
-            _Field(
-              label: 'Author',
-              controller: _authorCtrl,
-            ),
+            _Field(label: 'Author', controller: _authorCtrl),
             const SizedBox(height: 16),
 
             // Description
-            _Field(
-              label: 'Description',
-              controller: _descCtrl,
-              maxLines: 4,
-            ),
+            _Field(label: 'Description', controller: _descCtrl, maxLines: 4),
             const SizedBox(height: 16),
 
             // Annotation
@@ -213,20 +193,14 @@ class _EditBookScreenState extends State<EditBookScreen> {
             const SizedBox(height: 16),
 
             // Genre
-            _Field(
-              label: 'Genre',
-              controller: _genreCtrl,
-            ),
+            _Field(label: 'Genre', controller: _genreCtrl),
             const SizedBox(height: 16),
 
             // Series name + index
             Row(
               children: [
                 Expanded(
-                  child: _Field(
-                    label: 'Series',
-                    controller: _seriesNameCtrl,
-                  ),
+                  child: _Field(label: 'Series', controller: _seriesNameCtrl),
                 ),
                 const SizedBox(width: 12),
                 SizedBox(
@@ -234,7 +208,9 @@ class _EditBookScreenState extends State<EditBookScreen> {
                   child: _Field(
                     label: '#',
                     controller: _seriesIndexCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                   ),
                 ),
               ],
@@ -242,66 +218,39 @@ class _EditBookScreenState extends State<EditBookScreen> {
             const SizedBox(height: 16),
 
             // Publisher
-            _Field(
-              label: 'Publisher',
-              controller: _publisherCtrl,
-            ),
+            _Field(label: 'Publisher', controller: _publisherCtrl),
             const SizedBox(height: 16),
 
             // ISBN
-            _Field(
-              label: 'ISBN',
-              controller: _isbnCtrl,
-            ),
+            _Field(label: 'ISBN', controller: _isbnCtrl),
             const SizedBox(height: 16),
 
             // Language
-            _Field(
-              label: 'Language',
-              controller: _languageCtrl,
-            ),
+            _Field(label: 'Language', controller: _languageCtrl),
             const SizedBox(height: 16),
 
             // Publication date
-            _Field(
-              label: 'Publication date',
-              controller: _pubDateCtrl,
-            ),
+            _Field(label: 'Publication date', controller: _pubDateCtrl),
             const SizedBox(height: 16),
 
             // Rights
-            _Field(
-              label: 'Rights',
-              controller: _rightsCtrl,
-            ),
+            _Field(label: 'Rights', controller: _rightsCtrl),
             const SizedBox(height: 16),
 
             // Type
-            _Field(
-              label: 'Type',
-              controller: _typeCtrl,
-            ),
+            _Field(label: 'Type', controller: _typeCtrl),
             const SizedBox(height: 16),
 
             // Source
-            _Field(
-              label: 'Source',
-              controller: _sourceCtrl,
-            ),
+            _Field(label: 'Source', controller: _sourceCtrl),
             const SizedBox(height: 16),
 
             // Title sort
-            _Field(
-              label: 'Title sort',
-              controller: _titleSortCtrl,
-            ),
+            _Field(label: 'Title sort', controller: _titleSortCtrl),
             const SizedBox(height: 16),
 
             // Author sort
-            _Field(
-              label: 'Author sort',
-              controller: _authorSortCtrl,
-            ),
+            _Field(label: 'Author sort', controller: _authorSortCtrl),
             const SizedBox(height: 16),
 
             // Review / Notes

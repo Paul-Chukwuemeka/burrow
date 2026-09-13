@@ -35,7 +35,11 @@ void main() {
 
   group('ComicPageProvider', () {
     test('open detects correct page count and metadata', () async {
-      final path = await _createCbz(['page001.png', 'page002.png', 'page003.png']);
+      final path = await _createCbz([
+        'page001.png',
+        'page002.png',
+        'page003.png',
+      ]);
       final provider = await ComicPageProvider.open(path);
 
       expect(provider.pageCount, 3);
@@ -99,7 +103,11 @@ void main() {
 
     test('evictOutside removes pages outside margin', () async {
       final path = await _createCbz([
-        'a.png', 'b.png', 'c.png', 'd.png', 'e.png',
+        'a.png',
+        'b.png',
+        'c.png',
+        'd.png',
+        'e.png',
       ]);
       final provider = await ComicPageProvider.open(path);
 
@@ -121,16 +129,15 @@ void main() {
 
     test('throws FormatException for archive with no images', () async {
       final archive = Archive();
-      archive.addFile(ArchiveFile('readme.txt', 5, [0x68, 0x65, 0x6c, 0x6c, 0x6f]));
+      archive.addFile(
+        ArchiveFile('readme.txt', 5, [0x68, 0x65, 0x6c, 0x6c, 0x6f]),
+      );
       final bytes = ZipEncoder().encode(archive)!;
       final tmp = await Directory.systemTemp.createTemp('comic_test');
       final file = File('${tmp.path}/no_images.cbz');
       await file.writeAsBytes(bytes);
 
-      expect(
-        () => ComicPageProvider.open(file.path),
-        throwsFormatException,
-      );
+      expect(() => ComicPageProvider.open(file.path), throwsFormatException);
     });
   });
 }

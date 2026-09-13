@@ -27,7 +27,9 @@ class PillChip extends StatelessWidget {
           color: selected ? scheme.primary : Colors.transparent,
           shape: StadiumBorder(
             side: BorderSide(
-              color: selected ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
+              color: selected
+                  ? scheme.primary
+                  : scheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ),
           clipBehavior: Clip.antiAlias,

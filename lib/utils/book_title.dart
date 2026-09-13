@@ -30,17 +30,31 @@ final RegExp _siteNoiseRe = RegExp(
 );
 
 /// Bracketed tags such as `[PDF]`, `(EPUB+MOBI)`, `{_r.v}`.
-final RegExp _formatTagRe = RegExp(r'[\[\(\{]\s*[^\]\)\}]*(pdf|epub|mobi|azw|rtf|lit)[^\]\)\}]*[\]\)\}]', caseSensitive: false);
+final RegExp _formatTagRe = RegExp(
+  r'[\[\(\{]\s*[^\]\)\}]*(pdf|epub|mobi|azw|rtf|lit)[^\]\)\}]*[\]\)\}]',
+  caseSensitive: false,
+);
 
 final RegExp _underscoreRe = RegExp(r'[_\uFF3F]+');
 final RegExp _glueRe = RegExp(r'\s*[-–—:|]+\s*$');
 final RegExp _leadGlueRe = RegExp(r'^\s*[-–—:|]+\s*');
 final RegExp _spaceRunRe = RegExp(r'\s{2,}');
-final RegExp _bySuffixRe = RegExp(r"\s+by\s+(?:[A-Z][\w.'-]*\s+){0,4}[A-Z][\w.'-]*\.?\s*$", caseSensitive: false);
+final RegExp _bySuffixRe = RegExp(
+  r"\s+by\s+(?:[A-Z][\w.'-]*\s+){0,4}[A-Z][\w.'-]*\.?\s*$",
+  caseSensitive: false,
+);
 
 /// Document extensions recognized when a full filename is passed in.
 const _knownExtensions = {
-  'epub', 'pdf', 'txt', 'mobi', 'azw', 'azw3', 'rtf', 'doc', 'docx',
+  'epub',
+  'pdf',
+  'txt',
+  'mobi',
+  'azw',
+  'azw3',
+  'rtf',
+  'doc',
+  'docx',
 };
 
 /// Cleans a raw filename-derived title into something presentable.

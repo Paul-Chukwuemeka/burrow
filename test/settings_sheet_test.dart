@@ -35,15 +35,13 @@ Finder _rowWithText(String label) =>
 
 /// A +/- stepper button inside the row labelled [label].
 Finder _stepper(String label, IconData icon) => find.descendant(
-      of: _rowWithText(label),
-      matching: find.widgetWithIcon(IconButton, icon),
-    );
+  of: _rowWithText(label),
+  matching: find.widgetWithIcon(IconButton, icon),
+);
 
 /// The [Switch] inside the row labelled [label].
-Finder _switchFor(String label) => find.descendant(
-      of: _rowWithText(label),
-      matching: find.byType(Switch),
-    );
+Finder _switchFor(String label) =>
+    find.descendant(of: _rowWithText(label), matching: find.byType(Switch));
 
 /// Scroll [finder] into view, tap it, and settle.
 Future<void> _tap(WidgetTester tester, Finder finder) async {
@@ -85,8 +83,9 @@ void main() {
   });
 
   group('SettingsSheet steppers', () {
-    testWidgets('font-size stepper steps and notifies once per tap',
-        (tester) async {
+    testWidgets('font-size stepper steps and notifies once per tap', (
+      tester,
+    ) async {
       final settings = ReaderSettings(fontSize: 13);
       var notifications = 0;
 
@@ -109,8 +108,9 @@ void main() {
       expect(notifications, 3);
     });
 
-    testWidgets('line-height stepper steps by 0.1 and notifies once per tap',
-        (tester) async {
+    testWidgets('line-height stepper steps by 0.1 and notifies once per tap', (
+      tester,
+    ) async {
       final settings = ReaderSettings(lineHeight: 1.2);
       var notifications = 0;
 
@@ -129,8 +129,9 @@ void main() {
       expect(notifications, 2);
     });
 
-    testWidgets('margin stepper steps by 2 and notifies once per tap',
-        (tester) async {
+    testWidgets('margin stepper steps by 2 and notifies once per tap', (
+      tester,
+    ) async {
       final settings = ReaderSettings(horizontalMargin: 20);
       var notifications = 0;
 
@@ -169,8 +170,9 @@ void main() {
       expect(notifications, 1);
     });
 
-    testWidgets('brightness debounce commits if the finger never lifts',
-        (tester) async {
+    testWidgets('brightness debounce commits if the finger never lifts', (
+      tester,
+    ) async {
       final settings = ReaderSettings()..brightness = kMinBrightness;
       var notifications = 0;
 
@@ -185,7 +187,8 @@ void main() {
 
       // Finger still down, but the value has settled: the net fires.
       await tester.pump(
-          SettingsSheet.commitDebounce + const Duration(milliseconds: 50));
+        SettingsSheet.commitDebounce + const Duration(milliseconds: 50),
+      );
       expect(notifications, 1);
 
       // Releasing still commits the final value exactly once more.
@@ -194,8 +197,9 @@ void main() {
       expect(notifications, 2);
     });
 
-    testWidgets('dismissing after a drag leaves no pending timer',
-        (tester) async {
+    testWidgets('dismissing after a drag leaves no pending timer', (
+      tester,
+    ) async {
       final settings = ReaderSettings()..brightness = kMinBrightness;
       var notifications = 0;
 
@@ -256,8 +260,9 @@ void main() {
       expect(notifications, 1);
     });
 
-    testWidgets('keep-screen-on and volume-key switches notify once each',
-        (tester) async {
+    testWidgets('keep-screen-on and volume-key switches notify once each', (
+      tester,
+    ) async {
       final settings = ReaderSettings();
       var notifications = 0;
 
@@ -276,8 +281,9 @@ void main() {
       expect(notifications, 2);
     });
 
-    testWidgets('turning system brightness off seeds the level then notifies',
-        (tester) async {
+    testWidgets('turning system brightness off seeds the level then notifies', (
+      tester,
+    ) async {
       final settings = ReaderSettings(); // brightness: null
       var notifications = 0;
 
@@ -294,8 +300,9 @@ void main() {
       expect(notifications, 1);
     });
 
-    testWidgets('turning system brightness back on notifies once',
-        (tester) async {
+    testWidgets('turning system brightness back on notifies once', (
+      tester,
+    ) async {
       final settings = ReaderSettings()..brightness = 0.4;
       var notifications = 0;
 

@@ -12,12 +12,8 @@ void main() {
   const style = TextStyle(fontSize: 18, height: 1.6);
   const theme = ReaderTheme.light;
 
-  SearchResult match(int offset, int length) => SearchResult(
-        chapter: 0,
-        offset: offset,
-        length: length,
-        snippet: '',
-      );
+  SearchResult match(int offset, int length) =>
+      SearchResult(chapter: 0, offset: offset, length: length, snippet: '');
 
   /// Wraps the List<InlineSpan> result into a single TextSpan for testing.
   TextSpan wrapSpans(List<InlineSpan> spans) =>
@@ -43,14 +39,16 @@ void main() {
     const text = 'The quick brown fox jumps over the lazy dog.';
 
     test('returns the plain slice when there is nothing to style', () {
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 4,
-        end: 19,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 4,
+          end: 19,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+        ),
+      );
 
       expect(span.toPlainText(), 'quick brown fox');
       expect(span.style, style);
@@ -70,16 +68,18 @@ void main() {
         match(4, 5),
       ]);
 
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 0,
-        end: text.length,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        runs: runs,
-        matches: matches,
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 0,
+          end: text.length,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          runs: runs,
+          matches: matches,
+        ),
+      );
 
       expect(span.toPlainText(), text);
       // Caller ordering is untouched by the internal sort.
@@ -88,20 +88,19 @@ void main() {
     });
 
     test('styles runs and no-run gaps without dropping text', () {
-      const runs = [
-        StyleRun(4, 9, bold: true),
-        StyleRun(16, 19, quote: true),
-      ];
+      const runs = [StyleRun(4, 9, bold: true), StyleRun(16, 19, quote: true)];
 
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 0,
-        end: 20,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        runs: runs,
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 0,
+          end: 20,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          runs: runs,
+        ),
+      );
 
       expect(span.toPlainText(), text.substring(0, 20));
       final parts = leaves(span);
@@ -116,16 +115,18 @@ void main() {
       final current = match(4, 5);
       final other = match(20, 5);
 
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 0,
-        end: text.length,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        matches: [current, other],
-        currentMatch: current,
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 0,
+          end: text.length,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          matches: [current, other],
+          currentMatch: current,
+        ),
+      );
 
       expect(span.toPlainText(), text);
       final parts = leaves(span);
@@ -145,16 +146,18 @@ void main() {
     // page-local match list, so an off-page (or unset, -1) selection wrapped
     // around and emphasized an arbitrary match on the page.
     test('no match is emphasized when the current hit is off this page', () {
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 0,
-        end: 20,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        matches: [match(4, 5)],
-        currentMatch: match(35, 3),
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 0,
+          end: 20,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          matches: [match(4, 5)],
+          currentMatch: match(35, 3),
+        ),
+      );
 
       final hit = leaves(span).firstWhere((p) => p.$1 == 'quick').$2!;
       expect(hit.backgroundColor?.a, closeTo(0.15, 0.001));
@@ -163,15 +166,17 @@ void main() {
 
     test('clips matches that straddle the page boundary', () {
       // "brown fox" starts on this page and continues past its end.
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 4,
-        end: 15,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        matches: [match(10, 9)],
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 4,
+          end: 15,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          matches: [match(10, 9)],
+        ),
+      );
 
       expect(span.toPlainText(), 'quick brown');
       final parts = leaves(span);
@@ -180,36 +185,44 @@ void main() {
     });
 
     test('highlight styling wins inside emphasized text', () {
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 0,
-        end: 20,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        runs: const [StyleRun(4, 15, quote: true)],
-        matches: [match(10, 5)],
-        currentMatch: match(10, 5),
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 0,
+          end: 20,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          runs: const [StyleRun(4, 15, quote: true)],
+          matches: [match(10, 5)],
+          currentMatch: match(10, 5),
+        ),
+      );
 
       final parts = leaves(span);
       final hit = parts.firstWhere((p) => p.$1 == 'brown').$2!;
       expect(hit.fontStyle, FontStyle.italic, reason: 'run styling survives');
-      expect(hit.color, theme.accent, reason: 'highlight color overrides quote');
+      expect(
+        hit.color,
+        theme.accent,
+        reason: 'highlight color overrides quote',
+      );
       expect(hit.backgroundColor, isNotNull);
     });
 
     test('ignores runs and matches outside the page', () {
-      final span = wrapSpans(buildPageSpans(
-        text: text,
-        start: 0,
-        end: 10,
-        base: style,
-        theme: theme,
-        settings: ReaderSettings(),
-        runs: const [StyleRun(20, 25, bold: true)],
-        matches: [match(30, 4)],
-      ));
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 0,
+          end: 10,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          runs: const [StyleRun(20, 25, bold: true)],
+          matches: [match(30, 4)],
+        ),
+      );
 
       expect(span.toPlainText(), text.substring(0, 10));
       expect(leaves(span).every((p) => p.$2?.fontWeight == null), isTrue);

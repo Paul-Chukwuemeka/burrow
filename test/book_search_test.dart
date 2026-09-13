@@ -7,9 +7,7 @@ import 'package:burrow/services/document_parser.dart';
 void main() {
   group('BookSearch', () {
     List<Chapter> makeChapters(List<String> bodies) {
-      return bodies
-          .map((b) => Chapter('Chapter', b))
-          .toList();
+      return bodies.map((b) => Chapter('Chapter', b)).toList();
     }
 
     test('finds case-insensitive matches', () async {
@@ -123,9 +121,7 @@ void main() {
     });
 
     test('matchesForPage returns overlapping results', () async {
-      final chapters = makeChapters([
-        'hello world hello flutter hello dart',
-      ]);
+      final chapters = makeChapters(['hello world hello flutter hello dart']);
       final completer = Completer<List<SearchResult>>();
       final search = BookSearch(
         chapters: chapters,
@@ -204,10 +200,7 @@ void main() {
     });
 
     test('dispose stops ongoing search', () async {
-      final chapters = makeChapters([
-        'aaa ' * 1000,
-        'hello ' * 1000,
-      ]);
+      final chapters = makeChapters(['aaa ' * 1000, 'hello ' * 1000]);
       final results = <List<SearchResult>>[];
       final search = BookSearch(
         chapters: chapters,

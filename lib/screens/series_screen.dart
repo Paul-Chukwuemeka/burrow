@@ -17,11 +17,7 @@ enum _SortMode { order, title, recent, added }
 enum _LayoutMode { grid, list }
 
 class SeriesScreen extends StatefulWidget {
-  const SeriesScreen({
-    super.key,
-    required this.series,
-    required this.library,
-  });
+  const SeriesScreen({super.key, required this.series, required this.library});
 
   final String series;
   final LibraryService library;
@@ -43,11 +39,11 @@ class _SeriesScreenState extends State<SeriesScreen> {
   }
 
   String _sortLabel(_SortMode m) => switch (m) {
-        _SortMode.order => 'Order',
-        _SortMode.title => 'A\u2013Z',
-        _SortMode.recent => 'Recent',
-        _SortMode.added => 'Added',
-      };
+    _SortMode.order => 'Order',
+    _SortMode.title => 'A\u2013Z',
+    _SortMode.recent => 'Recent',
+    _SortMode.added => 'Added',
+  };
 
   List<Book> get _books {
     var list = widget.library.booksBySeries(widget.series);
@@ -62,9 +58,11 @@ class _SeriesScreenState extends State<SeriesScreen> {
           return ai.compareTo(bi);
         });
       case _SortMode.title:
-        list.sort((a, b) => a.displayTitle
-            .toLowerCase()
-            .compareTo(b.displayTitle.toLowerCase()));
+        list.sort(
+          (a, b) => a.displayTitle.toLowerCase().compareTo(
+            b.displayTitle.toLowerCase(),
+          ),
+        );
       case _SortMode.recent:
         list.sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
       case _SortMode.added:
@@ -77,7 +75,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
     if (!await File(book.path).exists()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${book.displayTitle}" is no longer on this device')),
+        SnackBar(
+          content: Text('"${book.displayTitle}" is no longer on this device'),
+        ),
       );
       return;
     }
@@ -112,7 +112,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
             label: _sortLabel(_sort),
             icon: Icons.sort_rounded,
             onTap: () => setState(() {
-              _sort = _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
+              _sort =
+                  _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
             }),
           ),
           const SizedBox(width: 8),
@@ -139,8 +140,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
               ),
             )
           : _layout == _LayoutMode.grid
-              ? _bookGrid(context, books)
-              : _bookList(books),
+          ? _bookGrid(context, books)
+          : _bookList(books),
     );
   }
 
@@ -158,7 +159,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
               book: book,
               onTap: () => _openBookInfo(book),
               onLongPress: () => _showBookActions(book),
-              subtitle: book.seriesIndex != null ? '#${book.seriesIndex}' : null,
+              subtitle: book.seriesIndex != null
+                  ? '#${book.seriesIndex}'
+                  : null,
             );
           },
         );
@@ -206,7 +209,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
             ),
             const SizedBox(height: 4),
             ListTile(
-              leading: Icon(Icons.menu_book_outlined, color: scheme.onSecondaryContainer),
+              leading: Icon(
+                Icons.menu_book_outlined,
+                color: scheme.onSecondaryContainer,
+              ),
               title: const Text('Read now'),
               onTap: () {
                 Navigator.pop(sheetContext);
@@ -219,4 +225,3 @@ class _SeriesScreenState extends State<SeriesScreen> {
     );
   }
 }
-

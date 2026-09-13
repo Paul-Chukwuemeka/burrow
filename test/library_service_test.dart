@@ -19,18 +19,17 @@ void main() {
     String? genre,
     String? seriesName,
     double? seriesIndex,
-  }) =>
-      Book(
-        id: id,
-        title: title,
-        author: author,
-        path: '/tmp/test.epub',
-        format: BookFormat.epub,
-        addedAt: 1000,
-        genre: genre,
-        seriesName: seriesName,
-        seriesIndex: seriesIndex,
-      );
+  }) => Book(
+    id: id,
+    title: title,
+    author: author,
+    path: '/tmp/test.epub',
+    format: BookFormat.epub,
+    addedAt: 1000,
+    genre: genre,
+    seriesName: seriesName,
+    seriesIndex: seriesIndex,
+  );
 
   group('Series helpers', () {
     test('uniqueSeries returns sorted unique series names', () {
@@ -97,7 +96,12 @@ void main() {
         makeBook(id: 'b5', genre: ''),
       ]);
 
-      expect(library.uniqueGenres, ['Adventure', 'Fantasy', 'Sci-Fi', 'Thriller']);
+      expect(library.uniqueGenres, [
+        'Adventure',
+        'Fantasy',
+        'Sci-Fi',
+        'Thriller',
+      ]);
     });
 
     test('uniqueGenres trims whitespace', () {
@@ -178,60 +182,67 @@ void main() {
       String id = 'del1',
       String title = 'Delete Me',
       String path = '/tmp/to-delete.epub',
-    }) =>
-        Book(
-          id: id,
-          title: title,
-          author: 'Author',
-          path: path,
-          format: BookFormat.epub,
-          addedAt: 1000,
+    }) => Book(
+      id: id,
+      title: title,
+      author: 'Author',
+      path: path,
+      format: BookFormat.epub,
+      addedAt: 1000,
+    );
+
+    test(
+      'removes book from DB and in-memory list, and cleans up related rows',
+      () async {
+        final book = makeBook();
+        await db.insertBook(bookToCompanion(book));
+        library.debugAddAll([book]);
+
+        // Seed related rows.
+        await db.insertBookmark(
+          BookmarksCompanion.insert(
+            id: 'bm1',
+            bookId: 'del1',
+            chapter: 1,
+            offset: 0,
+            createdAt: 2000,
+          ),
         );
+        await db.insertSession(
+          ReadingSessionsCompanion.insert(bookId: 'del1', startedAt: 3000),
+        );
+        // Create a collection and link the book.
+        await db.insertCollection(
+          CollectionsCompanion.insert(
+            id: 'col1',
+            name: 'Test Collection',
+            createdAt: 1000,
+          ),
+        );
+        await db.addBookToCollection('col1', 'del1');
 
-    test('removes book from DB and in-memory list, and cleans up related rows',
-        () async {
-      final book = makeBook();
-      await db.insertBook(bookToCompanion(book));
-      library.debugAddAll([book]);
+        expect(await db.getAllSessions(), hasLength(1));
+        expect(await db.getAllBookmarks(), hasLength(1));
 
-      // Seed related rows.
-      await db.insertBookmark(BookmarksCompanion.insert(
-        id: 'bm1',
-        bookId: 'del1',
-        chapter: 1,
-        offset: 0,
-        createdAt: 2000,
-      ));
-      await db.insertSession(ReadingSessionsCompanion.insert(
-        bookId: 'del1',
-        startedAt: 3000,
-      ));
-      // Create a collection and link the book.
-      await db.insertCollection(CollectionsCompanion.insert(
-        id: 'col1',
-        name: 'Test Collection',
-        createdAt: 1000,
-      ));
-      await db.addBookToCollection('col1', 'del1');
+        await library.deleteBookWithFile(book.id);
 
-      expect(await db.getAllSessions(), hasLength(1));
-      expect(await db.getAllBookmarks(), hasLength(1));
+        expect(library.books, isEmpty);
+        expect(await db.getAllBookmarks(), isEmpty);
+        expect(await db.getAllSessions(), isEmpty);
+      },
+    );
 
-      await library.deleteBookWithFile(book.id);
+    test(
+      'book is removed from in-memory list even without deleteFile',
+      () async {
+        final book = makeBook(path: '/tmp/kept.epub');
+        await db.insertBook(bookToCompanion(book));
+        library.debugAddAll([book]);
 
-      expect(library.books, isEmpty);
-      expect(await db.getAllBookmarks(), isEmpty);
-      expect(await db.getAllSessions(), isEmpty);
-    });
+        await library.deleteBookWithFile(book.id, deleteFile: false);
 
-    test('book is removed from in-memory list even without deleteFile', () async {
-      final book = makeBook(path: '/tmp/kept.epub');
-      await db.insertBook(bookToCompanion(book));
-      library.debugAddAll([book]);
-
-      await library.deleteBookWithFile(book.id, deleteFile: false);
-
-      expect(library.books, isEmpty);
-    });
+        expect(library.books, isEmpty);
+      },
+    );
   });
 }

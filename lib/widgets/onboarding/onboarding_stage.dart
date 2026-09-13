@@ -21,27 +21,47 @@ class StageSpec {
 }
 
 StageSpec specFor(ColorScheme s, int i) => switch (i) {
-      0 => StageSpec(
-          w: 210, h: 210, radius: 74,
-          bg: s.primaryContainer, fg: s.onPrimaryContainer,
-          icon: Icons.auto_stories_outlined),
-      1 => StageSpec(
-          w: 168, h: 134, radius: 32,
-          bg: s.secondaryContainer, fg: s.onSecondaryContainer,
-          icon: Icons.folder_open_rounded),
-      2 => StageSpec(
-          w: 152, h: 152, radius: 28,
-          bg: s.tertiaryContainer, fg: s.onTertiaryContainer,
-          icon: Icons.tune_rounded),
-      3 => StageSpec(
-          w: 152, h: 152, radius: 28,
-          bg: s.primaryContainer, fg: s.onPrimaryContainer,
-          icon: Icons.menu_book_rounded),
-      _ => StageSpec(
-          w: 174, h: 152, radius: 30,
-          bg: s.secondaryContainer, fg: s.onSecondaryContainer,
-          icon: Icons.layers_outlined),
-    };
+  0 => StageSpec(
+    w: 210,
+    h: 210,
+    radius: 74,
+    bg: s.primaryContainer,
+    fg: s.onPrimaryContainer,
+    icon: Icons.auto_stories_outlined,
+  ),
+  1 => StageSpec(
+    w: 168,
+    h: 134,
+    radius: 32,
+    bg: s.secondaryContainer,
+    fg: s.onSecondaryContainer,
+    icon: Icons.folder_open_rounded,
+  ),
+  2 => StageSpec(
+    w: 152,
+    h: 152,
+    radius: 28,
+    bg: s.tertiaryContainer,
+    fg: s.onTertiaryContainer,
+    icon: Icons.tune_rounded,
+  ),
+  3 => StageSpec(
+    w: 152,
+    h: 152,
+    radius: 28,
+    bg: s.primaryContainer,
+    fg: s.onPrimaryContainer,
+    icon: Icons.menu_book_rounded,
+  ),
+  _ => StageSpec(
+    w: 174,
+    h: 152,
+    radius: 30,
+    bg: s.secondaryContainer,
+    fg: s.onSecondaryContainer,
+    icon: Icons.layers_outlined,
+  ),
+};
 
 /// The shared-element "den": one container that morphs its size, shape and
 /// fill between pages so the flow reads as a single object travelling
@@ -49,7 +69,9 @@ StageSpec specFor(ColorScheme s, int i) => switch (i) {
 ///
 /// When [animateEntrance] is true (default for page 0), the stage fades in
 /// and scales from 0.9 to 1.0 on first build.
-Widget buildStage(BuildContext context, int i, {
+Widget buildStage(
+  BuildContext context,
+  int i, {
   bool showPermissionCheck = false,
   bool showScanCheck = false,
   bool animateEntrance = false,
@@ -83,10 +105,8 @@ Widget buildStage(BuildContext context, int i, {
               color: s.fg,
             ),
           ),
-        if (showScanCheck)
-          _checkBadge(scheme),
-        if (showPermissionCheck)
-          _checkBadge(scheme),
+        if (showScanCheck) _checkBadge(scheme),
+        if (showPermissionCheck) _checkBadge(scheme),
       ],
     ),
   );
@@ -164,10 +184,7 @@ class _EntranceAnimationState extends State<_EntranceAnimation>
       builder: (context, child) {
         return Opacity(
           opacity: _fade.value,
-          child: Transform.scale(
-            scale: _scale.value,
-            child: child,
-          ),
+          child: Transform.scale(scale: _scale.value, child: child),
         );
       },
       child: widget.child,
@@ -235,7 +252,10 @@ Widget _denGraphic(ColorScheme scheme) {
         child: Container(
           width: 30,
           height: 30,
-          decoration: BoxDecoration(color: scheme.tertiary, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: scheme.tertiary,
+            shape: BoxShape.circle,
+          ),
           child: Icon(
             Icons.bedtime_rounded,
             size: 16,

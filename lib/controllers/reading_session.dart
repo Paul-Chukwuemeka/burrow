@@ -6,10 +6,7 @@ import '../models/book.dart';
 import '../services/library_service.dart';
 
 class ReadingSessionManager extends ChangeNotifier {
-  ReadingSessionManager({
-    required this.library,
-    required this.book,
-  });
+  ReadingSessionManager({required this.library, required this.book});
 
   final LibraryService library;
   final Book book;
@@ -37,18 +34,20 @@ class ReadingSessionManager extends ChangeNotifier {
     if (_sessionId >= 0) return;
     _sessionId = -2; // sentinel: session pending
     final gen = ++_startGeneration;
-    library.startSession(book.id).then(
-      (id) {
-        if (gen != _startGeneration) return; // superseded
-        _sessionId = id;
-        notifyListeners();
-      },
-      onError: (_) {
-        if (gen != _startGeneration) return;
-        _sessionId = -1;
-        notifyListeners();
-      },
-    );
+    library
+        .startSession(book.id)
+        .then(
+          (id) {
+            if (gen != _startGeneration) return; // superseded
+            _sessionId = id;
+            notifyListeners();
+          },
+          onError: (_) {
+            if (gen != _startGeneration) return;
+            _sessionId = -1;
+            notifyListeners();
+          },
+        );
   }
 
   Future<void> endSession() async {

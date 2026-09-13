@@ -15,11 +15,12 @@ const double kBookGridPadding = 20.0;
 /// with columns sized so each tile is at most [kBookGridMaxTileExtent] wide.
 SliverGridDelegate bookGridDelegate(double width) {
   final columns = math.max(1, (width / kBookGridMaxTileExtent).ceil());
-  final tileWidth =
-      (width - kBookGridCrossSpacing * (columns - 1)) / columns;
+  final tileWidth = (width - kBookGridCrossSpacing * (columns - 1)) / columns;
   final coverWidth = tileWidth - kBookGridCardPadding * 2;
   final mainAxisExtent =
-      kBookGridCardPadding + coverWidth / Burrow.coverAspectRatio + kBookGridTextBlock;
+      kBookGridCardPadding +
+      coverWidth / Burrow.coverAspectRatio +
+      kBookGridTextBlock;
 
   return SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: columns,

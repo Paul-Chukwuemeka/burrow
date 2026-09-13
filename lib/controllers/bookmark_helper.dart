@@ -14,7 +14,8 @@ class BookmarkHelper extends ChangeNotifier {
 
   final LibraryService library;
   final Book book;
-  final ({int chapter, int offset, String? snippet})? Function() getCurrentPosition;
+  final ({int chapter, int offset, String? snippet})? Function()
+  getCurrentPosition;
   final bool isPdf;
 
   List<db.Bookmark> _bookmarks = [];

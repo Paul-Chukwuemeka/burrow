@@ -79,13 +79,21 @@ class ThemePicker extends StatelessWidget {
                 child: Stack(
                   children: [
                     Center(
-                      child: Icon(icon, size: 32, color: onPreview.withValues(alpha: 0.6)),
+                      child: Icon(
+                        icon,
+                        size: 32,
+                        color: onPreview.withValues(alpha: 0.6),
+                      ),
                     ),
                     if (selected)
                       Positioned(
                         top: 6,
                         right: 6,
-                        child: Icon(Icons.check_circle, size: 20, color: scheme.primary),
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 20,
+                          color: scheme.primary,
+                        ),
                       ),
                   ],
                 ),

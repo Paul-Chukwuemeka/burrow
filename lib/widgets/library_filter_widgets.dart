@@ -49,50 +49,6 @@ class SearchField extends StatelessWidget {
   }
 }
 
-class FilterRow extends StatelessWidget {
-  const FilterRow({
-    required this.filter,
-    required this.onFilter,
-    required this.activeFilterCount,
-    required this.onFilterTap,
-  });
-
-  final BookFormat? filter;
-  final ValueChanged<BookFormat?> onFilter;
-  final int activeFilterCount;
-  final VoidCallback onFilterTap;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget chip(String label, BookFormat? value) {
-      return PillChip(
-        label: label,
-        selected: filter == value,
-        onTap: () => onFilter(value),
-      );
-    }
-
-    return SizedBox(
-      height: 64,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        children: [
-          chip('All', null),
-          const SizedBox(width: 8),
-          chip('EPUB', BookFormat.epub),
-          const SizedBox(width: 8),
-          chip('TXT', BookFormat.txt),
-          const SizedBox(width: 8),
-          chip('PDF', BookFormat.pdf),
-          const SizedBox(width: 8),
-          FilterIconButton(activeCount: activeFilterCount, onTap: onFilterTap),
-        ],
-      ),
-    );
-  }
-}
-
 class FilterIconButton extends StatelessWidget {
   const FilterIconButton({required this.activeCount, required this.onTap});
 

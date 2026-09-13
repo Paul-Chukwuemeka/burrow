@@ -27,10 +27,10 @@ class BookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: 12.5,
-          height: 1.2,
-        );
+      fontWeight: FontWeight.w700,
+      fontSize: 12.5,
+      height: 1.2,
+    );
 
     return MergeSemantics(
       child: Semantics(
@@ -41,15 +41,14 @@ class BookCard extends StatelessWidget {
         excludeSemantics: true,
         child: PressableScale(
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
             child: Material(
               color: scheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(6),
                 side: BorderSide(
-                    color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                ),
               ),
               clipBehavior: Clip.hardEdge,
               child: InkWell(
@@ -62,48 +61,44 @@ class BookCard extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
                       child: MediaQuery(
-                        data: MediaQuery.of(context).copyWith(
-                          textScaler: TextScaler.noScaling,
-                        ),
+                        data: MediaQuery.of(
+                          context,
+                        ).copyWith(textScaler: TextScaler.noScaling),
                         child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            height: 16,
-                            child: Text(
-                              book.displayTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: titleStyle,
-                            ),
-                          ),
-                          if (book.author.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 1),
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              height: 16,
                               child: Text(
-                                book.author,
+                                book.displayTitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 11,
-                                    ),
+                                style: titleStyle,
                               ),
                             ),
-                          const SizedBox(height: 2),
-                          SizedBox(
-                            height: 13,
-                            child: subtitle != null
-                                ? _SubtitleLine(
-                                    text: subtitle!,
-                                  )
-                                : _StatusLine(book: book),
-                          ),
-                        ],
-                      ),
+                            if (book.author.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 1),
+                                child: Text(
+                                  book.author,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                        fontSize: 11,
+                                      ),
+                                ),
+                              ),
+                            const SizedBox(height: 2),
+                            SizedBox(
+                              height: 13,
+                              child: subtitle != null
+                                  ? _SubtitleLine(text: subtitle!)
+                                  : _StatusLine(book: book),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -134,15 +129,15 @@ class BookListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-          height: 1.25,
-          color: scheme.onSurface,
-        );
+      fontWeight: FontWeight.w700,
+      fontSize: 14,
+      height: 1.25,
+      color: scheme.onSurface,
+    );
     final metaStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: scheme.onSurfaceVariant,
-          fontSize: 12,
-        );
+      color: scheme.onSurfaceVariant,
+      fontSize: 12,
+    );
 
     final formatLabel = book.format.name.toUpperCase();
 
@@ -156,23 +151,24 @@ class BookListCard extends StatelessWidget {
         excludeSemantics: true,
         child: PressableScale(
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
             child: Material(
               color: scheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(6),
                 side: BorderSide(
-                    color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                ),
               ),
               clipBehavior: Clip.hardEdge,
               child: InkWell(
                 onTap: onTap,
                 onLongPress: onLongPress,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -186,49 +182,46 @@ class BookListCard extends StatelessWidget {
                         child: SizedBox(
                           height: 132,
                           child: MediaQuery(
-                            data: MediaQuery.of(context).copyWith(
-                              textScaler: TextScaler.noScaling,
-                            ),
+                            data: MediaQuery.of(
+                              context,
+                            ).copyWith(textScaler: TextScaler.noScaling),
                             child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    book.displayTitle,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: titleStyle,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  if (book.author.isNotEmpty)
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
                                     Text(
-                                      book.author,
-                                      maxLines: 1,
+                                      book.displayTitle,
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: metaStyle,
+                                      style: titleStyle,
                                     ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    formatLabel,
-                                    style: metaStyle,
-                                  ),
-                                ],
-                              ),
-                              if (book.showProgress) ...[
-                                const SizedBox(height: 6),
-                                SegmentedProgressBar(
-                                  value: book.progress,
-                                  track: scheme.surfaceContainerHighest,
-                                  fill: scheme.primary,
-                                  height: 4,
+                                    const SizedBox(height: 2),
+                                    if (book.author.isNotEmpty)
+                                      Text(
+                                        book.author,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: metaStyle,
+                                      ),
+                                    const SizedBox(height: 3),
+                                    Text(formatLabel, style: metaStyle),
+                                  ],
                                 ),
-                                const SizedBox(height: 6),
+                                if (book.showProgress) ...[
+                                  const SizedBox(height: 6),
+                                  SegmentedProgressBar(
+                                    value: book.progress,
+                                    track: scheme.surfaceContainerHighest,
+                                    fill: scheme.primary,
+                                    height: 4,
+                                  ),
+                                  const SizedBox(height: 6),
+                                ],
                               ],
-                            ],
-                          ),
+                            ),
                           ),
                         ),
                       ),
@@ -295,8 +288,10 @@ class _CoverArea extends StatelessWidget {
               if (!book.isStarted)
                 Container(
                   margin: const EdgeInsets.only(right: 4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.primary.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(99),
@@ -313,8 +308,7 @@ class _CoverArea extends StatelessWidget {
                   ),
                 ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                   color: badgeBg.withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(99),
@@ -360,10 +354,10 @@ class _StatusLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final style = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: scheme.onSurfaceVariant,
-          fontWeight: book.isFinished ? FontWeight.w700 : FontWeight.w500,
-          height: 1,
-        );
+      color: scheme.onSurfaceVariant,
+      fontWeight: book.isFinished ? FontWeight.w700 : FontWeight.w500,
+      height: 1,
+    );
 
     if (!book.isStarted) return const SizedBox.shrink();
     if (book.isFinished) {
@@ -395,10 +389,10 @@ class _SubtitleLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final style = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: scheme.primary,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        );
+      color: scheme.primary,
+      fontWeight: FontWeight.w700,
+      height: 1,
+    );
     return Row(
       children: [
         Expanded(

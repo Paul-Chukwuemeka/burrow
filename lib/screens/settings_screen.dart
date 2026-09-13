@@ -18,7 +18,8 @@ class SettingsScreen extends StatefulWidget {
   final LibraryService library;
   final bool autoDownloadDictionary;
 
-  static void show(BuildContext context, {
+  static void show(
+    BuildContext context, {
     required LibraryService library,
     bool autoDownloadDictionary = false,
   }) {
@@ -107,9 +108,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
@@ -139,17 +138,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Font family picker.
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.font_download_outlined, color: scheme.onSurfaceVariant),
+            leading: Icon(
+              Icons.font_download_outlined,
+              color: scheme.onSurfaceVariant,
+            ),
             title: const Text('Font', softWrap: false),
             trailing: DropdownButton<String>(
               value: _s.uiFontFamily,
               underline: const SizedBox.shrink(),
               items: [
                 for (final f in kUiFonts)
-                  DropdownMenuItem(
-                    value: f.family,
-                    child: Text(f.label),
-                  ),
+                  DropdownMenuItem(value: f.family, child: Text(f.label)),
               ],
               onChanged: (v) => _update(() => _s.uiFontFamily = v),
             ),
@@ -168,16 +167,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   visualDensity: VisualDensity.compact,
                   onPressed: _s.uiTextScale > ReaderSettings.uiTextScaleRange.$1
                       ? () => _update(() {
-                            final step =
-                                (ReaderSettings.uiTextScaleRange.$2 -
-                                        ReaderSettings.uiTextScaleRange.$1) /
-                                    7;
-                            _s.uiTextScale = (_s.uiTextScale - step)
-                                .clamp(
-                                  ReaderSettings.uiTextScaleRange.$1,
-                                  ReaderSettings.uiTextScaleRange.$2,
-                                );
-                          })
+                          final step =
+                              (ReaderSettings.uiTextScaleRange.$2 -
+                                  ReaderSettings.uiTextScaleRange.$1) /
+                              7;
+                          _s.uiTextScale = (_s.uiTextScale - step).clamp(
+                            ReaderSettings.uiTextScaleRange.$1,
+                            ReaderSettings.uiTextScaleRange.$2,
+                          );
+                        })
                       : null,
                 ),
                 SizedBox(
@@ -197,16 +195,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   visualDensity: VisualDensity.compact,
                   onPressed: _s.uiTextScale < ReaderSettings.uiTextScaleRange.$2
                       ? () => _update(() {
-                            final step =
-                                (ReaderSettings.uiTextScaleRange.$2 -
-                                        ReaderSettings.uiTextScaleRange.$1) /
-                                    7;
-                            _s.uiTextScale = (_s.uiTextScale + step)
-                                .clamp(
-                                  ReaderSettings.uiTextScaleRange.$1,
-                                  ReaderSettings.uiTextScaleRange.$2,
-                                );
-                          })
+                          final step =
+                              (ReaderSettings.uiTextScaleRange.$2 -
+                                  ReaderSettings.uiTextScaleRange.$1) /
+                              7;
+                          _s.uiTextScale = (_s.uiTextScale + step).clamp(
+                            ReaderSettings.uiTextScaleRange.$1,
+                            ReaderSettings.uiTextScaleRange.$2,
+                          );
+                        })
                       : null,
                 ),
               ],
@@ -221,21 +218,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: _dictReady
                 ? Text(
                     'Downloaded',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   )
                 : _dictDownloading
-                    ? Text(
-                        _dictStatus.isNotEmpty
-                            ? _dictStatus
-                            : _dictProgress > 0
-                                ? 'Downloading… ${(_dictProgress * 100).toStringAsFixed(0)}%'
-                                : 'Connecting…',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      )
-                    : Text(
-                        'Tap to download (~40 MB)',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
+                ? Text(
+                    _dictStatus.isNotEmpty
+                        ? _dictStatus
+                        : _dictProgress > 0
+                        ? 'Downloading… ${(_dictProgress * 100).toStringAsFixed(0)}%'
+                        : 'Connecting…',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  )
+                : Text(
+                    'Tap to download (~40 MB)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
             trailing: _dictDownloading
                 ? SizedBox(
                     width: 48,
@@ -252,18 +258,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   )
                 : _dictReady
-                    ? Icon(Icons.check_circle, color: scheme.primary)
-                    : _dictError != null
-                        ? IconButton(
-                            icon: Icon(Icons.refresh, color: scheme.error),
-                            onPressed: _startDictDownload,
-                          )
-                        : Icon(Icons.download, color: scheme.onSurfaceVariant),
+                ? Icon(Icons.check_circle, color: scheme.primary)
+                : _dictError != null
+                ? IconButton(
+                    icon: Icon(Icons.refresh, color: scheme.error),
+                    onPressed: _startDictDownload,
+                  )
+                : Icon(Icons.download, color: scheme.onSurfaceVariant),
             onTap: _dictDownloading
                 ? null
                 : _dictReady
-                    ? null
-                    : _startDictDownload,
+                ? null
+                : _startDictDownload,
           ),
           if (_dictDownloading && _dictProgress > 0)
             Padding(
@@ -301,7 +307,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context: context,
               applicationName: 'Burrow',
               applicationVersion: _version,
-              applicationLegalese: 'Dictionary data © Open English WordNet 2024 (CC BY 4.0)\n'
+              applicationLegalese:
+                  'Dictionary data © Open English WordNet 2024 (CC BY 4.0)\n'
                   'Licensed under the Creative Commons Attribution 4.0 International License.\n'
                   'https://creativecommons.org/licenses/by/4.0/',
             ),
@@ -395,14 +402,21 @@ class _ThemeGrid extends StatelessWidget {
                 child: Stack(
                   children: [
                     Center(
-                      child: Icon(icon,
-                          size: 28, color: onPreview.withValues(alpha: 0.6)),
+                      child: Icon(
+                        icon,
+                        size: 28,
+                        color: onPreview.withValues(alpha: 0.6),
+                      ),
                     ),
                     if (isSel)
                       Positioned(
                         top: 6,
                         right: 6,
-                        child: Icon(Icons.check_circle, size: 20, color: scheme.primary),
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 20,
+                          color: scheme.primary,
+                        ),
                       ),
                   ],
                 ),
@@ -450,10 +464,7 @@ class _ToggleRow extends StatelessWidget {
         subtitle,
         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
       ),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-      ),
+      trailing: Switch(value: value, onChanged: onChanged),
     );
   }
 }

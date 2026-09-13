@@ -43,7 +43,8 @@ class Books extends Table {
   TextColumn? get source => text().nullable()();
   TextColumn? get titleSort => text().nullable()();
   TextColumn? get authorSort => text().nullable()();
-  BoolColumn get metadataComplete => boolean().withDefault(const Constant(false))();
+  BoolColumn get metadataComplete =>
+      boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -90,8 +91,7 @@ class Collections extends Table {
 
 class CollectionBooks extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get collectionId =>
-      text().references(Collections, #id)();
+  TextColumn get collectionId => text().references(Collections, #id)();
   TextColumn get bookId => text().references(Books, #id)();
   IntColumn get addedAt => integer()();
   IntColumn get sortPosition => integer().withDefault(const Constant(0))();
@@ -114,7 +114,15 @@ class _PerBookAggregate {
 // ---------------------------------------------------------------------------
 
 @DriftDatabase(
-    tables: [Books, Bookmarks, ReadingSessions, Meta, Collections, CollectionBooks])
+  tables: [
+    Books,
+    Bookmarks,
+    ReadingSessions,
+    Meta,
+    Collections,
+    CollectionBooks,
+  ],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
@@ -125,62 +133,63 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) async {
-          await m.createAll();
-        },
-        onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            try {
-              await m.createTable(collections);
-              await m.createTable(collectionBooks);
-            } catch (e) {
-              debugPrint('Migration step from=$from to=2 failed: $e');
-            }
-          }
-          if (from < 3) {
-            try {
-              await m.addColumn(books, books.description);
-              await m.addColumn(books, books.genre);
-              await m.addColumn(books, books.seriesName);
-              await m.addColumn(books, books.seriesIndex);
-              await m.addColumn(books, books.publisher);
-              await m.addColumn(books, books.isbn);
-              await m.addColumn(books, books.language);
-              await m.addColumn(books, books.review);
-            } catch (e) {
-              debugPrint('Migration step from=$from to=3 failed: $e');
-            }
-          }
-          if (from < 4) {
-            try {
-              await m.addColumn(books, books.annotation);
-              await m.addColumn(books, books.publicationDate);
-              await m.addColumn(books, books.rights);
-              await m.addColumn(books, books.type);
-              await m.addColumn(books, books.source);
-              await m.addColumn(books, books.titleSort);
-              await m.addColumn(books, books.authorSort);
-            } catch (e) {
-              debugPrint('Migration step from=$from to=4 failed: $e');
-            }
-          }
-          if (from < 5) {
-            try {
-              await m.addColumn(books, books.metadataComplete);
-            } catch (e) {
-              debugPrint('Migration step from=$from to=5 failed: $e');
-            }
-          }
-          if (from < 6) {
-            try {
-              await customStatement(
-                  'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (book_id)');
-            } catch (e) {
-              debugPrint('Migration step from=$from to=6 failed: $e');
-            }
-          }
-        },
-      );
+    onCreate: (m) async {
+      await m.createAll();
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        try {
+          await m.createTable(collections);
+          await m.createTable(collectionBooks);
+        } catch (e) {
+          debugPrint('Migration step from=$from to=2 failed: $e');
+        }
+      }
+      if (from < 3) {
+        try {
+          await m.addColumn(books, books.description);
+          await m.addColumn(books, books.genre);
+          await m.addColumn(books, books.seriesName);
+          await m.addColumn(books, books.seriesIndex);
+          await m.addColumn(books, books.publisher);
+          await m.addColumn(books, books.isbn);
+          await m.addColumn(books, books.language);
+          await m.addColumn(books, books.review);
+        } catch (e) {
+          debugPrint('Migration step from=$from to=3 failed: $e');
+        }
+      }
+      if (from < 4) {
+        try {
+          await m.addColumn(books, books.annotation);
+          await m.addColumn(books, books.publicationDate);
+          await m.addColumn(books, books.rights);
+          await m.addColumn(books, books.type);
+          await m.addColumn(books, books.source);
+          await m.addColumn(books, books.titleSort);
+          await m.addColumn(books, books.authorSort);
+        } catch (e) {
+          debugPrint('Migration step from=$from to=4 failed: $e');
+        }
+      }
+      if (from < 5) {
+        try {
+          await m.addColumn(books, books.metadataComplete);
+        } catch (e) {
+          debugPrint('Migration step from=$from to=5 failed: $e');
+        }
+      }
+      if (from < 6) {
+        try {
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (book_id)',
+          );
+        } catch (e) {
+          debugPrint('Migration step from=$from to=6 failed: $e');
+        }
+      }
+    },
+  );
 
   // -- Books CRUD ------------------------------------------------------------
 
@@ -199,16 +208,15 @@ class AppDatabase extends _$AppDatabase {
   // -- Meta (schema versioning) ----------------------------------------------
 
   Future<String?> getMeta(String key) async {
-    final row = await (select(meta)..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
+    final row = await (select(
+      meta,
+    )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.value;
   }
 
-  Future<void> setMeta(String key, String value) async =>
-      into(meta).insertOnConflictUpdate(MetaCompanion.insert(
-        key: key,
-        value: value,
-      ));
+  Future<void> setMeta(String key, String value) async => into(
+    meta,
+  ).insertOnConflictUpdate(MetaCompanion.insert(key: key, value: value));
 
   // -- Bookmarks CRUD --------------------------------------------------------
 
@@ -222,21 +230,25 @@ class AppDatabase extends _$AppDatabase {
           .get();
 
   /// Every bookmark across all books, for library backup/restore.
-  Future<List<Bookmark>> getAllBookmarks() async =>
-      (select(bookmarks)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-          .get();
+  Future<List<Bookmark>> getAllBookmarks() async => (select(
+    bookmarks,
+  )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
 
   Future<bool> bookmarkExists(String id) async =>
-      await (select(bookmarks)..where((t) => t.id.equals(id))..limit(1))
-              .getSingleOrNull() !=
-          null;
+      await (select(bookmarks)
+            ..where((t) => t.id.equals(id))
+            ..limit(1))
+          .getSingleOrNull() !=
+      null;
 
   Future<bool> sessionExists(String bookId, int startedAt) async =>
       await (select(readingSessions)
-            ..where((t) => t.bookId.equals(bookId) & t.startedAt.equals(startedAt))
+            ..where(
+              (t) => t.bookId.equals(bookId) & t.startedAt.equals(startedAt),
+            )
             ..limit(1))
-              .getSingleOrNull() !=
-          null;
+          .getSingleOrNull() !=
+      null;
 
   Future<void> deleteBookmarkById(String id) async =>
       (delete(bookmarks)..where((t) => t.id.equals(id))).go();
@@ -247,10 +259,12 @@ class AppDatabase extends _$AppDatabase {
     required int offset,
   }) async =>
       (select(bookmarks)
-            ..where((t) =>
-                t.bookId.equals(bookId) &
-                t.chapter.equals(chapter) &
-                t.offset.equals(offset))
+            ..where(
+              (t) =>
+                  t.bookId.equals(bookId) &
+                  t.chapter.equals(chapter) &
+                  t.offset.equals(offset),
+            )
             ..limit(1))
           .getSingleOrNull();
 
@@ -273,10 +287,9 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
           .get();
 
-  Future<List<ReadingSession>> getAllSessions() async =>
-      (select(readingSessions)
-            ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
-          .get();
+  Future<List<ReadingSession>> getAllSessions() async => (select(
+    readingSessions,
+  )..orderBy([(t) => OrderingTerm.desc(t.startedAt)])).get();
 
   Future<int> getTotalReadingTimeMs(String bookId) async {
     final result = await customSelect(
@@ -334,7 +347,9 @@ class AppDatabase extends _$AppDatabase {
       'SUM(ended_at - started_at) AS total '
       'FROM reading_sessions WHERE ended_at > 0 GROUP BY month',
     ).get();
-    return {for (final r in results) r.read<String>('month'): r.read<int>('total')};
+    return {
+      for (final r in results) r.read<String>('month'): r.read<int>('total'),
+    };
   }
 
   /// Returns the longest single reading session in ms.
@@ -357,7 +372,8 @@ class AppDatabase extends _$AppDatabase {
 
   /// Returns total reading time in ms for today.
   Future<int> getTodayReadingTimeMs() async {
-    final todayEpoch = (DateTime.now().millisecondsSinceEpoch / 86400000).floor();
+    final todayEpoch = (DateTime.now().millisecondsSinceEpoch / 86400000)
+        .floor();
     final result = await customSelect(
       'SELECT SUM(ended_at - started_at) AS total '
       'FROM reading_sessions '
@@ -400,12 +416,14 @@ class AppDatabase extends _$AppDatabase {
     for (final book in books) {
       if (!book.isStarted) continue;
       final agg = statsByBook[book.id];
-      bookList.add(BookStats(
-        book: book,
-        totalTimeMs: agg?.totalTimeMs ?? 0,
-        totalPages: agg?.totalPages ?? 0,
-        sessionCount: agg?.sessionCount ?? 0,
-      ));
+      bookList.add(
+        BookStats(
+          book: book,
+          totalTimeMs: agg?.totalTimeMs ?? 0,
+          totalPages: agg?.totalPages ?? 0,
+          sessionCount: agg?.sessionCount ?? 0,
+        ),
+      );
     }
     bookList.sort((a, b) => b.totalTimeMs.compareTo(a.totalTimeMs));
     return bookList;
@@ -420,13 +438,15 @@ class AppDatabase extends _$AppDatabase {
       into(collections).insert(collection);
 
   Future<void> updateCollection(CollectionsCompanion collection) async =>
-      (update(collections)..where((t) => t.id.equals(collection.id.value)))
-          .write(collection);
+      (update(
+        collections,
+      )..where((t) => t.id.equals(collection.id.value))).write(collection);
 
   Future<void> deleteCollectionById(String id) async {
     await transaction(() async {
-      await (delete(collectionBooks)..where((t) => t.collectionId.equals(id)))
-          .go();
+      await (delete(
+        collectionBooks,
+      )..where((t) => t.collectionId.equals(id))).go();
       await (delete(collections)..where((t) => t.id.equals(id))).go();
     });
   }
@@ -442,14 +462,18 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> removeBookFromCollection(
-      String collectionId, String bookId) async {
-    await (delete(collectionBooks)
-          ..where((t) =>
-              t.collectionId.equals(collectionId) & t.bookId.equals(bookId)))
+    String collectionId,
+    String bookId,
+  ) async {
+    await (delete(collectionBooks)..where(
+          (t) => t.collectionId.equals(collectionId) & t.bookId.equals(bookId),
+        ))
         .go();
   }
 
-  Future<List<CollectionBook>> getBooksForCollection(String collectionId) async =>
+  Future<List<CollectionBook>> getBooksForCollection(
+    String collectionId,
+  ) async =>
       (select(collectionBooks)
             ..where((t) => t.collectionId.equals(collectionId))
             ..orderBy([(t) => OrderingTerm.asc(t.sortPosition)]))
@@ -457,26 +481,30 @@ class AppDatabase extends _$AppDatabase {
 
   Future<bool> isBookInCollection(String collectionId, String bookId) async =>
       await (select(collectionBooks)
-                ..where((t) =>
-                    t.collectionId.equals(collectionId) &
-                    t.bookId.equals(bookId))
-                ..limit(1))
-              .getSingleOrNull() !=
-          null;
+            ..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) & t.bookId.equals(bookId),
+            )
+            ..limit(1))
+          .getSingleOrNull() !=
+      null;
 
   Future<int> getCollectionBookCount(String collectionId) async {
     final count = collectionBooks.id.count();
-    final result = await (selectOnly(collectionBooks)
-          ..where(collectionBooks.collectionId.equals(collectionId))
-          ..addColumns([count]))
-        .getSingle();
+    final result =
+        await (selectOnly(collectionBooks)
+              ..where(collectionBooks.collectionId.equals(collectionId))
+              ..addColumns([count]))
+            .getSingle();
     return result.read(count) ?? 0;
   }
 
   Future<List<Collection>> getCollectionsForBook(String bookId) async {
     final query = select(collections).join([
-      innerJoin(collectionBooks,
-          collectionBooks.collectionId.equalsExp(collections.id)),
+      innerJoin(
+        collectionBooks,
+        collectionBooks.collectionId.equalsExp(collections.id),
+      ),
     ])..where(collectionBooks.bookId.equals(bookId));
     final rows = await query.get();
     return rows.map((row) => row.readTable(collections)).toList();
@@ -486,7 +514,9 @@ class AppDatabase extends _$AppDatabase {
       select(collectionBooks).get();
 
   Future<void> updateCollectionBookSortPosition(
-      int id, int sortPosition) async {
+    int id,
+    int sortPosition,
+  ) async {
     await (update(collectionBooks)..where((t) => t.id.equals(id))).write(
       CollectionBooksCompanion(sortPosition: Value(sortPosition)),
     );
@@ -498,94 +528,94 @@ class AppDatabase extends _$AppDatabase {
 // ---------------------------------------------------------------------------
 
 Book bookFromRow(BookRow row) => Book(
-      id: row.id,
-      title: row.title,
-      author: row.author,
-      path: row.path,
-      format: row.format,
-      coverPath: row.coverPath,
-      addedAt: row.addedAt,
-      lastReadAt: row.lastReadAt,
-      progress: row.progress,
-      lastChapter: row.lastChapter,
-      lastOffset: row.lastOffset,
-      description: row.description,
-      annotation: row.annotation,
-      genre: row.genre,
-      seriesName: row.seriesName,
-      seriesIndex: row.seriesIndex,
-      publisher: row.publisher,
-      isbn: row.isbn,
-      language: row.language,
-      review: row.review,
-      publicationDate: row.publicationDate,
-      rights: row.rights,
-      type: row.type,
-      source: row.source,
-      titleSort: row.titleSort,
-      authorSort: row.authorSort,
-      metadataComplete: row.metadataComplete,
-    );
+  id: row.id,
+  title: row.title,
+  author: row.author,
+  path: row.path,
+  format: row.format,
+  coverPath: row.coverPath,
+  addedAt: row.addedAt,
+  lastReadAt: row.lastReadAt,
+  progress: row.progress,
+  lastChapter: row.lastChapter,
+  lastOffset: row.lastOffset,
+  description: row.description,
+  annotation: row.annotation,
+  genre: row.genre,
+  seriesName: row.seriesName,
+  seriesIndex: row.seriesIndex,
+  publisher: row.publisher,
+  isbn: row.isbn,
+  language: row.language,
+  review: row.review,
+  publicationDate: row.publicationDate,
+  rights: row.rights,
+  type: row.type,
+  source: row.source,
+  titleSort: row.titleSort,
+  authorSort: row.authorSort,
+  metadataComplete: row.metadataComplete,
+);
 
 BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
-      id: book.id,
-      title: book.title,
-      author: Value(book.author),
-      path: book.path,
-      format: book.format,
-      coverPath: Value(book.coverPath),
-      addedAt: book.addedAt,
-      lastReadAt: Value(book.lastReadAt),
-      progress: Value(book.progress),
-      lastChapter: Value(book.lastChapter),
-      lastOffset: Value(book.lastOffset),
-      description: Value(book.description),
-      annotation: Value(book.annotation),
-      genre: Value(book.genre),
-      seriesName: Value(book.seriesName),
-      seriesIndex: Value(book.seriesIndex),
-      publisher: Value(book.publisher),
-      isbn: Value(book.isbn),
-      language: Value(book.language),
-      review: Value(book.review),
-      publicationDate: Value(book.publicationDate),
-      rights: Value(book.rights),
-      type: Value(book.type),
-      source: Value(book.source),
-      titleSort: Value(book.titleSort),
-      authorSort: Value(book.authorSort),
-      metadataComplete: Value(book.metadataComplete),
-    );
+  id: book.id,
+  title: book.title,
+  author: Value(book.author),
+  path: book.path,
+  format: book.format,
+  coverPath: Value(book.coverPath),
+  addedAt: book.addedAt,
+  lastReadAt: Value(book.lastReadAt),
+  progress: Value(book.progress),
+  lastChapter: Value(book.lastChapter),
+  lastOffset: Value(book.lastOffset),
+  description: Value(book.description),
+  annotation: Value(book.annotation),
+  genre: Value(book.genre),
+  seriesName: Value(book.seriesName),
+  seriesIndex: Value(book.seriesIndex),
+  publisher: Value(book.publisher),
+  isbn: Value(book.isbn),
+  language: Value(book.language),
+  review: Value(book.review),
+  publicationDate: Value(book.publicationDate),
+  rights: Value(book.rights),
+  type: Value(book.type),
+  source: Value(book.source),
+  titleSort: Value(book.titleSort),
+  authorSort: Value(book.authorSort),
+  metadataComplete: Value(book.metadataComplete),
+);
 
 BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
-      id: Value(book.id),
-      title: Value(book.title),
-      author: Value(book.author),
-      path: Value(book.path),
-      format: Value(book.format),
-      coverPath: Value(book.coverPath),
-      addedAt: Value(book.addedAt),
-      lastReadAt: Value(book.lastReadAt),
-      progress: Value(book.progress),
-      lastChapter: Value(book.lastChapter),
-      lastOffset: Value(book.lastOffset),
-      description: Value(book.description),
-      annotation: Value(book.annotation),
-      genre: Value(book.genre),
-      seriesName: Value(book.seriesName),
-      seriesIndex: Value(book.seriesIndex),
-      publisher: Value(book.publisher),
-      isbn: Value(book.isbn),
-      language: Value(book.language),
-      review: Value(book.review),
-      publicationDate: Value(book.publicationDate),
-      rights: Value(book.rights),
-      type: Value(book.type),
-      source: Value(book.source),
-      titleSort: Value(book.titleSort),
-      authorSort: Value(book.authorSort),
-      metadataComplete: Value(book.metadataComplete),
-    );
+  id: Value(book.id),
+  title: Value(book.title),
+  author: Value(book.author),
+  path: Value(book.path),
+  format: Value(book.format),
+  coverPath: Value(book.coverPath),
+  addedAt: Value(book.addedAt),
+  lastReadAt: Value(book.lastReadAt),
+  progress: Value(book.progress),
+  lastChapter: Value(book.lastChapter),
+  lastOffset: Value(book.lastOffset),
+  description: Value(book.description),
+  annotation: Value(book.annotation),
+  genre: Value(book.genre),
+  seriesName: Value(book.seriesName),
+  seriesIndex: Value(book.seriesIndex),
+  publisher: Value(book.publisher),
+  isbn: Value(book.isbn),
+  language: Value(book.language),
+  review: Value(book.review),
+  publicationDate: Value(book.publicationDate),
+  rights: Value(book.rights),
+  type: Value(book.type),
+  source: Value(book.source),
+  titleSort: Value(book.titleSort),
+  authorSort: Value(book.authorSort),
+  metadataComplete: Value(book.metadataComplete),
+);
 
 BooksCompanion positionToUpdate({
   required String id,
@@ -593,27 +623,26 @@ BooksCompanion positionToUpdate({
   required int lastOffset,
   required double progress,
   required int lastReadAt,
-}) =>
-    BooksCompanion(
-      id: Value(id),
-      lastChapter: Value(lastChapter),
-      lastOffset: Value(lastOffset),
-      progress: Value(progress),
-      lastReadAt: Value(lastReadAt),
-    );
+}) => BooksCompanion(
+  id: Value(id),
+  lastChapter: Value(lastChapter),
+  lastOffset: Value(lastOffset),
+  progress: Value(progress),
+  lastReadAt: Value(lastReadAt),
+);
 
 // ---------------------------------------------------------------------------
 // Backup serialization (bookmarks + sessions; books use Book.toJson)
 // ---------------------------------------------------------------------------
 
 Map<String, dynamic> bookmarkToJson(Bookmark b) => {
-      'id': b.id,
-      'bookId': b.bookId,
-      'chapter': b.chapter,
-      'offset': b.offset,
-      'snippet': b.snippet,
-      'createdAt': b.createdAt,
-    };
+  'id': b.id,
+  'bookId': b.bookId,
+  'chapter': b.chapter,
+  'offset': b.offset,
+  'snippet': b.snippet,
+  'createdAt': b.createdAt,
+};
 
 BookmarksCompanion bookmarkFromJson(Map<String, dynamic> j) =>
     BookmarksCompanion.insert(
@@ -626,12 +655,12 @@ BookmarksCompanion bookmarkFromJson(Map<String, dynamic> j) =>
     );
 
 Map<String, dynamic> sessionToJson(ReadingSession s) => {
-      'id': s.id,
-      'bookId': s.bookId,
-      'startedAt': s.startedAt,
-      'endedAt': s.endedAt,
-      'pages': s.pages,
-    };
+  'id': s.id,
+  'bookId': s.bookId,
+  'startedAt': s.startedAt,
+  'endedAt': s.endedAt,
+  'pages': s.pages,
+};
 
 ReadingSessionsCompanion sessionFromJson(Map<String, dynamic> j) =>
     ReadingSessionsCompanion.insert(
@@ -642,11 +671,11 @@ ReadingSessionsCompanion sessionFromJson(Map<String, dynamic> j) =>
     );
 
 Map<String, dynamic> collectionToJson(Collection c) => {
-      'id': c.id,
-      'name': c.name,
-      'sortType': c.sortType,
-      'createdAt': c.createdAt,
-    };
+  'id': c.id,
+  'name': c.name,
+  'sortType': c.sortType,
+  'createdAt': c.createdAt,
+};
 
 CollectionsCompanion collectionFromJson(Map<String, dynamic> j) =>
     CollectionsCompanion.insert(
@@ -657,12 +686,12 @@ CollectionsCompanion collectionFromJson(Map<String, dynamic> j) =>
     );
 
 Map<String, dynamic> collectionBookToJson(CollectionBook cb) => {
-      'id': cb.id,
-      'collectionId': cb.collectionId,
-      'bookId': cb.bookId,
-      'addedAt': cb.addedAt,
-      'sortPosition': cb.sortPosition,
-    };
+  'id': cb.id,
+  'collectionId': cb.collectionId,
+  'bookId': cb.bookId,
+  'addedAt': cb.addedAt,
+  'sortPosition': cb.sortPosition,
+};
 
 CollectionBooksCompanion collectionBookFromJson(Map<String, dynamic> j) =>
     CollectionBooksCompanion.insert(
@@ -677,7 +706,7 @@ CollectionBooksCompanion collectionBookFromJson(Map<String, dynamic> j) =>
 // ---------------------------------------------------------------------------
 
 LazyDatabase _openConnection() => LazyDatabase(() async {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File(p.join(dir.path, 'burrow.db'));
-      return NativeDatabase(file);
-    });
+  final dir = await getApplicationDocumentsDirectory();
+  final file = File(p.join(dir.path, 'burrow.db'));
+  return NativeDatabase(file);
+});

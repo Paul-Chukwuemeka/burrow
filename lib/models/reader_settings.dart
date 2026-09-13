@@ -35,10 +35,10 @@ class AppTheme {
   static const AppTheme oled = AppTheme._(brightness: Brightness.dark);
 
   static AppTheme byMode(AppThemeMode mode) => switch (mode) {
-        AppThemeMode.light => light,
-        AppThemeMode.dark => dark,
-        AppThemeMode.oled => oled,
-      };
+    AppThemeMode.light => light,
+    AppThemeMode.dark => dark,
+    AppThemeMode.oled => oled,
+  };
 }
 
 class ReaderTheme {
@@ -97,21 +97,17 @@ class ReaderTheme {
   );
 
   static ReaderTheme byMode(ReaderThemeMode mode) => switch (mode) {
-        ReaderThemeMode.light => light,
-        ReaderThemeMode.sepia => sepia,
-        ReaderThemeMode.dark => dark,
-        ReaderThemeMode.dusk => dusk,
-        ReaderThemeMode.oled => oled,
-      };
+    ReaderThemeMode.light => light,
+    ReaderThemeMode.sepia => sepia,
+    ReaderThemeMode.dark => dark,
+    ReaderThemeMode.dusk => dusk,
+    ReaderThemeMode.oled => oled,
+  };
 }
 
 /// Describes a font available in the reader font picker.
 class ReaderFont {
-  const ReaderFont({
-    required this.family,
-    required this.label,
-    this.subtitle,
-  });
+  const ReaderFont({required this.family, required this.label, this.subtitle});
 
   /// The `fontFamily` value stored in settings. `null` means system default.
   final String? family;
@@ -127,23 +123,51 @@ class ReaderFont {
 
 /// All fonts offered in the reader font picker.
 const kReaderFonts = <ReaderFont>[
-  ReaderFont(family: null, label: 'System default', subtitle: 'Respect the EPUB embedded font'),
+  ReaderFont(
+    family: null,
+    label: 'System default',
+    subtitle: 'Respect the EPUB embedded font',
+  ),
   ReaderFont(family: 'Fraunces', label: 'Fraunces'),
-  ReaderFont(family: 'Literata', label: 'Literata', subtitle: 'Google reading serif'),
+  ReaderFont(
+    family: 'Literata',
+    label: 'Literata',
+    subtitle: 'Google reading serif',
+  ),
   ReaderFont(family: 'Bitter', label: 'Bitter', subtitle: 'Slab serif'),
   ReaderFont(family: 'PT Serif', label: 'PT Serif'),
   ReaderFont(family: 'Georgia', label: 'Georgia', subtitle: 'System serif'),
-  ReaderFont(family: 'Atkinson Hyperlegible', label: 'Atkinson Hyperlegible', subtitle: 'Accessibility first'),
-  ReaderFont(family: 'Source Sans 3', label: 'Source Sans 3', subtitle: 'Sans serif'),
-  ReaderFont(family: 'Public Sans', label: 'Public Sans', subtitle: 'Sans serif'),
+  ReaderFont(
+    family: 'Atkinson Hyperlegible',
+    label: 'Atkinson Hyperlegible',
+    subtitle: 'Accessibility first',
+  ),
+  ReaderFont(
+    family: 'Source Sans 3',
+    label: 'Source Sans 3',
+    subtitle: 'Sans serif',
+  ),
+  ReaderFont(
+    family: 'Public Sans',
+    label: 'Public Sans',
+    subtitle: 'Sans serif',
+  ),
 ];
 
 /// Fonts offered in the app UI font picker (settings screen).
 const kUiFonts = <ReaderFont>[
   ReaderFont(family: null, label: 'Fraunces', subtitle: 'Default serif'),
   ReaderFont(family: 'Bitter', label: 'Bitter', subtitle: 'Slab serif'),
-  ReaderFont(family: 'Atkinson Hyperlegible', label: 'Atkinson Hyperlegible', subtitle: 'Accessibility first'),
-  ReaderFont(family: 'Source Sans 3', label: 'Source Sans 3', subtitle: 'Clean sans serif'),
+  ReaderFont(
+    family: 'Atkinson Hyperlegible',
+    label: 'Atkinson Hyperlegible',
+    subtitle: 'Accessibility first',
+  ),
+  ReaderFont(
+    family: 'Source Sans 3',
+    label: 'Source Sans 3',
+    subtitle: 'Clean sans serif',
+  ),
 ];
 
 class ReaderSettings {
@@ -219,30 +243,30 @@ class ReaderSettings {
   }
 
   Map<String, dynamic> toJson() => {
-        'fontSize': fontSize,
-        'lineHeight': lineHeight,
-        'appThemeMode': appThemeMode.name,
-        'readerTheme': readerTheme.name,
-        'fontFamily': fontFamily,
-        'keepScreenOn': keepScreenOn,
-        'brightness': brightness,
-        'volumeKeyTurns': volumeKeyTurns,
-        'pdfLayoutDirection': pdfLayoutDirection.name,
-        'pdfContinuousScroll': pdfContinuousScroll,
-        'comicReadingMode': comicReadingMode.name,
-        'comicReadingDirection': comicReadingDirection.name,
-        'textJustification': textJustification.name,
-        'horizontalMargin': horizontalMargin,
-        'comicFitMode': comicFitMode.name,
-        'uiFontFamily': uiFontFamily,
-        'uiTextScale': uiTextScale,
-        'respectCssStyles': respectCssStyles,
-        'overrideCssFontSize': overrideCssFontSize,
-        'overrideCssFontFamily': overrideCssFontFamily,
-        'overrideCssColor': overrideCssColor,
-        'overrideCssTextAlign': overrideCssTextAlign,
-        'overrideCssMargin': overrideCssMargin,
-      };
+    'fontSize': fontSize,
+    'lineHeight': lineHeight,
+    'appThemeMode': appThemeMode.name,
+    'readerTheme': readerTheme.name,
+    'fontFamily': fontFamily,
+    'keepScreenOn': keepScreenOn,
+    'brightness': brightness,
+    'volumeKeyTurns': volumeKeyTurns,
+    'pdfLayoutDirection': pdfLayoutDirection.name,
+    'pdfContinuousScroll': pdfContinuousScroll,
+    'comicReadingMode': comicReadingMode.name,
+    'comicReadingDirection': comicReadingDirection.name,
+    'textJustification': textJustification.name,
+    'horizontalMargin': horizontalMargin,
+    'comicFitMode': comicFitMode.name,
+    'uiFontFamily': uiFontFamily,
+    'uiTextScale': uiTextScale,
+    'respectCssStyles': respectCssStyles,
+    'overrideCssFontSize': overrideCssFontSize,
+    'overrideCssFontFamily': overrideCssFontFamily,
+    'overrideCssColor': overrideCssColor,
+    'overrideCssTextAlign': overrideCssTextAlign,
+    'overrideCssMargin': overrideCssMargin,
+  };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
   /// corrupt or hand-edited pref can't produce a degenerate text style.
@@ -250,77 +274,73 @@ class ReaderSettings {
   static const lineHeightRange = (1.2, 2.2);
   static const uiTextScaleRange = (0.8, 1.2);
 
-  static double _clampTo(
-    (double, double) range,
-    double v,
-    double fallback,
-  ) {
+  static double _clampTo((double, double) range, double v, double fallback) {
     if (v.isNaN || v.isInfinite) return fallback;
     return v.clamp(range.$1, range.$2);
   }
 
   static ReaderSettings fromJson(Map<String, dynamic> json) => ReaderSettings(
-        fontSize: _clampTo(
-          fontSizeRange,
-          (json['fontSize'] as num?)?.toDouble() ?? 18,
-          18,
-        ),
-        lineHeight: _clampTo(
-          lineHeightRange,
-          (json['lineHeight'] as num?)?.toDouble() ?? 1.6,
-          1.6,
-        ),
-        appThemeMode: AppThemeMode.values.firstWhere(
-          (m) => m.name == json['appThemeMode'],
-          orElse: () => AppThemeMode.light,
-        ),
-        readerTheme: ReaderThemeMode.values.firstWhere(
-          (m) => m.name == (json['readerTheme'] ?? json['theme']),
-          orElse: () => ReaderThemeMode.sepia,
-        ),
-        fontFamily: _migrateFontFamily(json),
-        keepScreenOn: json['keepScreenOn'] as bool? ?? false,
-        brightness: _parseBrightness(json),
-        volumeKeyTurns: json['volumeKeyTurns'] as bool? ?? false,
-        pdfLayoutDirection: PdfLayoutDirection.values.firstWhere(
-          (d) => d.name == json['pdfLayoutDirection'],
-          orElse: () => PdfLayoutDirection.vertical,
-        ),
-        pdfContinuousScroll: json['pdfContinuousScroll'] as bool? ?? true,
-        comicReadingMode: ComicReadingMode.values.firstWhere(
-          (m) => m.name == json['comicReadingMode'],
-          orElse: () => ComicReadingMode.paginated,
-        ),
-        comicReadingDirection: ComicReadingDirection.values.firstWhere(
-          (d) => d.name == json['comicReadingDirection'],
-          orElse: () => ComicReadingDirection.ltr,
-        ),
-        textJustification: TextJustification.values.firstWhere(
-          (j) => j.name == json['textJustification'],
-          orElse: () => TextJustification.justify,
-        ),
-        horizontalMargin: _clampTo(
-          const (8.0, 40.0),
-          (json['horizontalMargin'] as num?)?.toDouble() ?? 20,
-          20,
-        ),
-        comicFitMode: ComicFitMode.values.firstWhere(
-          (m) => m.name == json['comicFitMode'],
-          orElse: () => ComicFitMode.contain,
-        ),
-        uiFontFamily: json['uiFontFamily'] as String?,
-        uiTextScale: _clampTo(
-          uiTextScaleRange,
-          (json['uiTextScale'] as num?)?.toDouble() ?? 1.0,
-          1.0,
-        ),
-        respectCssStyles: json['respectCssStyles'] as bool? ?? true,
-        overrideCssFontSize: json['overrideCssFontSize'] as bool? ?? false,
-        overrideCssFontFamily: json['overrideCssFontFamily'] as bool? ?? false,
-        overrideCssColor: json['overrideCssColor'] as bool? ?? false,
-        overrideCssTextAlign: json['overrideCssTextAlign'] as bool? ?? false,
-        overrideCssMargin: json['overrideCssMargin'] as bool? ?? false,
-      );
+    fontSize: _clampTo(
+      fontSizeRange,
+      (json['fontSize'] as num?)?.toDouble() ?? 18,
+      18,
+    ),
+    lineHeight: _clampTo(
+      lineHeightRange,
+      (json['lineHeight'] as num?)?.toDouble() ?? 1.6,
+      1.6,
+    ),
+    appThemeMode: AppThemeMode.values.firstWhere(
+      (m) => m.name == json['appThemeMode'],
+      orElse: () => AppThemeMode.light,
+    ),
+    readerTheme: ReaderThemeMode.values.firstWhere(
+      (m) => m.name == (json['readerTheme'] ?? json['theme']),
+      orElse: () => ReaderThemeMode.sepia,
+    ),
+    fontFamily: _migrateFontFamily(json),
+    keepScreenOn: json['keepScreenOn'] as bool? ?? false,
+    brightness: _parseBrightness(json),
+    volumeKeyTurns: json['volumeKeyTurns'] as bool? ?? false,
+    pdfLayoutDirection: PdfLayoutDirection.values.firstWhere(
+      (d) => d.name == json['pdfLayoutDirection'],
+      orElse: () => PdfLayoutDirection.vertical,
+    ),
+    pdfContinuousScroll: json['pdfContinuousScroll'] as bool? ?? true,
+    comicReadingMode: ComicReadingMode.values.firstWhere(
+      (m) => m.name == json['comicReadingMode'],
+      orElse: () => ComicReadingMode.paginated,
+    ),
+    comicReadingDirection: ComicReadingDirection.values.firstWhere(
+      (d) => d.name == json['comicReadingDirection'],
+      orElse: () => ComicReadingDirection.ltr,
+    ),
+    textJustification: TextJustification.values.firstWhere(
+      (j) => j.name == json['textJustification'],
+      orElse: () => TextJustification.justify,
+    ),
+    horizontalMargin: _clampTo(
+      const (8.0, 40.0),
+      (json['horizontalMargin'] as num?)?.toDouble() ?? 20,
+      20,
+    ),
+    comicFitMode: ComicFitMode.values.firstWhere(
+      (m) => m.name == json['comicFitMode'],
+      orElse: () => ComicFitMode.contain,
+    ),
+    uiFontFamily: json['uiFontFamily'] as String?,
+    uiTextScale: _clampTo(
+      uiTextScaleRange,
+      (json['uiTextScale'] as num?)?.toDouble() ?? 1.0,
+      1.0,
+    ),
+    respectCssStyles: json['respectCssStyles'] as bool? ?? true,
+    overrideCssFontSize: json['overrideCssFontSize'] as bool? ?? false,
+    overrideCssFontFamily: json['overrideCssFontFamily'] as bool? ?? false,
+    overrideCssColor: json['overrideCssColor'] as bool? ?? false,
+    overrideCssTextAlign: json['overrideCssTextAlign'] as bool? ?? false,
+    overrideCssMargin: json['overrideCssMargin'] as bool? ?? false,
+  );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.
   static String? _migrateFontFamily(Map<String, dynamic> json) {

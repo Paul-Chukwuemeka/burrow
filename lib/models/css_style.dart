@@ -19,7 +19,9 @@ class CssLength {
 
   @override
   bool operator ==(Object other) =>
-      other is CssLength && other.value == value && other.isPercent == isPercent;
+      other is CssLength &&
+      other.value == value &&
+      other.isPercent == isPercent;
 
   @override
   int get hashCode => Object.hash(value, isPercent);
@@ -86,28 +88,28 @@ class CssStyle {
   final CssLength? maxHeight;
 
   CssStyle merge(CssStyle other) => CssStyle(
-        fontSize: other.fontSize ?? fontSize,
-        color: other.color ?? color,
-        textAlign: other.textAlign ?? textAlign,
-        textIndent: other.textIndent ?? textIndent,
-        marginLeft: other.marginLeft ?? marginLeft,
-        marginRight: other.marginRight ?? marginRight,
-        marginTop: other.marginTop ?? marginTop,
-        marginBottom: other.marginBottom ?? marginBottom,
-        fontWeight: other.fontWeight ?? fontWeight,
-        fontStyle: other.fontStyle ?? fontStyle,
-        textDecoration: other.textDecoration ?? textDecoration,
-        fontFamily: other.fontFamily ?? fontFamily,
-        lineHeight: other.lineHeight ?? lineHeight,
-        letterSpacing: other.letterSpacing ?? letterSpacing,
-        wordSpacing: other.wordSpacing ?? wordSpacing,
-        textTransform: other.textTransform ?? textTransform,
-        whiteSpace: other.whiteSpace ?? whiteSpace,
-        width: other.width ?? width,
-        height: other.height ?? height,
-        maxWidth: other.maxWidth ?? maxWidth,
-        maxHeight: other.maxHeight ?? maxHeight,
-      );
+    fontSize: other.fontSize ?? fontSize,
+    color: other.color ?? color,
+    textAlign: other.textAlign ?? textAlign,
+    textIndent: other.textIndent ?? textIndent,
+    marginLeft: other.marginLeft ?? marginLeft,
+    marginRight: other.marginRight ?? marginRight,
+    marginTop: other.marginTop ?? marginTop,
+    marginBottom: other.marginBottom ?? marginBottom,
+    fontWeight: other.fontWeight ?? fontWeight,
+    fontStyle: other.fontStyle ?? fontStyle,
+    textDecoration: other.textDecoration ?? textDecoration,
+    fontFamily: other.fontFamily ?? fontFamily,
+    lineHeight: other.lineHeight ?? lineHeight,
+    letterSpacing: other.letterSpacing ?? letterSpacing,
+    wordSpacing: other.wordSpacing ?? wordSpacing,
+    textTransform: other.textTransform ?? textTransform,
+    whiteSpace: other.whiteSpace ?? whiteSpace,
+    width: other.width ?? width,
+    height: other.height ?? height,
+    maxWidth: other.maxWidth ?? maxWidth,
+    maxHeight: other.maxHeight ?? maxHeight,
+  );
 
   bool get isEmpty =>
       fontSize == null &&
@@ -133,53 +135,53 @@ class CssStyle {
       maxHeight == null;
 
   Map<String, dynamic> toJson() => {
-        if (fontSize != null) 'fontSize': fontSize,
-        if (color != null) 'color': color!.toARGB32(),
-        if (textAlign != null) 'textAlign': textAlign!.name,
-        if (textIndent != null) 'textIndent': textIndent,
-        if (marginLeft != null) 'marginLeft': marginLeft,
-        if (marginRight != null) 'marginRight': marginRight,
-        if (marginTop != null) 'marginTop': marginTop,
-        if (marginBottom != null) 'marginBottom': marginBottom,
-        if (fontWeight != null) 'fontWeight': fontWeight!.value,
-        if (fontStyle != null) 'fontStyle': fontStyle!.name,
-        if (textDecoration != null) 'textDecoration': _decorationName(textDecoration!),
-        if (fontFamily != null) 'fontFamily': fontFamily,
-        if (lineHeight != null) 'lineHeight': lineHeight,
-        if (letterSpacing != null) 'letterSpacing': letterSpacing,
-        if (wordSpacing != null) 'wordSpacing': wordSpacing,
-        if (textTransform != null) 'textTransform': textTransform,
-        if (whiteSpace != null) 'whiteSpace': whiteSpace,
-        if (width != null) 'width': width!.toJson(),
-        if (height != null) 'height': height!.toJson(),
-        if (maxWidth != null) 'maxWidth': maxWidth!.toJson(),
-        if (maxHeight != null) 'maxHeight': maxHeight!.toJson(),
-      };
+    if (fontSize != null) 'fontSize': fontSize,
+    if (color != null) 'color': color!.toARGB32(),
+    if (textAlign != null) 'textAlign': textAlign!.name,
+    if (textIndent != null) 'textIndent': textIndent,
+    if (marginLeft != null) 'marginLeft': marginLeft,
+    if (marginRight != null) 'marginRight': marginRight,
+    if (marginTop != null) 'marginTop': marginTop,
+    if (marginBottom != null) 'marginBottom': marginBottom,
+    if (fontWeight != null) 'fontWeight': fontWeight!.value,
+    if (fontStyle != null) 'fontStyle': fontStyle!.name,
+    if (textDecoration != null)
+      'textDecoration': _decorationName(textDecoration!),
+    if (fontFamily != null) 'fontFamily': fontFamily,
+    if (lineHeight != null) 'lineHeight': lineHeight,
+    if (letterSpacing != null) 'letterSpacing': letterSpacing,
+    if (wordSpacing != null) 'wordSpacing': wordSpacing,
+    if (textTransform != null) 'textTransform': textTransform,
+    if (whiteSpace != null) 'whiteSpace': whiteSpace,
+    if (width != null) 'width': width!.toJson(),
+    if (height != null) 'height': height!.toJson(),
+    if (maxWidth != null) 'maxWidth': maxWidth!.toJson(),
+    if (maxHeight != null) 'maxHeight': maxHeight!.toJson(),
+  };
 
   static CssStyle fromJson(Map<String, dynamic> json) => CssStyle(
-        fontSize: (json['fontSize'] as num?)?.toDouble(),
-        color: json['color'] != null ? Color(json['color'] as int) : null,
-        textAlign: _enumByName(TextAlign.values, json['textAlign']),
-        textIndent: (json['textIndent'] as num?)?.toDouble(),
-        marginLeft: (json['marginLeft'] as num?)?.toDouble(),
-        marginRight: (json['marginRight'] as num?)?.toDouble(),
-        marginTop: (json['marginTop'] as num?)?.toDouble(),
-        marginBottom: (json['marginBottom'] as num?)?.toDouble(),
-        fontWeight: _fontWeightFromValue(json['fontWeight']),
-        fontStyle: _enumByName(FontStyle.values, json['fontStyle']),
-        textDecoration:
-            _decorationByName(json['textDecoration']),
-        fontFamily: json['fontFamily'] as String?,
-        lineHeight: (json['lineHeight'] as num?)?.toDouble(),
-        letterSpacing: (json['letterSpacing'] as num?)?.toDouble(),
-        wordSpacing: (json['wordSpacing'] as num?)?.toDouble(),
-        textTransform: json['textTransform'] as String?,
-        whiteSpace: json['whiteSpace'] as String?,
-        width: CssLength.fromJson(json['width']),
-        height: CssLength.fromJson(json['height']),
-        maxWidth: CssLength.fromJson(json['maxWidth']),
-        maxHeight: CssLength.fromJson(json['maxHeight']),
-      );
+    fontSize: (json['fontSize'] as num?)?.toDouble(),
+    color: json['color'] != null ? Color(json['color'] as int) : null,
+    textAlign: _enumByName(TextAlign.values, json['textAlign']),
+    textIndent: (json['textIndent'] as num?)?.toDouble(),
+    marginLeft: (json['marginLeft'] as num?)?.toDouble(),
+    marginRight: (json['marginRight'] as num?)?.toDouble(),
+    marginTop: (json['marginTop'] as num?)?.toDouble(),
+    marginBottom: (json['marginBottom'] as num?)?.toDouble(),
+    fontWeight: _fontWeightFromValue(json['fontWeight']),
+    fontStyle: _enumByName(FontStyle.values, json['fontStyle']),
+    textDecoration: _decorationByName(json['textDecoration']),
+    fontFamily: json['fontFamily'] as String?,
+    lineHeight: (json['lineHeight'] as num?)?.toDouble(),
+    letterSpacing: (json['letterSpacing'] as num?)?.toDouble(),
+    wordSpacing: (json['wordSpacing'] as num?)?.toDouble(),
+    textTransform: json['textTransform'] as String?,
+    whiteSpace: json['whiteSpace'] as String?,
+    width: CssLength.fromJson(json['width']),
+    height: CssLength.fromJson(json['height']),
+    maxWidth: CssLength.fromJson(json['maxWidth']),
+    maxHeight: CssLength.fromJson(json['maxHeight']),
+  );
 
   static T? _enumByName<T extends Enum>(List<T> values, Object? name) {
     if (name is! String) return null;
@@ -205,9 +207,9 @@ class CssStyle {
   }
 
   static TextDecoration? _decorationByName(Object? name) => switch (name) {
-        'underline' => TextDecoration.underline,
-        'overline' => TextDecoration.overline,
-        'lineThrough' => TextDecoration.lineThrough,
-        _ => null,
-      };
+    'underline' => TextDecoration.underline,
+    'overline' => TextDecoration.overline,
+    'lineThrough' => TextDecoration.lineThrough,
+    _ => null,
+  };
 }

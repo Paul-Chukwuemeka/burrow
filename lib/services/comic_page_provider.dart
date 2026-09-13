@@ -55,13 +55,17 @@ class ComicPageProvider {
     for (var i = 0; i < entries.length; i++) {
       final entry = entries[i];
       final content = entry.content as List<int>;
-      final (w, h) = DocumentParser.decodeImageDimensions(Uint8List.fromList(content));
-      pageMetas.add(ComicPageMeta(
-        index: i,
-        entryName: entry.name,
-        intrinsicWidth: w,
-        intrinsicHeight: h,
-      ));
+      final (w, h) = DocumentParser.decodeImageDimensions(
+        Uint8List.fromList(content),
+      );
+      pageMetas.add(
+        ComicPageMeta(
+          index: i,
+          entryName: entry.name,
+          intrinsicWidth: w,
+          intrinsicHeight: h,
+        ),
+      );
     }
 
     return ComicPageProvider._(
@@ -82,7 +86,9 @@ class ComicPageProvider {
 
     final entry = _archive.files.firstWhere(
       (f) => f.name == pages[index].entryName,
-      orElse: () => throw FormatException('Archive entry not found: ${pages[index].entryName}'),
+      orElse: () => throw FormatException(
+        'Archive entry not found: ${pages[index].entryName}',
+      ),
     );
     final bytes = Uint8List.fromList(entry.content);
     _put(index, bytes);
@@ -104,7 +110,9 @@ class ComicPageProvider {
 
   /// Evicts pages outside [center ± margin] from the cache.
   void evictOutside(int center, {int margin = 5}) {
-    final keep = <int>{for (var i = center - margin; i <= center + margin; i++) i};
+    final keep = <int>{
+      for (var i = center - margin; i <= center + margin; i++) i,
+    };
     _cache.removeWhere((key, _) => !keep.contains(key));
   }
 

@@ -72,10 +72,10 @@ class _TocSheetContent extends StatefulWidget {
     required this.onJump,
     required this.bookmarks,
     required this.onDeleteBookmark,
-  })  : outline = const [],
-        currentPage = 0,
-        onJumpPdf = null,
-        isPdf = false;
+  }) : outline = const [],
+       currentPage = 0,
+       onJumpPdf = null,
+       isPdf = false;
 
   const _TocSheetContent.pdf({
     required this.settings,
@@ -84,13 +84,13 @@ class _TocSheetContent extends StatefulWidget {
     required ValueChanged<int> onJump,
     required this.bookmarks,
     required this.onDeleteBookmark,
-  })  : chapters = const [],
-        paginators = const [],
-        readiness = null,
-        currentIndex = 0,
-        onJumpPdf = onJump,
-        onJump = null,
-        isPdf = true;
+  }) : chapters = const [],
+       paginators = const [],
+       readiness = null,
+       currentIndex = 0,
+       onJumpPdf = onJump,
+       onJump = null,
+       isPdf = true;
 
   final ReaderSettings settings;
   final List<Chapter> chapters;
@@ -221,9 +221,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
         return Container(
           decoration: BoxDecoration(
             color: theme.background,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
             children: [
@@ -329,6 +327,7 @@ class _PdfOutlineList extends StatelessWidget {
         flatten(node.children, depth + 1);
       }
     }
+
     flatten(outline, 0);
 
     return ListView.builder(
@@ -356,8 +355,7 @@ class _PdfOutlineList extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight:
-                          isCurrent ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
                       color: isCurrent ? theme.accent : theme.text,
                     ),
                   ),
@@ -415,7 +413,8 @@ class _ContentsList extends StatelessWidget {
         final (chapterIndex, chapter) = titled[i];
         final isCurrent = chapterIndex == currentIndex;
         final title = chapter.title;
-        final ready = readiness == null ||
+        final ready =
+            readiness == null ||
             (chapterIndex < readiness!.length && readiness![chapterIndex]);
         final pageCount = ready && chapterIndex < paginators.length
             ? paginators[chapterIndex].pages.length
@@ -434,8 +433,7 @@ class _ContentsList extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight:
-                          isCurrent ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
                       color: isCurrent ? theme.accent : theme.text,
                     ),
                   ),
@@ -530,8 +528,7 @@ class _BookmarksList extends StatelessWidget {
               onJump(bm.chapter);
             },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

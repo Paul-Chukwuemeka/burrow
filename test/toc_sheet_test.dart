@@ -5,18 +5,17 @@ import 'package:burrow/widgets/toc_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-List<Paginator> _makePaginators(List<int> pageCounts) =>
-    pageCounts
-        .map(
-          (n) => Paginator.paginate(
-            text: List.filled(n * 500, 'word ').join(),
-            style: const TextStyle(fontSize: 18),
-            maxWidth: 400,
-            maxHeight: 700,
-            direction: TextDirection.ltr,
-          ),
-        )
-        .toList();
+List<Paginator> _makePaginators(List<int> pageCounts) => pageCounts
+    .map(
+      (n) => Paginator.paginate(
+        text: List.filled(n * 500, 'word ').join(),
+        style: const TextStyle(fontSize: 18),
+        maxWidth: 400,
+        maxHeight: 700,
+        direction: TextDirection.ltr,
+      ),
+    )
+    .toList();
 
 void main() {
   group('TocSheet', () {
@@ -64,8 +63,9 @@ void main() {
       expect(find.text('Bookmarks'), findsOneWidget);
     });
 
-    testWidgets('tapping a chapter fires onJump with correct index',
-        (tester) async {
+    testWidgets('tapping a chapter fires onJump with correct index', (
+      tester,
+    ) async {
       final chapters = [
         const Chapter('First', 'body'),
         const Chapter('Second', 'body'),
@@ -105,8 +105,7 @@ void main() {
       expect(tapped, [1]);
     });
 
-    testWidgets('shows untitled chapters with fallback names',
-        (tester) async {
+    testWidgets('shows untitled chapters with fallback names', (tester) async {
       final chapters = [
         const Chapter('', 'body'),
         const Chapter('Real Title', 'body'),

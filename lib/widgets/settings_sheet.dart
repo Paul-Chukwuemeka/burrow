@@ -107,347 +107,344 @@ class _ThemedSheetState extends State<_ThemedSheet> {
   // ── Shared sections ────────────────────────────────────────────────────────
 
   Widget _buildHandle(ReaderTheme theme) => Center(
-        child: Container(
-          width: 36,
-          height: 4,
-          decoration: BoxDecoration(
-            color: theme.muted.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      );
+    child: Container(
+      width: 36,
+      height: 4,
+      decoration: BoxDecoration(
+        color: theme.muted.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(2),
+      ),
+    ),
+  );
 
   Widget _buildThemeDots(ReaderTheme theme) => Row(
-        children: [
-          for (final mode in ReaderThemeMode.values)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: _ThemeDot(
-                mode: mode,
-                selected: settings.readerTheme == mode,
-                onTap: () =>
-                    _update(() => settings.readerTheme = mode),
-              ),
-            ),
-        ],
-      );
+    children: [
+      for (final mode in ReaderThemeMode.values)
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: _ThemeDot(
+            mode: mode,
+            selected: settings.readerTheme == mode,
+            onTap: () => _update(() => settings.readerTheme = mode),
+          ),
+        ),
+    ],
+  );
 
   Widget _buildBrightness(ReaderTheme theme) => Column(
-        mainAxisSize: MainAxisSize.min,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const SizedBox(height: 8),
+      _ToggleRow(
+        icon: Icons.brightness_auto,
+        label: 'System brightness',
+        value: settings.brightness == null,
+        theme: theme,
+        onChanged: (v) {
+          if (v) {
+            _update(() => settings.brightness = null);
+            return;
+          }
+          BrightnessController.instance.current().then((lv) {
+            if (!mounted) return;
+            _update(() => settings.brightness = lv);
+          });
+        },
+      ),
+      Row(
         children: [
-          const SizedBox(height: 8),
-          _ToggleRow(
-            icon: Icons.brightness_auto,
-            label: 'System brightness',
-            value: settings.brightness == null,
-            theme: theme,
-            onChanged: (v) {
-              if (v) {
-                _update(() => settings.brightness = null);
-                return;
-              }
-              BrightnessController.instance.current().then((lv) {
-                if (!mounted) return;
-                _update(() => settings.brightness = lv);
-              });
-            },
+          Icon(Icons.brightness_low, color: theme.muted, size: 20),
+          Expanded(
+            child: Slider(
+              value: settings.brightness ?? 1.0,
+              min: kMinBrightness,
+              max: 1.0,
+              divisions: 19,
+              activeColor: theme.accent,
+              onChanged: settings.brightness == null
+                  ? null
+                  : (v) => _preview(() => settings.brightness = v),
+              onChangeEnd: settings.brightness == null
+                  ? null
+                  : (_) => _commit(),
+              label: '${((settings.brightness ?? 1.0) * 100).round()}%',
+            ),
           ),
-          Row(
-            children: [
-              Icon(Icons.brightness_low, color: theme.muted, size: 20),
-              Expanded(
-                child: Slider(
-                  value: settings.brightness ?? 1.0,
-                  min: kMinBrightness,
-                  max: 1.0,
-                  divisions: 19,
-                  activeColor: theme.accent,
-                  onChanged: settings.brightness == null
-                      ? null
-                      : (v) => _preview(() => settings.brightness = v),
-                  onChangeEnd:
-                      settings.brightness == null ? null : (_) => _commit(),
-                  label:
-                      '${((settings.brightness ?? 1.0) * 100).round()}%',
-                ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '${((settings.brightness ?? 1.0) * 100).round()}',
+              style: TextStyle(
+                color: settings.brightness == null
+                    ? theme.muted.withValues(alpha: 0.4)
+                    : theme.muted,
               ),
-              SizedBox(
-                width: 28,
-                child: Text(
-                  '${((settings.brightness ?? 1.0) * 100).round()}',
-                  style: TextStyle(
-                    color: settings.brightness == null
-                        ? theme.muted.withValues(alpha: 0.4)
-                        : theme.muted,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ],
-      );
+      ),
+    ],
+  );
 
   Widget _buildMisc(ReaderTheme theme) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ToggleRow(
-            icon: Icons.screen_lock_portrait,
-            label: 'Keep screen on',
-            value: settings.keepScreenOn,
-            theme: theme,
-            onChanged: (v) => _update(() => settings.keepScreenOn = v),
-          ),
-          _ToggleRow(
-            icon: Icons.volume_up,
-            label: 'Volume keys turn pages',
-            value: settings.volumeKeyTurns,
-            theme: theme,
-            onChanged: (v) => _update(() => settings.volumeKeyTurns = v),
-          ),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _ToggleRow(
+        icon: Icons.screen_lock_portrait,
+        label: 'Keep screen on',
+        value: settings.keepScreenOn,
+        theme: theme,
+        onChanged: (v) => _update(() => settings.keepScreenOn = v),
+      ),
+      _ToggleRow(
+        icon: Icons.volume_up,
+        label: 'Volume keys turn pages',
+        value: settings.volumeKeyTurns,
+        theme: theme,
+        onChanged: (v) => _update(() => settings.volumeKeyTurns = v),
+      ),
+    ],
+  );
 
   // ── Format-specific panels ─────────────────────────────────────────────────
 
   Widget _buildReflowablePanel(ReaderTheme theme) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _buildThemeDots(theme),
+      const SizedBox(height: 12),
+      // ── Font family ─────────────────────────────────────────────
+      Row(
         children: [
-          _buildThemeDots(theme),
-          const SizedBox(height: 12),
-          // ── Font family ─────────────────────────────────────────────
-          Row(
-            children: [
-              Icon(Icons.font_download_outlined,
-                  color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: settings.fontFamily ?? '',
-                    isExpanded: true,
-                    isDense: true,
-                    borderRadius: BorderRadius.circular(12),
-                    selectedItemBuilder: (context) {
-                      final cs = Theme.of(context).colorScheme;
-                      return [
-                        for (final font in kReaderFonts)
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              font.label,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: cs.onSurface,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ];
-                    },
-                    items: [
-                      for (final font in kReaderFonts)
-                        DropdownMenuItem(
-                          value: font.family ?? '',
-                          child: _HoverableDropdownItem(font: font),
+          Icon(Icons.font_download_outlined, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: settings.fontFamily ?? '',
+                isExpanded: true,
+                isDense: true,
+                borderRadius: BorderRadius.circular(12),
+                selectedItemBuilder: (context) {
+                  final cs = Theme.of(context).colorScheme;
+                  return [
+                    for (final font in kReaderFonts)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          font.label,
+                          style: TextStyle(fontSize: 14, color: cs.onSurface),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    ],
-                    onChanged: (v) => _update(
-                      () => settings.fontFamily =
-                          (v == null || v.isEmpty) ? null : v,
+                      ),
+                  ];
+                },
+                items: [
+                  for (final font in kReaderFonts)
+                    DropdownMenuItem(
+                      value: font.family ?? '',
+                      child: _HoverableDropdownItem(font: font),
                     ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // ── Font size ────────────────────────────────────────────────
-          Row(
-            children: [
-              Icon(Icons.text_fields, color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Text(
-                'Font size',
-                style: TextStyle(fontSize: 14, color: theme.text),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(Icons.remove_circle_outline,
-                    color: theme.accent, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: settings.fontSize > ReaderSettings.fontSizeRange.$1
-                    ? () {
-                        _preview(() => settings.fontSize =
-                            (settings.fontSize - 1)
-                                .clamp(
-                                  ReaderSettings.fontSizeRange.$1,
-                                  ReaderSettings.fontSizeRange.$2,
-                                ));
-                        _commit();
-                      }
-                    : null,
-              ),
-              SizedBox(
-                width: 28,
-                child: Text(
-                  '${settings.fontSize.round()}',
-                  style: TextStyle(color: theme.muted, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.add_circle_outline,
-                    color: theme.accent, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: settings.fontSize < ReaderSettings.fontSizeRange.$2
-                    ? () {
-                        _preview(() => settings.fontSize =
-                            (settings.fontSize + 1)
-                                .clamp(
-                                  ReaderSettings.fontSizeRange.$1,
-                                  ReaderSettings.fontSizeRange.$2,
-                                ));
-                        _commit();
-                      }
-                    : null,
-              ),
-            ],
-          ),
-          // ── Line height ─────────────────────────────────────────────
-          Row(
-            children: [
-              Icon(Icons.format_line_spacing,
-                  color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Text(
-                'Line height',
-                style: TextStyle(fontSize: 14, color: theme.text),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(Icons.remove_circle_outline,
-                    color: theme.accent, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: settings.lineHeight > ReaderSettings.lineHeightRange.$1
-                    ? () {
-                        _preview(() => settings.lineHeight =
-                            (settings.lineHeight - 0.1)
-                                .clamp(
-                                  ReaderSettings.lineHeightRange.$1,
-                                  ReaderSettings.lineHeightRange.$2,
-                                ));
-                        _commit();
-                      }
-                    : null,
-              ),
-              SizedBox(
-                width: 28,
-                child: Text(
-                  settings.lineHeight.toStringAsFixed(1),
-                  style: TextStyle(color: theme.muted, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.add_circle_outline,
-                    color: theme.accent, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: settings.lineHeight < ReaderSettings.lineHeightRange.$2
-                    ? () {
-                        _preview(() => settings.lineHeight =
-                            (settings.lineHeight + 0.1)
-                                .clamp(
-                                  ReaderSettings.lineHeightRange.$1,
-                                  ReaderSettings.lineHeightRange.$2,
-                                ));
-                        _commit();
-                      }
-                    : null,
-              ),
-            ],
-          ),
-          // ── Text justification ───────────────────────────────────
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.format_align_left, color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Justification',
-                  style: TextStyle(fontSize: 14, color: theme.text),
-                ),
-              ),
-              SegmentedButton<TextJustification>(
-                segments: const [
-                  ButtonSegment(
-                    value: TextJustification.left,
-                    label: Text('Left'),
-                  ),
-                  ButtonSegment(
-                    value: TextJustification.justify,
-                    label: Text('Justify'),
-                  ),
                 ],
-                selected: {settings.textJustification},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) =>
-                    _update(() => settings.textJustification = s.first),
-              ),
-            ],
-          ),
-          // ── Horizontal margin ─────────────────────────────────────
-          Row(
-            children: [
-              Icon(Icons.swap_horiz, color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Text(
-                'Margin',
-                style: TextStyle(fontSize: 14, color: theme.text),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(Icons.remove_circle_outline,
-                    color: theme.accent, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: settings.horizontalMargin > 8
-                    ? () {
-                        _preview(() => settings.horizontalMargin =
-                            (settings.horizontalMargin - 2).clamp(8.0, 40.0));
-                        _commit();
-                      }
-                    : null,
-              ),
-              SizedBox(
-                width: 28,
-                child: Text(
-                  '${settings.horizontalMargin.round()}',
-                  style: TextStyle(color: theme.muted, fontSize: 14),
-                  textAlign: TextAlign.center,
+                onChanged: (v) => _update(
+                  () =>
+                      settings.fontFamily = (v == null || v.isEmpty) ? null : v,
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.add_circle_outline,
-                    color: theme.accent, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: settings.horizontalMargin < 40
-                    ? () {
-                        _preview(() => settings.horizontalMargin =
-                            (settings.horizontalMargin + 2).clamp(8.0, 40.0));
-                        _commit();
-                      }
-                    : null,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      // ── Font size ────────────────────────────────────────────────
+      Row(
+        children: [
+          Icon(Icons.text_fields, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Text('Font size', style: TextStyle(fontSize: 14, color: theme.text)),
+          const Spacer(),
+          IconButton(
+            icon: Icon(
+              Icons.remove_circle_outline,
+              color: theme.accent,
+              size: 20,
+            ),
+            visualDensity: VisualDensity.compact,
+            onPressed: settings.fontSize > ReaderSettings.fontSizeRange.$1
+                ? () {
+                    _preview(
+                      () => settings.fontSize = (settings.fontSize - 1).clamp(
+                        ReaderSettings.fontSizeRange.$1,
+                        ReaderSettings.fontSizeRange.$2,
+                      ),
+                    );
+                    _commit();
+                  }
+                : null,
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '${settings.fontSize.round()}',
+              style: TextStyle(color: theme.muted, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.add_circle_outline, color: theme.accent, size: 20),
+            visualDensity: VisualDensity.compact,
+            onPressed: settings.fontSize < ReaderSettings.fontSizeRange.$2
+                ? () {
+                    _preview(
+                      () => settings.fontSize = (settings.fontSize + 1).clamp(
+                        ReaderSettings.fontSizeRange.$1,
+                        ReaderSettings.fontSizeRange.$2,
+                      ),
+                    );
+                    _commit();
+                  }
+                : null,
+          ),
+        ],
+      ),
+      // ── Line height ─────────────────────────────────────────────
+      Row(
+        children: [
+          Icon(Icons.format_line_spacing, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Text(
+            'Line height',
+            style: TextStyle(fontSize: 14, color: theme.text),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: Icon(
+              Icons.remove_circle_outline,
+              color: theme.accent,
+              size: 20,
+            ),
+            visualDensity: VisualDensity.compact,
+            onPressed: settings.lineHeight > ReaderSettings.lineHeightRange.$1
+                ? () {
+                    _preview(
+                      () => settings.lineHeight = (settings.lineHeight - 0.1)
+                          .clamp(
+                            ReaderSettings.lineHeightRange.$1,
+                            ReaderSettings.lineHeightRange.$2,
+                          ),
+                    );
+                    _commit();
+                  }
+                : null,
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              settings.lineHeight.toStringAsFixed(1),
+              style: TextStyle(color: theme.muted, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.add_circle_outline, color: theme.accent, size: 20),
+            visualDensity: VisualDensity.compact,
+            onPressed: settings.lineHeight < ReaderSettings.lineHeightRange.$2
+                ? () {
+                    _preview(
+                      () => settings.lineHeight = (settings.lineHeight + 0.1)
+                          .clamp(
+                            ReaderSettings.lineHeightRange.$1,
+                            ReaderSettings.lineHeightRange.$2,
+                          ),
+                    );
+                    _commit();
+                  }
+                : null,
+          ),
+        ],
+      ),
+      // ── Text justification ───────────────────────────────────
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Icon(Icons.format_align_left, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Justification',
+              style: TextStyle(fontSize: 14, color: theme.text),
+            ),
+          ),
+          SegmentedButton<TextJustification>(
+            segments: const [
+              ButtonSegment(value: TextJustification.left, label: Text('Left')),
+              ButtonSegment(
+                value: TextJustification.justify,
+                label: Text('Justify'),
               ),
             ],
+            selected: {settings.textJustification},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) =>
+                _update(() => settings.textJustification = s.first),
           ),
-          // ── CSS style overrides ───────────────────────────────────────
-          _buildCssOverrides(theme),
-          _buildBrightness(theme),
-          _buildMisc(theme),
         ],
-      );
+      ),
+      // ── Horizontal margin ─────────────────────────────────────
+      Row(
+        children: [
+          Icon(Icons.swap_horiz, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Text('Margin', style: TextStyle(fontSize: 14, color: theme.text)),
+          const Spacer(),
+          IconButton(
+            icon: Icon(
+              Icons.remove_circle_outline,
+              color: theme.accent,
+              size: 20,
+            ),
+            visualDensity: VisualDensity.compact,
+            onPressed: settings.horizontalMargin > 8
+                ? () {
+                    _preview(
+                      () => settings.horizontalMargin =
+                          (settings.horizontalMargin - 2).clamp(8.0, 40.0),
+                    );
+                    _commit();
+                  }
+                : null,
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '${settings.horizontalMargin.round()}',
+              style: TextStyle(color: theme.muted, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.add_circle_outline, color: theme.accent, size: 20),
+            visualDensity: VisualDensity.compact,
+            onPressed: settings.horizontalMargin < 40
+                ? () {
+                    _preview(
+                      () => settings.horizontalMargin =
+                          (settings.horizontalMargin + 2).clamp(8.0, 40.0),
+                    );
+                    _commit();
+                  }
+                : null,
+          ),
+        ],
+      ),
+      // ── CSS style overrides ───────────────────────────────────────
+      _buildCssOverrides(theme),
+      _buildBrightness(theme),
+      _buildMisc(theme),
+    ],
+  );
 
   Widget _buildCssOverrides(ReaderTheme theme) {
     final settings = widget.settings;
@@ -509,173 +506,171 @@ class _ThemedSheetState extends State<_ThemedSheet> {
   }
 
   Widget _buildPdfPanel(ReaderTheme theme) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _buildThemeDots(theme),
+      const SizedBox(height: 12),
+      // ── Scroll direction ─────────────────────────────────────────
+      Row(
         children: [
-          _buildThemeDots(theme),
-          const SizedBox(height: 12),
-          // ── Scroll direction ─────────────────────────────────────────
-          Row(
-            children: [
-              Icon(Icons.swap_horiz, color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Scroll direction',
-                  style: TextStyle(fontSize: 14, color: theme.text),
-                ),
+          Icon(Icons.swap_horiz, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Scroll direction',
+              style: TextStyle(fontSize: 14, color: theme.text),
+            ),
+          ),
+          SegmentedButton<PdfLayoutDirection>(
+            segments: const [
+              ButtonSegment(
+                value: PdfLayoutDirection.vertical,
+                label: Text('Vert'),
+                icon: Icon(Icons.swap_vert, size: 16),
               ),
-              SegmentedButton<PdfLayoutDirection>(
-                segments: const [
-                  ButtonSegment(
-                    value: PdfLayoutDirection.vertical,
-                    label: Text('Vert'),
-                    icon: Icon(Icons.swap_vert, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: PdfLayoutDirection.horizontalLtr,
-                    label: Text('\u2190'),
-                    icon: Icon(Icons.arrow_back, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: PdfLayoutDirection.horizontalRtl,
-                    label: Text('\u2192'),
-                    icon: Icon(Icons.arrow_forward, size: 16),
-                  ),
-                ],
-                selected: {settings.pdfLayoutDirection},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) => _update(
-                    () => settings.pdfLayoutDirection = s.first),
+              ButtonSegment(
+                value: PdfLayoutDirection.horizontalLtr,
+                label: Text('\u2190'),
+                icon: Icon(Icons.arrow_back, size: 16),
+              ),
+              ButtonSegment(
+                value: PdfLayoutDirection.horizontalRtl,
+                label: Text('\u2192'),
+                icon: Icon(Icons.arrow_forward, size: 16),
               ),
             ],
+            selected: {settings.pdfLayoutDirection},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) =>
+                _update(() => settings.pdfLayoutDirection = s.first),
           ),
-          _ToggleRow(
-            icon: Icons.view_stream,
-            label: 'Continuous scroll',
-            value: settings.pdfContinuousScroll,
-            theme: theme,
-            onChanged: (v) =>
-                _update(() => settings.pdfContinuousScroll = v),
-          ),
-          // ── Zoom fit ───────────────────────────────────────────────
-          if (widget.onPdfFitWidth != null || widget.onPdfFitPage != null)
-            Row(
-              children: [
-                Icon(Icons.zoom_in, color: theme.muted, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Zoom fit',
-                    style: TextStyle(fontSize: 14, color: theme.text),
-                  ),
-                ),
-                if (widget.onPdfFitWidth != null)
-                  TextButton(
-                    onPressed: widget.onPdfFitWidth,
-                    child: Text('Width',
-                        style: TextStyle(color: theme.accent, fontSize: 13)),
-                  ),
-                if (widget.onPdfFitPage != null)
-                  TextButton(
-                    onPressed: widget.onPdfFitPage,
-                    child: Text('Page',
-                        style: TextStyle(color: theme.accent, fontSize: 13)),
-                  ),
-              ],
-            ),
-          _buildBrightness(theme),
-          _buildMisc(theme),
         ],
-      );
+      ),
+      _ToggleRow(
+        icon: Icons.view_stream,
+        label: 'Continuous scroll',
+        value: settings.pdfContinuousScroll,
+        theme: theme,
+        onChanged: (v) => _update(() => settings.pdfContinuousScroll = v),
+      ),
+      // ── Zoom fit ───────────────────────────────────────────────
+      if (widget.onPdfFitWidth != null || widget.onPdfFitPage != null)
+        Row(
+          children: [
+            Icon(Icons.zoom_in, color: theme.muted, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Zoom fit',
+                style: TextStyle(fontSize: 14, color: theme.text),
+              ),
+            ),
+            if (widget.onPdfFitWidth != null)
+              TextButton(
+                onPressed: widget.onPdfFitWidth,
+                child: Text(
+                  'Width',
+                  style: TextStyle(color: theme.accent, fontSize: 13),
+                ),
+              ),
+            if (widget.onPdfFitPage != null)
+              TextButton(
+                onPressed: widget.onPdfFitPage,
+                child: Text(
+                  'Page',
+                  style: TextStyle(color: theme.accent, fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+      _buildBrightness(theme),
+      _buildMisc(theme),
+    ],
+  );
 
   Widget _buildComicsPanel(ReaderTheme theme) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildThemeDots(theme),
-          const SizedBox(height: 12),
-          // ── Reading mode ─────────────────────────────────────────────
-          _ToggleRow(
-            icon: Icons.menu_book,
-            label: 'Paginated reading',
-            value: settings.comicReadingMode == ComicReadingMode.paginated,
-            theme: theme,
-            onChanged: (v) => _update(
-              () => settings.comicReadingMode =
-                  v ? ComicReadingMode.paginated : ComicReadingMode.vertical,
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _buildThemeDots(theme),
+      const SizedBox(height: 12),
+      // ── Reading mode ─────────────────────────────────────────────
+      _ToggleRow(
+        icon: Icons.menu_book,
+        label: 'Paginated reading',
+        value: settings.comicReadingMode == ComicReadingMode.paginated,
+        theme: theme,
+        onChanged: (v) => _update(
+          () => settings.comicReadingMode = v
+              ? ComicReadingMode.paginated
+              : ComicReadingMode.vertical,
+        ),
+      ),
+      // ── Scroll direction (paginated only) ───────────────────────
+      if (settings.comicReadingMode == ComicReadingMode.paginated) ...[
+        Row(
+          children: [
+            Icon(Icons.swap_horiz, color: theme.muted, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Scroll direction',
+                style: TextStyle(fontSize: 14, color: theme.text),
+              ),
             ),
-          ),
-          // ── Scroll direction (paginated only) ───────────────────────
-          if (settings.comicReadingMode == ComicReadingMode.paginated) ...[
-            Row(
-              children: [
-                Icon(Icons.swap_horiz, color: theme.muted, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Scroll direction',
-                    style: TextStyle(fontSize: 14, color: theme.text),
-                  ),
+            SegmentedButton<ComicReadingDirection>(
+              segments: const [
+                ButtonSegment(
+                  value: ComicReadingDirection.ltr,
+                  label: Text('\u2190'),
+                  icon: Icon(Icons.arrow_back, size: 16),
                 ),
-                SegmentedButton<ComicReadingDirection>(
-                  segments: const [
-                    ButtonSegment(
-                      value: ComicReadingDirection.ltr,
-                      label: Text('\u2190'),
-                      icon: Icon(Icons.arrow_back, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: ComicReadingDirection.rtl,
-                      label: Text('\u2192'),
-                      icon: Icon(Icons.arrow_forward, size: 16),
-                    ),
-                  ],
-                  selected: {settings.comicReadingDirection},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (s) => _update(
-                      () => settings.comicReadingDirection = s.first),
+                ButtonSegment(
+                  value: ComicReadingDirection.rtl,
+                  label: Text('\u2192'),
+                  icon: Icon(Icons.arrow_forward, size: 16),
                 ),
               ],
+              selected: {settings.comicReadingDirection},
+              showSelectedIcon: false,
+              onSelectionChanged: (s) =>
+                  _update(() => settings.comicReadingDirection = s.first),
             ),
           ],
-          // ── Image fit ─────────────────────────────────────────────
-          Row(
-            children: [
-              Icon(Icons.fit_screen, color: theme.muted, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Image fit',
-                  style: TextStyle(fontSize: 14, color: theme.text),
-                ),
-              ),
-              SegmentedButton<ComicFitMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: ComicFitMode.contain,
-                    label: Text('Fit'),
-                  ),
-                  ButtonSegment(
-                    value: ComicFitMode.fitWidth,
-                    label: Text('Width'),
-                  ),
-                  ButtonSegment(
-                    value: ComicFitMode.fitHeight,
-                    label: Text('Height'),
-                  ),
-                ],
-                selected: {settings.comicFitMode},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) =>
-                    _update(() => settings.comicFitMode = s.first),
+        ),
+      ],
+      // ── Image fit ─────────────────────────────────────────────
+      Row(
+        children: [
+          Icon(Icons.fit_screen, color: theme.muted, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Image fit',
+              style: TextStyle(fontSize: 14, color: theme.text),
+            ),
+          ),
+          SegmentedButton<ComicFitMode>(
+            segments: const [
+              ButtonSegment(value: ComicFitMode.contain, label: Text('Fit')),
+              ButtonSegment(value: ComicFitMode.fitWidth, label: Text('Width')),
+              ButtonSegment(
+                value: ComicFitMode.fitHeight,
+                label: Text('Height'),
               ),
             ],
+            selected: {settings.comicFitMode},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) =>
+                _update(() => settings.comicFitMode = s.first),
           ),
-          _buildBrightness(theme),
-          _buildMisc(theme),
         ],
-      );
+      ),
+      _buildBrightness(theme),
+      _buildMisc(theme),
+    ],
+  );
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
@@ -698,11 +693,7 @@ class _ThemedSheetState extends State<_ThemedSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHandle(theme),
-            const SizedBox(height: 16),
-            panel,
-          ],
+          children: [_buildHandle(theme), const SizedBox(height: 16), panel],
         ),
       ),
     );
@@ -737,17 +728,24 @@ class _ThemeDot extends StatelessWidget {
           ),
         ),
         child: mode == ReaderThemeMode.dark
-            ? Icon(Icons.dark_mode_outlined,
-                size: 18, color: selected ? colors.accent : colors.muted)
+            ? Icon(
+                Icons.dark_mode_outlined,
+                size: 18,
+                color: selected ? colors.accent : colors.muted,
+              )
             : mode == ReaderThemeMode.dusk
-                ? Icon(Icons.nightlight_outlined,
-                    size: 18,
-                    color: selected ? colors.accent : colors.muted)
-                : mode == ReaderThemeMode.oled
-                    ? Icon(Icons.lens_blur_outlined,
-                        size: 18,
-                        color: selected ? colors.accent : colors.muted)
-                    : null,
+            ? Icon(
+                Icons.nightlight_outlined,
+                size: 18,
+                color: selected ? colors.accent : colors.muted,
+              )
+            : mode == ReaderThemeMode.oled
+            ? Icon(
+                Icons.lens_blur_outlined,
+                size: 18,
+                color: selected ? colors.accent : colors.muted,
+              )
+            : null,
       ),
     );
   }
@@ -822,10 +820,7 @@ class _HoverableDropdownItemState extends State<_HoverableDropdownItem> {
         ),
         child: Text(
           label,
-          style: TextStyle(
-            fontSize: 14,
-            color: scheme.onSurface,
-          ),
+          style: TextStyle(fontSize: 14, color: scheme.onSurface),
         ),
       ),
     );

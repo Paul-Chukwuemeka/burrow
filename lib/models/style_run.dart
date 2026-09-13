@@ -127,8 +127,9 @@ class ImageRun {
     if (!fullWidth && naturalH > maxInlineImageHeight) {
       scale = math.min(scale, maxInlineImageHeight / naturalH);
     }
-    final heightCeiling =
-        maxHeight.isFinite && maxHeight > 0 ? maxHeight : _absoluteMaxHeight;
+    final heightCeiling = maxHeight.isFinite && maxHeight > 0
+        ? maxHeight
+        : _absoluteMaxHeight;
     if (naturalH > heightCeiling) {
       scale = math.min(scale, heightCeiling / naturalH);
     }
@@ -143,7 +144,9 @@ class ImageRun {
   /// first, then HTML attributes, then intrinsic pixels, scaled to
   /// [renderWidth] when no explicit width is given.
   (double, double) _naturalSize(double renderWidth, double maxHeight) {
-    final heightBasis = maxHeight.isFinite && maxHeight > 0 ? maxHeight : renderWidth;
+    final heightBasis = maxHeight.isFinite && maxHeight > 0
+        ? maxHeight
+        : renderWidth;
     final style = css;
     if (style != null) {
       var w = style.width?.resolve(renderWidth);
@@ -154,9 +157,15 @@ class ImageRun {
       // Derive the missing axis from the intrinsic aspect ratio, first from
       // the CSS dimension, then from the HTML attribute.
       (double?, double?) derive(double? width, double? height) {
-        if (width != null && height == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
+        if (width != null &&
+            height == null &&
+            intrinsicWidth > 0 &&
+            intrinsicHeight > 0) {
           height = width * intrinsicHeight / intrinsicWidth;
-        } else if (height != null && width == null && intrinsicWidth > 0 && intrinsicHeight > 0) {
+        } else if (height != null &&
+            width == null &&
+            intrinsicWidth > 0 &&
+            intrinsicHeight > 0) {
           width = height * intrinsicWidth / intrinsicHeight;
         }
         return (width, height);
@@ -194,16 +203,23 @@ class ImageRun {
     }
 
     if (intrinsicWidth <= 0 || intrinsicHeight <= 0) return (0, 0);
-    return (renderWidth.toDouble(), intrinsicHeight * renderWidth / intrinsicWidth);
+    return (
+      renderWidth.toDouble(),
+      intrinsicHeight * renderWidth / intrinsicWidth,
+    );
   }
 
   /// Rendered width at [renderWidth], optionally capped by [maxHeight].
-  double renderedWidth(double renderWidth, {double maxHeight = double.infinity}) =>
-      renderedSize(renderWidth, maxHeight: maxHeight).width;
+  double renderedWidth(
+    double renderWidth, {
+    double maxHeight = double.infinity,
+  }) => renderedSize(renderWidth, maxHeight: maxHeight).width;
 
   /// Rendered height at [renderWidth], optionally capped by [maxHeight].
-  double renderedHeight(double renderWidth, {double maxHeight = double.infinity}) =>
-      renderedSize(renderWidth, maxHeight: maxHeight).height;
+  double renderedHeight(
+    double renderWidth, {
+    double maxHeight = double.infinity,
+  }) => renderedSize(renderWidth, maxHeight: maxHeight).height;
 }
 
 /// Applies the layout-affecting typography from [css] to [style], honoring the
@@ -300,22 +316,23 @@ List<TextSpan> buildStyledSpans(
     if (cursor < rs) {
       spans.add(TextSpan(text: text.substring(cursor, rs)));
     }
-    spans.add(TextSpan(
-      text: text.substring(rs, re),
-      style: settings == null
-          ? base.copyWith(
-              fontWeight: run.bold ? FontWeight.w700 : null,
-              fontStyle:
-                  run.italic || run.quote ? FontStyle.italic : null,
-              color: run.quote ? (quoteColor ?? base.color) : null,
-            )
-          : styleForRun(
-              base,
-              run,
-              settings: settings,
-              quoteColor: quoteColor,
-            ),
-    ));
+    spans.add(
+      TextSpan(
+        text: text.substring(rs, re),
+        style: settings == null
+            ? base.copyWith(
+                fontWeight: run.bold ? FontWeight.w700 : null,
+                fontStyle: run.italic || run.quote ? FontStyle.italic : null,
+                color: run.quote ? (quoteColor ?? base.color) : null,
+              )
+            : styleForRun(
+                base,
+                run,
+                settings: settings,
+                quoteColor: quoteColor,
+              ),
+      ),
+    );
     cursor = re;
   }
   if (cursor < end) {

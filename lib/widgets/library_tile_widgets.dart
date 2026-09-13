@@ -49,7 +49,10 @@ class AuthorTile extends StatelessWidget {
           '$bookCount book${bookCount == 1 ? '' : 's'}',
           style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
         ),
-        trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: scheme.onSurfaceVariant,
+        ),
         onTap: onTap,
       ),
     );
@@ -83,7 +86,9 @@ class CollectionTileState extends State<CollectionTile> {
   }
 
   Future<void> _loadCount() async {
-    final count = await widget.library.getCollectionBookCount(widget.collection.id);
+    final count = await widget.library.getCollectionBookCount(
+      widget.collection.id,
+    );
     if (!mounted) return;
     setState(() => _count = count);
   }
@@ -97,8 +102,10 @@ class CollectionTileState extends State<CollectionTile> {
         leading: CircleAvatar(
           radius: 24,
           backgroundColor: scheme.secondaryContainer,
-          child: Icon(Icons.collections_bookmark_outlined,
-              color: scheme.onSecondaryContainer),
+          child: Icon(
+            Icons.collections_bookmark_outlined,
+            color: scheme.onSecondaryContainer,
+          ),
         ),
         title: Text(
           widget.collection.name,
@@ -112,7 +119,10 @@ class CollectionTileState extends State<CollectionTile> {
                 style: TextStyle(color: scheme.onSurfaceVariant),
               )
             : null,
-        trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: scheme.onSurfaceVariant,
+        ),
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
       ),
@@ -144,15 +154,15 @@ class SmartGroupTile extends StatelessWidget {
           backgroundColor: scheme.tertiaryContainer,
           child: Icon(icon, color: scheme.onTertiaryContainer),
         ),
-        title: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+        title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
           '$count book${count == 1 ? '' : 's'}',
           style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
         ),
-        trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: scheme.onSurfaceVariant,
+        ),
         onTap: onTap,
       ),
     );

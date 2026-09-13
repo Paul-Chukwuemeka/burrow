@@ -28,10 +28,7 @@ void main() {
       );
 
       final id = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 1000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 1000),
       );
 
       expect(id, greaterThan(0));
@@ -56,10 +53,7 @@ void main() {
       );
 
       final id = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 1000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 1000),
       );
 
       await db.endSession(id, pages: 42);
@@ -90,16 +84,10 @@ void main() {
       );
 
       await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 1000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 1000),
       );
       await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book2',
-          startedAt: 2000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book2', startedAt: 2000),
       );
 
       final all = await db.getAllSessions();
@@ -119,19 +107,13 @@ void main() {
 
       // Session 1: 1000ms to 2000ms = 1000ms
       final id1 = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 1000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 1000),
       );
       await db.endSession(id1, pages: 10, endedAt: 2000);
 
       // Session 2: 3000ms to 5000ms = 2000ms
       final id2 = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 3000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 3000),
       );
       await db.endSession(id2, pages: 20, endedAt: 5000);
 
@@ -151,18 +133,12 @@ void main() {
       );
 
       final id1 = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 1000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 1000),
       );
       await db.endSession(id1, pages: 15);
 
       final id2 = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: 2000,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: 2000),
       );
       await db.endSession(id2, pages: 25);
 
@@ -185,10 +161,7 @@ void main() {
       // always positive regardless of the wall-clock time the test runs at.
       final now = DateTime.now().millisecondsSinceEpoch;
       final id1 = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: now,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: now),
       );
       await db.endSession(id1, pages: 5, endedAt: now + 1000);
 
@@ -211,10 +184,7 @@ void main() {
       // Create a session for today, started just before it ends.
       final now = DateTime.now().millisecondsSinceEpoch;
       final id1 = await db.insertSession(
-        ReadingSessionsCompanion.insert(
-          bookId: 'book1',
-          startedAt: now,
-        ),
+        ReadingSessionsCompanion.insert(bookId: 'book1', startedAt: now),
       );
       await db.endSession(id1, pages: 5, endedAt: now + 1000);
 

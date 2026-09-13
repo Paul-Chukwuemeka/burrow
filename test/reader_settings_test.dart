@@ -24,10 +24,7 @@ void main() {
     });
 
     test('fromJson clamps brightness to [kMinBrightness, 1.0]', () {
-      expect(
-        ReaderSettings.fromJson({'brightness': 2.0}).brightness,
-        1.0,
-      );
+      expect(ReaderSettings.fromJson({'brightness': 2.0}).brightness, 1.0);
       expect(
         ReaderSettings.fromJson({'brightness': 0.0}).brightness,
         kMinBrightness,
@@ -68,8 +65,14 @@ void main() {
       final s = ReaderSettings(readerTheme: ReaderThemeMode.oled);
       final r = ReaderSettings.fromJson(s.toJson());
       expect(r.readerTheme, ReaderThemeMode.oled);
-      expect(ReaderTheme.byMode(ReaderThemeMode.oled).background, const Color(0xFF000000));
-      expect(ReaderTheme.byMode(ReaderThemeMode.oled).brightness, Brightness.dark);
+      expect(
+        ReaderTheme.byMode(ReaderThemeMode.oled).background,
+        const Color(0xFF000000),
+      );
+      expect(
+        ReaderTheme.byMode(ReaderThemeMode.oled).brightness,
+        Brightness.dark,
+      );
     });
 
     test('fromJson restores a saved oled theme name', () {

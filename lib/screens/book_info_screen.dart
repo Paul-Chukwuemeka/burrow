@@ -42,7 +42,9 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   }
 
   Future<void> _loadCollections() async {
-    final collections = await widget.library.getCollectionsForBook(widget.book.id);
+    final collections = await widget.library.getCollectionsForBook(
+      widget.book.id,
+    );
     if (!mounted) return;
     setState(() => _collections = collections);
   }
@@ -65,12 +67,13 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
     final book = widget.book;
     final library = widget.library;
     final file = File(book.path);
-    final fileSize =
-        file.existsSync() ? _formatFileSize(file.lengthSync()) : 'Unknown';
+    final fileSize = file.existsSync()
+        ? _formatFileSize(file.lengthSync())
+        : 'Unknown';
     final added = formatDate(book.addedAt);
-    final lastRead =
-        book.lastReadAt > 0 ? formatDate(book.lastReadAt) : null;
-    final pubDate = book.publicationDate != null && book.publicationDate!.isNotEmpty
+    final lastRead = book.lastReadAt > 0 ? formatDate(book.lastReadAt) : null;
+    final pubDate =
+        book.publicationDate != null && book.publicationDate!.isNotEmpty
         ? formatPublicationDate(book.publicationDate!)
         : '';
 
@@ -94,10 +97,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                       onPressed: () async {
                         await Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => EditBookScreen(
-                              book: book,
-                              library: library,
-                            ),
+                            builder: (_) =>
+                                EditBookScreen(book: book, library: library),
                           ),
                         );
                         if (context.mounted) setState(() {});
@@ -119,10 +120,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                                     borderRadius: 12,
                                   ),
                                 )
-                              : BookCover(
-                                  book: book,
-                                  borderRadius: 12,
-                                ),
+                              : BookCover(book: book, borderRadius: 12),
                         ),
                       ),
                     ),
@@ -151,7 +149,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           ),
                         ],
                         // Series chip.
-                        if (book.seriesName != null && book.seriesName!.isNotEmpty) ...[
+                        if (book.seriesName != null &&
+                            book.seriesName!.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           _SeriesChip(
                             book: book,
@@ -188,7 +187,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           const SizedBox(height: 20),
                         ],
                         // Description.
-                        if (book.description != null && book.description!.isNotEmpty) ...[
+                        if (book.description != null &&
+                            book.description!.isNotEmpty) ...[
                           _ExpandableText(
                             label: 'Description',
                             text: book.description!,
@@ -206,18 +206,35 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           const SizedBox(height: 16),
                         ],
                         // Publication info.
-                        if (book.publisher != null && book.publisher!.isNotEmpty)
-                          _InfoRow(icon: Icons.business_outlined, label: 'Publisher', value: book.publisher!),
+                        if (book.publisher != null &&
+                            book.publisher!.isNotEmpty)
+                          _InfoRow(
+                            icon: Icons.business_outlined,
+                            label: 'Publisher',
+                            value: book.publisher!,
+                          ),
                         if (pubDate.isNotEmpty)
-                          _InfoRow(icon: Icons.date_range_outlined, label: 'Published', value: pubDate),
+                          _InfoRow(
+                            icon: Icons.date_range_outlined,
+                            label: 'Published',
+                            value: pubDate,
+                          ),
                         if (book.language != null && book.language!.isNotEmpty)
-                          _InfoRow(icon: Icons.language_outlined, label: 'Language', value: book.language!),
+                          _InfoRow(
+                            icon: Icons.language_outlined,
+                            label: 'Language',
+                            value: book.language!,
+                          ),
                         // Genre chips.
                         if (book.genre != null && book.genre!.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Row(
                             children: [
-                              Icon(Icons.category_outlined, size: 18, color: scheme.onSurfaceVariant),
+                              Icon(
+                                Icons.category_outlined,
+                                size: 18,
+                                color: scheme.onSurfaceVariant,
+                              ),
                               const SizedBox(width: 12),
                               Text(
                                 'Genres',
@@ -233,7 +250,11 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              for (final g in book.genre!.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty))
+                              for (final g
+                                  in book.genre!
+                                      .split(',')
+                                      .map((s) => s.trim())
+                                      .where((s) => s.isNotEmpty))
                                 InkWell(
                                   onTap: () => Navigator.of(context).push(
                                     MaterialPageRoute<void>(
@@ -252,7 +273,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     visualDensity: VisualDensity.compact,
                                   ),
                                 ),
@@ -260,8 +282,16 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           ),
                         ],
                         // Metadata rows.
-                        _InfoRow(icon: Icons.folder_outlined, label: 'File size', value: fileSize),
-                        _InfoRow(icon: Icons.calendar_today_outlined, label: 'Added', value: added),
+                        _InfoRow(
+                          icon: Icons.folder_outlined,
+                          label: 'File size',
+                          value: fileSize,
+                        ),
+                        _InfoRow(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'Added',
+                          value: added,
+                        ),
                         if (lastRead != null)
                           _InfoRow(
                             icon: Icons.schedule_rounded,
@@ -284,13 +314,31 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           ),
                           const SizedBox(height: 4),
                           if (book.isbn != null && book.isbn!.isNotEmpty)
-                            _InfoRow(icon: Icons.qr_code_outlined, label: 'ISBN', value: book.isbn!),
+                            _InfoRow(
+                              icon: Icons.qr_code_outlined,
+                              label: 'ISBN',
+                              value: book.isbn!,
+                            ),
                           if (book.type != null && book.type!.isNotEmpty)
-                            _InfoRow(icon: Icons.label_outlined, label: 'Type', value: book.type!),
+                            _InfoRow(
+                              icon: Icons.label_outlined,
+                              label: 'Type',
+                              value: book.type!,
+                            ),
                           if (book.rights != null && book.rights!.isNotEmpty)
-                            _InfoRow(icon: Icons.gavel_outlined, label: 'Rights', value: book.rights!, maxLines: 2),
+                            _InfoRow(
+                              icon: Icons.gavel_outlined,
+                              label: 'Rights',
+                              value: book.rights!,
+                              maxLines: 2,
+                            ),
                           if (book.source != null && book.source!.isNotEmpty)
-                            _InfoRow(icon: Icons.link_outlined, label: 'Source', value: book.source!, maxLines: 2),
+                            _InfoRow(
+                              icon: Icons.link_outlined,
+                              label: 'Source',
+                              value: book.source!,
+                              maxLines: 2,
+                            ),
                         ],
                         _InfoRow(
                           icon: Icons.insert_drive_file_outlined,
@@ -303,8 +351,11 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           const SizedBox(height: 16),
                           Row(
                             children: [
-                              Icon(Icons.collections_bookmark_outlined,
-                                  size: 18, color: scheme.onSurfaceVariant),
+                              Icon(
+                                Icons.collections_bookmark_outlined,
+                                size: 18,
+                                color: scheme.onSurfaceVariant,
+                              ),
                               const SizedBox(width: 12),
                               Text(
                                 'Collections',
@@ -329,7 +380,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                   ),
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: VisualDensity.compact,
                                 ),
                             ],
@@ -349,7 +401,9 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
             decoration: BoxDecoration(
               color: scheme.surface,
               border: Border(
-                top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+                top: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.3),
+                ),
               ),
             ),
             child: SafeArea(
@@ -480,10 +534,7 @@ class _InfoRow extends StatelessWidget {
             width: 90,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
           ),
           Expanded(
@@ -491,10 +542,7 @@ class _InfoRow extends StatelessWidget {
               value,
               maxLines: maxLines,
               overflow: maxLines > 1 ? null : TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                color: scheme.onSurface,
-              ),
+              style: TextStyle(fontSize: 13, color: scheme.onSurface),
             ),
           ),
         ],

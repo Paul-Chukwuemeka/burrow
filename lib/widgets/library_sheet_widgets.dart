@@ -37,8 +37,10 @@ class SheetAction extends StatelessWidget {
                 Container(
                   width: 48,
                   height: 48,
-                  decoration:
-                      BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    shape: BoxShape.circle,
+                  ),
                   child: Icon(icon, size: 21, color: iconColor),
                 ),
                 const SizedBox(width: 14),
@@ -140,9 +142,7 @@ class CollectionPickerTileState extends State<CollectionPickerTile> {
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 24),
           leading: Icon(
-            inCollection
-                ? Icons.check_circle_rounded
-                : Icons.circle_outlined,
+            inCollection ? Icons.check_circle_rounded : Icons.circle_outlined,
             color: inCollection ? scheme.primary : scheme.outlineVariant,
           ),
           title: Text(

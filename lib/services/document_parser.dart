@@ -18,7 +18,12 @@ import '../utils/book_title.dart';
 import 'epub_css_parser.dart';
 
 class Chapter {
-  const Chapter(this.title, this.body, [this.runs = const [], this.images = const []]);
+  const Chapter(
+    this.title,
+    this.body, [
+    this.runs = const [],
+    this.images = const [],
+  ]);
   final String title;
   final String body;
 
@@ -280,14 +285,18 @@ class DocumentParser {
     // ISBN: strip hyphens, prefer explicit scheme, handle ISBN-10 with X.
     String? isbn;
     for (final el in _els(opf, 'identifier')) {
-      final scheme = (el.getAttribute('scheme') ?? el.getAttribute('opf:scheme') ?? '').toLowerCase();
+      final scheme =
+          (el.getAttribute('scheme') ?? el.getAttribute('opf:scheme') ?? '')
+              .toLowerCase();
       final raw = el.innerText.trim();
       final v = raw.replaceAll('-', '');
       if (scheme == 'isbn') {
         isbn = raw;
         break;
       }
-      if (isbn == null && v.isNotEmpty && RegExp(r'^\d{9}[\dXx]$').hasMatch(v)) {
+      if (isbn == null &&
+          v.isNotEmpty &&
+          RegExp(r'^\d{9}[\dXx]$').hasMatch(v)) {
         isbn = raw;
       }
     }
@@ -372,7 +381,8 @@ class DocumentParser {
     // Manifest: id -> resolved href. The item flagged properties="nav" is the
     // EPUB3 table of contents.
     final manifest = <String, String>{};
-    final manifestImageDims = <String, (double, double)>{};  // href -> (width, height)
+    final manifestImageDims =
+        <String, (double, double)>{}; // href -> (width, height)
     String? navPath;
     for (final el in _els(opf, 'item')) {
       final id = el.getAttribute('id');
@@ -404,7 +414,9 @@ class DocumentParser {
     final docPaths = [
       ...spineIds.map((id) => manifest[id]).nonNulls,
       if (spineIds.isEmpty)
-        ...manifest.values.where((p) => p.endsWith('.xhtml') || p.endsWith('.html')),
+        ...manifest.values.where(
+          (p) => p.endsWith('.xhtml') || p.endsWith('.html'),
+        ),
     ];
 
     // Table of contents, in reading order and with fragments intact.
@@ -420,8 +432,9 @@ class DocumentParser {
       }
     }
     if (ncxPath != null) {
-      final ncxDir =
-          ncxPath.contains('/') ? ncxPath.substring(0, ncxPath.lastIndexOf('/')) : '';
+      final ncxDir = ncxPath.contains('/')
+          ? ncxPath.substring(0, ncxPath.lastIndexOf('/'))
+          : '';
       tocEntries = _parseNcx(entry(ncxPath), ncxDir);
     }
     if (tocEntries.isEmpty && navPath != null) {
@@ -498,25 +511,31 @@ class DocumentParser {
       final xhtml = chapterHtml[p];
       if (xhtml == null) continue;
       final docDir = p.contains('/') ? p.substring(0, p.lastIndexOf('/')) : '';
-      final (body, runs, anchors, images) =
-          parseHtmlDocument(
-            xhtml,
-            archiveEntries: archiveContentMap,
-            baseDir: docDir,
-            manifestImageDims: manifestImageDims,
-            coverHrefs: coverHrefs,
-          );
+      final (body, runs, anchors, images) = parseHtmlDocument(
+        xhtml,
+        archiveEntries: archiveContentMap,
+        baseDir: docDir,
+        manifestImageDims: manifestImageDims,
+        coverHrefs: coverHrefs,
+      );
       if (body.trim().isEmpty) continue;
 
       // Merge CSS-derived styles into the runs.
-      final resolvedRules = cssParser.chapterStyles[_normalizeKey(p)] ?? const [];
+      final resolvedRules =
+          cssParser.chapterStyles[_normalizeKey(p)] ?? const [];
       if (resolvedRules.isNotEmpty) {
         _mergeCssStyles(body, runs, resolvedRules);
         _mergeCssIntoImages(images, resolvedRules);
       }
 
       chapters.addAll(
-        splitByAnchors(body, runs, anchors, byFile[_normalizeKey(p)] ?? const [], images),
+        splitByAnchors(
+          body,
+          runs,
+          anchors,
+          byFile[_normalizeKey(p)] ?? const [],
+          images,
+        ),
       );
     }
     if (chapters.isEmpty) {
@@ -571,15 +590,18 @@ class DocumentParser {
     // offset -> title, first entry wins when two anchors land together.
     final cuts = <int, String>{};
     for (final e in entries) {
-      final offset =
-          e.fragment == null ? 0 : _anchorOffset(anchors, e.fragment!);
+      final offset = e.fragment == null
+          ? 0
+          : _anchorOffset(anchors, e.fragment!);
       if (offset == null) continue;
       cuts.putIfAbsent(offset.clamp(0, body.length), () => e.title);
     }
 
     if (cuts.isEmpty) {
       // No usable anchors: keep the document whole, titled by its first entry.
-      return [Chapter(entries.isEmpty ? '' : entries.first.title, body, runs, images)];
+      return [
+        Chapter(entries.isEmpty ? '' : entries.first.title, body, runs, images),
+      ];
     }
 
     final offsets = cuts.keys.toList()..sort();
@@ -592,7 +614,14 @@ class DocumentParser {
       if (end <= start) continue;
       final slice = body.substring(start, end);
       if (slice.trim().isEmpty) continue;
-      out.add(Chapter(cuts[start] ?? '', slice, _sliceRuns(runs, start, end), _sliceImages(images, start, end)));
+      out.add(
+        Chapter(
+          cuts[start] ?? '',
+          slice,
+          _sliceRuns(runs, start, end),
+          _sliceImages(images, start, end),
+        ),
+      );
     }
     return out.isEmpty
         ? [Chapter(entries.first.title, body, runs, images)]
@@ -607,31 +636,39 @@ class DocumentParser {
       final s = math.max(r.start, start);
       final e = math.min(r.end, end);
       if (e <= s) continue;
-      out.add(StyleRun(
-        s - start,
-        e - start,
-        bold: r.bold,
-        italic: r.italic,
-        quote: r.quote,
-      ));
+      out.add(
+        StyleRun(
+          s - start,
+          e - start,
+          bold: r.bold,
+          italic: r.italic,
+          quote: r.quote,
+        ),
+      );
     }
     return out;
   }
 
   /// Clips [images] to `[start, end)` and shifts them to slice-local offsets.
-  static List<ImageRun> _sliceImages(List<ImageRun> images, int start, int end) {
+  static List<ImageRun> _sliceImages(
+    List<ImageRun> images,
+    int start,
+    int end,
+  ) {
     if (images.isEmpty) return const [];
     final out = <ImageRun>[];
     for (final img in images) {
       if (img.offset >= start && img.offset < end) {
-        out.add(ImageRun(
-          offset: img.offset - start,
-          bytes: img.bytes,
-          intrinsicWidth: img.intrinsicWidth,
-          intrinsicHeight: img.intrinsicHeight,
-          alt: img.alt,
-          fullWidth: img.fullWidth,
-        ));
+        out.add(
+          ImageRun(
+            offset: img.offset - start,
+            bytes: img.bytes,
+            intrinsicWidth: img.intrinsicWidth,
+            intrinsicHeight: img.intrinsicHeight,
+            alt: img.alt,
+            fullWidth: img.fullWidth,
+          ),
+        );
       }
     }
     return out;
@@ -645,7 +682,9 @@ class DocumentParser {
   static String _resolveHref(String baseDir, String href) {
     final clean = href.split('#').first.trim();
     final decoded = Uri.decodeComponent(clean);
-    final parts = baseDir.isEmpty ? decoded.split('/') : '$baseDir/$decoded'.split('/');
+    final parts = baseDir.isEmpty
+        ? decoded.split('/')
+        : '$baseDir/$decoded'.split('/');
     final out = <String>[];
     for (final part in parts) {
       if (part.isEmpty || part == '.') continue;
@@ -862,7 +901,14 @@ class DocumentParser {
   // CBR / CBZ: comic book archives (images as pages)
   // --------------------------------------------------------------------------
 
-  static const _imageExtensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'};
+  static const _imageExtensions = {
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.webp',
+    '.bmp',
+  };
 
   static Future<ParsedDocument> _parseComicBook(String path) async {
     final format = formatFromExtension(path);
@@ -951,7 +997,9 @@ class DocumentParser {
       for (var i = 0; i < entryNames.length; i++) {
         final imageBytes = readEntry(entryNames[i]);
         // Read dimensions from image headers (fast, no full decode).
-        final (width, height) = _RichTextBuilder._decodeImageDimensions(imageBytes);
+        final (width, height) = _RichTextBuilder._decodeImageDimensions(
+          imageBytes,
+        );
         final pageName = _filenameWithoutExtension(entryNames[i]);
         // Body contains a single \uFFFC placeholder for the image.
         chapters.add(
@@ -1105,10 +1153,9 @@ class DocumentParser {
       if (chunk.trim().isNotEmpty) {
         // Determine title: use the heading line if this chunk starts with one.
         final firstLineEnd = chunk.indexOf('\n');
-        final firstLine = (firstLineEnd >= 0
-                ? chunk.substring(0, firstLineEnd)
-                : chunk)
-            .trim();
+        final firstLine =
+            (firstLineEnd >= 0 ? chunk.substring(0, firstLineEnd) : chunk)
+                .trim();
         final title = headingRe.hasMatch(firstLine) ? firstLine : '';
         chapters.add(Chapter(title, chunk));
       }
@@ -1120,10 +1167,9 @@ class DocumentParser {
       final chunk = text.substring(start).trim();
       if (chunk.isNotEmpty) {
         final firstLineEnd = chunk.indexOf('\n');
-        final firstLine = (firstLineEnd >= 0
-                ? chunk.substring(0, firstLineEnd)
-                : chunk)
-            .trim();
+        final firstLine =
+            (firstLineEnd >= 0 ? chunk.substring(0, firstLineEnd) : chunk)
+                .trim();
         final title = headingRe.hasMatch(firstLine) ? firstLine : '';
         chapters.add(Chapter(title, chunk));
       }
@@ -1197,7 +1243,8 @@ class DocumentParser {
   /// cuts a word, and every offset shares the coordinate space used by both
   /// pagination and rich rendering.
   @visibleForTesting
-  static (String, List<StyleRun>, Map<String, int>, List<ImageRun>) parseHtmlDocument(
+  static (String, List<StyleRun>, Map<String, int>, List<ImageRun>)
+  parseHtmlDocument(
     String html, {
     Map<String, Uint8List>? archiveEntries,
     String baseDir = '',
@@ -1267,8 +1314,20 @@ class DocumentParser {
   }
 
   static const _blockTagNames = {
-    'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'li', 'tr', 'br', 'section', 'article', 'blockquote',
+    'p',
+    'div',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'li',
+    'tr',
+    'br',
+    'section',
+    'article',
+    'blockquote',
   };
 
   static void _handleTag(_RichTextBuilder b, String raw) {
@@ -1302,14 +1361,20 @@ class DocumentParser {
         b.quoteDepth = math.max(0, b.quoteDepth + (closing ? -1 : 1));
       case 'img' || 'image':
         if (!closing) {
-          final htmlWidth = _attr(RegExp(r'\bwidth\s*=\s*"([^"]*)"', caseSensitive: false), raw);
-          final htmlHeight = _attr(RegExp(r'\bheight\s*=\s*"([^"]*)"', caseSensitive: false), raw);
+          final htmlWidth = _attr(
+            RegExp(r'\bwidth\s*=\s*"([^"]*)"', caseSensitive: false),
+            raw,
+          );
+          final htmlHeight = _attr(
+            RegExp(r'\bheight\s*=\s*"([^"]*)"', caseSensitive: false),
+            raw,
+          );
           // SVG `<image>` carries its target in href/xlink:href; `<img>` uses
           // src, falling back to the first srcset candidate.
           final src = name == 'image'
               ? _attr(_hrefAttrRe, raw)
               : (_attr(_srcAttrRe, raw) ??
-                  _firstSrcset(_attr(_srcsetAttrRe, raw)));
+                    _firstSrcset(_attr(_srcsetAttrRe, raw)));
           b.image(
             src,
             _attr(_altAttrRe, raw),
@@ -1403,13 +1468,30 @@ class DocumentParser {
           );
         } else {
           // Split: before / during / after the element range.
-          final before = StyleRun(run.start, overlapStart,
-              bold: run.bold, italic: run.italic, quote: run.quote, css: run.css);
-          final during = StyleRun(overlapStart, overlapEnd,
-              bold: run.bold, italic: run.italic, quote: run.quote,
-              css: run.css?.merge(css) ?? css);
-          final after = StyleRun(overlapEnd, run.end,
-              bold: run.bold, italic: run.italic, quote: run.quote, css: run.css);
+          final before = StyleRun(
+            run.start,
+            overlapStart,
+            bold: run.bold,
+            italic: run.italic,
+            quote: run.quote,
+            css: run.css,
+          );
+          final during = StyleRun(
+            overlapStart,
+            overlapEnd,
+            bold: run.bold,
+            italic: run.italic,
+            quote: run.quote,
+            css: run.css?.merge(css) ?? css,
+          );
+          final after = StyleRun(
+            overlapEnd,
+            run.end,
+            bold: run.bold,
+            italic: run.italic,
+            quote: run.quote,
+            css: run.css,
+          );
 
           runs.removeAt(i);
           if (before.start < before.end) runs.insert(i++, before);
@@ -1433,15 +1515,18 @@ class DocumentParser {
       if (element.localName != 'img') continue;
 
       final props = rule.properties;
-      final hasImageProps = props.containsKey('width') ||
+      final hasImageProps =
+          props.containsKey('width') ||
           props.containsKey('height') ||
           props.containsKey('max-width') ||
           props.containsKey('max-height');
       if (!hasImageProps) continue;
 
       final css = EpubCssParser.propsToCssStyle(props);
-      if (css.width == null && css.height == null &&
-          css.maxWidth == null && css.maxHeight == null) {
+      if (css.width == null &&
+          css.height == null &&
+          css.maxWidth == null &&
+          css.maxHeight == null) {
         continue;
       }
 
@@ -1495,7 +1580,8 @@ class DocumentParser {
       final key = _cacheKey(path);
       final cacheFile = File('${dir.path}/$key.json');
       if (!cacheFile.existsSync()) return null;
-      final json = jsonDecode(await cacheFile.readAsString()) as Map<String, dynamic>;
+      final json =
+          jsonDecode(await cacheFile.readAsString()) as Map<String, dynamic>;
       return _docFromJson(json);
     } catch (_) {
       return null;
@@ -1529,30 +1615,42 @@ class DocumentParser {
       'source': doc.source,
       'titleSort': doc.titleSort,
       'authorSort': doc.authorSort,
-      'chapters': doc.chapters.map((c) => {
-        'title': c.title,
-        'body': c.body,
-        'runs': c.runs.map((r) => {
-          's': r.start,
-          'e': r.end,
-          'b': r.bold,
-          'i': r.italic,
-          'q': r.quote,
-          if (r.css != null) 'css': r.css!.toJson(),
-        }).toList(),
-        'images': c.images.map((img) => {
-          'o': img.offset,
-          'b': base64Encode(img.bytes),
-          'w': img.intrinsicWidth,
-          'h': img.intrinsicHeight,
-          'a': img.alt,
-          'f': img.fullWidth,
-          'eid': img.elementId,
-          'hw': img.htmlWidth,
-          'hh': img.htmlHeight,
-          if (img.css != null) 'css': img.css!.toJson(),
-        }).toList(),
-      }).toList(),
+      'chapters': doc.chapters
+          .map(
+            (c) => {
+              'title': c.title,
+              'body': c.body,
+              'runs': c.runs
+                  .map(
+                    (r) => {
+                      's': r.start,
+                      'e': r.end,
+                      'b': r.bold,
+                      'i': r.italic,
+                      'q': r.quote,
+                      if (r.css != null) 'css': r.css!.toJson(),
+                    },
+                  )
+                  .toList(),
+              'images': c.images
+                  .map(
+                    (img) => {
+                      'o': img.offset,
+                      'b': base64Encode(img.bytes),
+                      'w': img.intrinsicWidth,
+                      'h': img.intrinsicHeight,
+                      'a': img.alt,
+                      'f': img.fullWidth,
+                      'eid': img.elementId,
+                      'hw': img.htmlWidth,
+                      'hh': img.htmlHeight,
+                      if (img.css != null) 'css': img.css!.toJson(),
+                    },
+                  )
+                  .toList(),
+            },
+          )
+          .toList(),
       'fontFaces': {
         for (final e in doc.fontFaces.entries)
           e.key: {
@@ -1682,7 +1780,14 @@ class _RichTextBuilder {
 
   /// Emits a `\uFFFC` placeholder for an inline image, resolving [src]
   /// against the EPUB archive when available.
-  void image(String? src, String? alt, {String? id, String elementId = '', double? htmlWidth, double? htmlHeight}) {
+  void image(
+    String? src,
+    String? alt, {
+    String? id,
+    String elementId = '',
+    double? htmlWidth,
+    double? htmlHeight,
+  }) {
     if (src == null || src.isEmpty) return;
     if (archiveEntries == null) return;
     // Flush pending whitespace/newlines before the placeholder.
@@ -1709,7 +1814,8 @@ class _RichTextBuilder {
     final offset = _buf.length;
     _buf.write('\uFFFC');
     final (w, h) = _decodeImageDimensions(entry);
-    final isCover = (id != null && id.toLowerCase().contains('cover')) ||
+    final isCover =
+        (id != null && id.toLowerCase().contains('cover')) ||
         coverHrefs.contains(resolved.toLowerCase()) ||
         _filenameOf(src).toLowerCase().contains('cover');
 
@@ -1718,17 +1824,19 @@ class _RichTextBuilder {
     final effectiveHtmlWidth = htmlWidth ?? manifestDims?.$1;
     final effectiveHtmlHeight = htmlHeight ?? manifestDims?.$2;
 
-    _images.add(ImageRun(
-      offset: offset,
-      bytes: entry,
-      intrinsicWidth: w,
-      intrinsicHeight: h,
-      alt: alt ?? '',
-      fullWidth: isCover,
-      elementId: elementId,
-      htmlWidth: effectiveHtmlWidth,
-      htmlHeight: effectiveHtmlHeight,
-    ));
+    _images.add(
+      ImageRun(
+        offset: offset,
+        bytes: entry,
+        intrinsicWidth: w,
+        intrinsicHeight: h,
+        alt: alt ?? '',
+        fullWidth: isCover,
+        elementId: elementId,
+        htmlWidth: effectiveHtmlWidth,
+        htmlHeight: effectiveHtmlHeight,
+      ),
+    );
   }
 
   Uint8List? _findImageEntry(String resolved) {
@@ -1764,8 +1872,10 @@ class _RichTextBuilder {
         bytes[2] == 0x4E &&
         bytes[3] == 0x47) {
       // PNG: width at offset 16, height at offset 20 (big-endian uint32).
-      final w = (bytes[16] << 24 | bytes[17] << 16 | bytes[18] << 8 | bytes[19]);
-      final h = (bytes[20] << 24 | bytes[21] << 16 | bytes[22] << 8 | bytes[23]);
+      final w =
+          (bytes[16] << 24 | bytes[17] << 16 | bytes[18] << 8 | bytes[19]);
+      final h =
+          (bytes[20] << 24 | bytes[21] << 16 | bytes[22] << 8 | bytes[23]);
       return (w, h);
     }
     if (bytes.length >= 10 &&
@@ -1777,8 +1887,10 @@ class _RichTextBuilder {
     }
     if (bytes.length >= 26 && bytes[0] == 0x42 && bytes[1] == 0x4D) {
       // BMP: int32 LE width at 18, height at 22 (may be negative top-down).
-      final w = bytes[18] | (bytes[19] << 8) | (bytes[20] << 16) | (bytes[21] << 24);
-      final h = bytes[22] | (bytes[23] << 8) | (bytes[24] << 16) | (bytes[25] << 24);
+      final w =
+          bytes[18] | (bytes[19] << 8) | (bytes[20] << 16) | (bytes[21] << 24);
+      final h =
+          bytes[22] | (bytes[23] << 8) | (bytes[24] << 16) | (bytes[25] << 24);
       return (w.abs(), h.abs());
     }
     if (bytes.length >= 30 &&
@@ -1817,10 +1929,16 @@ class _RichTextBuilder {
       // JPEG: scan for SOF0–SOF15 marker (0xFFC0–0xFFCF).
       var i = 2;
       while (i + 9 < bytes.length) {
-        if (bytes[i] != 0xFF) { i++; continue; }
+        if (bytes[i] != 0xFF) {
+          i++;
+          continue;
+        }
         final marker = bytes[i + 1];
-        if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 &&
-            marker != 0xC8 && marker != 0xCC) {
+        if (marker >= 0xC0 &&
+            marker <= 0xCF &&
+            marker != 0xC4 &&
+            marker != 0xC8 &&
+            marker != 0xCC) {
           final h = (bytes[i + 5] << 8) | bytes[i + 6];
           final w = (bytes[i + 7] << 8) | bytes[i + 8];
           return (w, h);
@@ -1837,8 +1955,13 @@ class _RichTextBuilder {
     for (var i = 0; i < bytes.length && i < 64; i++) {
       final b = bytes[i];
       if (b == 0x3C) return true; // '<'
-      if (b != 0x20 && b != 0x09 && b != 0x0A && b != 0x0D &&
-          b != 0xEF && b != 0xBB && b != 0xBF) {
+      if (b != 0x20 &&
+          b != 0x09 &&
+          b != 0x0A &&
+          b != 0x0D &&
+          b != 0xEF &&
+          b != 0xBB &&
+          b != 0xBF) {
         return false;
       }
     }
@@ -1851,8 +1974,9 @@ class _RichTextBuilder {
     final slice = bytes.length > limit ? bytes.sublist(0, limit) : bytes;
     final text = utf8.decode(slice, allowMalformed: true);
 
-    final viewBox =
-        RegExp(r'''viewBox\s*=\s*["']([^"']+)["']''').firstMatch(text);
+    final viewBox = RegExp(
+      r'''viewBox\s*=\s*["']([^"']+)["']''',
+    ).firstMatch(text);
     if (viewBox != null) {
       final parts = viewBox.group(1)!.trim().split(RegExp(r'[\s,]+'));
       if (parts.length == 4) {
@@ -1885,8 +2009,7 @@ class _RichTextBuilder {
   void text(String raw) {
     if (raw.isEmpty) return;
     final decoded = DocumentParser._decodeEntities(raw);
-    for (final m
-        in RegExp(r'[ \t\r\f\v]+|[^ \t\r\f\v]+').allMatches(decoded)) {
+    for (final m in RegExp(r'[ \t\r\f\v]+|[^ \t\r\f\v]+').allMatches(decoded)) {
       final tok = m.group(0)!;
       if (tok.codeUnitAt(0) == 0x20 ||
           tok.codeUnitAt(0) == 0x09 ||
@@ -1901,9 +2024,7 @@ class _RichTextBuilder {
         _lastChar = '\n';
       }
       _pendingNewlines = 0;
-      if (_pendingSpace &&
-          _buf.isNotEmpty &&
-          _lastChar != '\n') {
+      if (_pendingSpace && _buf.isNotEmpty && _lastChar != '\n') {
         _emit(' ');
       }
       _pendingSpace = false;
@@ -1934,13 +2055,19 @@ class _RichTextBuilder {
           last.bold == bold &&
           last.italic == italic &&
           last.quote == quote) {
-        _runs[_runs.length - 1] =
-            StyleRun(last.start, _buf.length, bold: bold, italic: italic, quote: quote);
+        _runs[_runs.length - 1] = StyleRun(
+          last.start,
+          _buf.length,
+          bold: bold,
+          italic: italic,
+          quote: quote,
+        );
         return;
       }
     }
     _runs.add(
-        StyleRun(start, _buf.length, bold: bold, italic: italic, quote: quote));
+      StyleRun(start, _buf.length, bold: bold, italic: italic, quote: quote),
+    );
   }
 
   (String, List<StyleRun>, Map<String, int>, List<ImageRun>) finish() {
@@ -1951,13 +2078,17 @@ class _RichTextBuilder {
       end--;
     }
     text = text.substring(0, end);
-    final runs =
-        _runs.where((r) => r.start < end).map((r) {
-          return r.end <= end
-              ? r
-              : StyleRun(r.start, end,
-                  bold: r.bold, italic: r.italic, quote: r.quote);
-        }).toList();
+    final runs = _runs.where((r) => r.start < end).map((r) {
+      return r.end <= end
+          ? r
+          : StyleRun(
+              r.start,
+              end,
+              bold: r.bold,
+              italic: r.italic,
+              quote: r.quote,
+            );
+    }).toList();
     final images = _images
         .where((img) => img.offset < end)
         .map((img) => _promoteStandaloneImage(text, img))
@@ -2002,8 +2133,7 @@ class _RichTextBuilder {
   static bool _isStandalone(String text, int offset) {
     var i = offset - 1;
     while (i >= 0 &&
-        (_isHorizontalWs(text.codeUnitAt(i)) ||
-            text.codeUnitAt(i) == 0xFFFC)) {
+        (_isHorizontalWs(text.codeUnitAt(i)) || text.codeUnitAt(i) == 0xFFFC)) {
       i--;
     }
     final left = i >= 0 ? text.codeUnitAt(i) : null;
@@ -2011,8 +2141,7 @@ class _RichTextBuilder {
 
     var j = offset + 1;
     while (j < text.length &&
-        (_isHorizontalWs(text.codeUnitAt(j)) ||
-            text.codeUnitAt(j) == 0xFFFC)) {
+        (_isHorizontalWs(text.codeUnitAt(j)) || text.codeUnitAt(j) == 0xFFFC)) {
       j++;
     }
     final right = j < text.length ? text.codeUnitAt(j) : null;
@@ -2022,6 +2151,5 @@ class _RichTextBuilder {
 
   static bool _isHorizontalWs(int c) => c == 0x20 || c == 0x09 || c == 0x0D;
 
-  static bool _isWs(int c) =>
-      c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
+  static bool _isWs(int c) => c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
 }

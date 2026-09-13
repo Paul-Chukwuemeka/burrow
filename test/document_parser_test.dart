@@ -159,10 +159,7 @@ More text.''';
     });
 
     test('converts block tags to newlines', () {
-      expect(
-        DocumentParser.htmlToText('<p>One</p><p>Two</p>'),
-        'One\n\nTwo',
-      );
+      expect(DocumentParser.htmlToText('<p>One</p><p>Two</p>'), 'One\n\nTwo');
     });
 
     test('decodes HTML entities', () {
@@ -232,8 +229,9 @@ More text.''';
     });
 
     test('bold tags produce a bold run with correct offsets', () {
-      final (text, runs) =
-          DocumentParser.htmlToRichText('<p>some <b>bold</b> text</p>');
+      final (text, runs) = DocumentParser.htmlToRichText(
+        '<p>some <b>bold</b> text</p>',
+      );
       expect(text, 'some bold text');
       expect(runs.length, 1);
       expect(runs[0].bold, isTrue);
@@ -280,8 +278,9 @@ More text.''';
     });
 
     test('entities inside emphasis stay within the run', () {
-      final (text, runs) =
-          DocumentParser.htmlToRichText('<p><b>a &amp; b</b></p>');
+      final (text, runs) = DocumentParser.htmlToRichText(
+        '<p><b>a &amp; b</b></p>',
+      );
       expect(text, 'a & b');
       expect(runs.length, 1);
       expect(runs[0].bold, isTrue);
@@ -299,15 +298,15 @@ More text.''';
     });
 
     test('unclosed tags do not crash or over-extend past content', () {
-      final (text, runs) =
-          DocumentParser.htmlToRichText('<p><b>never closed');
+      final (text, runs) = DocumentParser.htmlToRichText('<p><b>never closed');
       expect(text, 'never closed');
       expect(runs.single.end, text.length);
     });
 
     test('plain paragraphs produce no runs', () {
-      final (text, runs) =
-          DocumentParser.htmlToRichText('<p>just plain prose here</p>');
+      final (text, runs) = DocumentParser.htmlToRichText(
+        '<p>just plain prose here</p>',
+      );
       expect(text, 'just plain prose here');
       expect(runs, isEmpty);
     });
@@ -358,8 +357,9 @@ More text.''';
 
   group('parseHtmlDocument anchors', () {
     test('resolves an id to the offset of the following text', () {
-      final (body, _, anchors, _) =
-          DocumentParser.parseHtmlDocument('<p>Intro</p><h2 id="two">Two</h2>');
+      final (body, _, anchors, _) = DocumentParser.parseHtmlDocument(
+        '<p>Intro</p><h2 id="two">Two</h2>',
+      );
       expect(anchors['two'], isNotNull);
       expect(body.substring(anchors['two']!), startsWith('Two'));
     });
@@ -402,11 +402,16 @@ More text.''';
         '<h2 id="b">Two</h2><p>beta</p>'
         '<h2 id="c">Three</h2><p>gamma</p>',
       );
-      final chapters = DocumentParser.splitByAnchors(body, runs, anchors, const [
-        TocEntry('f', 'a', 'One'),
-        TocEntry('f', 'b', 'Two'),
-        TocEntry('f', 'c', 'Three'),
-      ]);
+      final chapters = DocumentParser.splitByAnchors(
+        body,
+        runs,
+        anchors,
+        const [
+          TocEntry('f', 'a', 'One'),
+          TocEntry('f', 'b', 'Two'),
+          TocEntry('f', 'c', 'Three'),
+        ],
+      );
 
       expect(chapters.map((c) => c.title), ['One', 'Two', 'Three']);
       expect(chapters[0].body, contains('alpha'));
@@ -422,10 +427,12 @@ More text.''';
         '<h2 id="a">One</h2><p>plain <em>emph</em></p>'
         '<h2 id="b">Two</h2><p><strong>bold</strong> tail</p>',
       );
-      final chapters = DocumentParser.splitByAnchors(body, runs, anchors, const [
-        TocEntry('f', 'a', 'One'),
-        TocEntry('f', 'b', 'Two'),
-      ]);
+      final chapters = DocumentParser.splitByAnchors(
+        body,
+        runs,
+        anchors,
+        const [TocEntry('f', 'a', 'One'), TocEntry('f', 'b', 'Two')],
+      );
 
       expect(chapters.length, 2);
       final first = chapters[0];
@@ -462,8 +469,9 @@ More text.''';
     });
 
     test('keeps the document whole when no entry resolves', () {
-      final (body, runs, anchors, _) =
-          DocumentParser.parseHtmlDocument('<p>only text</p>');
+      final (body, runs, anchors, _) = DocumentParser.parseHtmlDocument(
+        '<p>only text</p>',
+      );
       final chapters = DocumentParser.splitByAnchors(
         body,
         runs,
@@ -480,11 +488,16 @@ More text.''';
       final (body, runs, anchors, _) = DocumentParser.parseHtmlDocument(
         '<h2 id="a">One</h2><p>alpha</p><h2 id="b">Two</h2><p>beta</p>',
       );
-      final chapters = DocumentParser.splitByAnchors(body, runs, anchors, const [
-        TocEntry('f', 'a', 'One'),
-        TocEntry('f', 'ghost', 'Ghost'),
-        TocEntry('f', 'b', 'Two'),
-      ]);
+      final chapters = DocumentParser.splitByAnchors(
+        body,
+        runs,
+        anchors,
+        const [
+          TocEntry('f', 'a', 'One'),
+          TocEntry('f', 'ghost', 'Ghost'),
+          TocEntry('f', 'b', 'Two'),
+        ],
+      );
 
       expect(chapters.map((c) => c.title), ['One', 'Two']);
     });
@@ -511,7 +524,8 @@ More text.''';
       final doc = DocumentParser.parseEpubBytes(
         _buildEpub(
           opf: _opf(
-            items: '<item id="ncx" href="toc.ncx" '
+            items:
+                '<item id="ncx" href="toc.ncx" '
                 'media-type="application/x-dtbncx+xml"/>'
                 '<item id="book" href="book.xhtml" '
                 'media-type="application/xhtml+xml"/>',
@@ -538,10 +552,11 @@ More text.''';
       // Before the fix this collapsed to a single chapter titled "Chapter One"
       // holding all three sections' text.
       expect(doc.chapters.length, 3);
-      expect(
-        doc.chapters.map((c) => c.title),
-        ['Chapter One', 'Chapter Two', 'Chapter Three'],
-      );
+      expect(doc.chapters.map((c) => c.title), [
+        'Chapter One',
+        'Chapter Two',
+        'Chapter Three',
+      ]);
       expect(doc.chapters[0].body, contains('Alpha'));
       expect(doc.chapters[0].body, isNot(contains('Beta')));
       expect(doc.chapters[1].body, contains('Beta'));
@@ -552,7 +567,8 @@ More text.''';
       final doc = DocumentParser.parseEpubBytes(
         _buildEpub(
           opf: _opf(
-            items: '<item id="ncx" href="toc.ncx" '
+            items:
+                '<item id="ncx" href="toc.ncx" '
                 'media-type="application/x-dtbncx+xml"/>'
                 '<item id="c1" href="c1.xhtml" '
                 'media-type="application/xhtml+xml"/>'
@@ -561,10 +577,7 @@ More text.''';
             spine: '<itemref idref="c1"/><itemref idref="c2"/>',
             spineToc: 'ncx',
           ),
-          ncx: _ncx(const [
-            ('First', 'c1.xhtml'),
-            ('Second', 'c2.xhtml'),
-          ]),
+          ncx: _ncx(const [('First', 'c1.xhtml'), ('Second', 'c2.xhtml')]),
           docs: {
             'c1.xhtml': _xhtml('<p>alpha</p>'),
             'c2.xhtml': _xhtml('<p>beta</p>'),
@@ -581,7 +594,8 @@ More text.''';
       final doc = DocumentParser.parseEpubBytes(
         _buildEpub(
           opf: _opf(
-            items: '<item id="ncx" href="toc.ncx" '
+            items:
+                '<item id="ncx" href="toc.ncx" '
                 'media-type="application/x-dtbncx+xml"/>'
                 '<item id="book" href="book.xhtml" '
                 'media-type="application/xhtml+xml"/>',
@@ -617,7 +631,8 @@ More text.''';
       final doc = DocumentParser.parseEpubBytes(
         _buildEpub(
           opf: _opf(
-            items: '<item id="decoy" href="decoy.xhtml" '
+            items:
+                '<item id="decoy" href="decoy.xhtml" '
                 'media-type="application/xhtml+xml"/>'
                 '<item id="nav" href="nav.xhtml" properties="nav" '
                 'media-type="application/xhtml+xml"/>'
@@ -632,8 +647,9 @@ More text.''';
             '</ol></nav>',
           ),
           docs: {
-            'decoy.xhtml':
-                _xhtml('<p>front</p><a href="book.xhtml">Bogus Title</a>'),
+            'decoy.xhtml': _xhtml(
+              '<p>front</p><a href="book.xhtml">Bogus Title</a>',
+            ),
             'book.xhtml': _xhtml(
               '<h2 id="ch1">Real One</h2><p>alpha</p>'
               '<h2 id="ch2">Real Two</h2><p>beta</p>',
@@ -744,7 +760,12 @@ More text.''';
     });
 
     test('ignores non-image files', () async {
-      final cbz = _buildCbz(['page1.jpg', 'thumbs.db', 'info.txt', 'page2.png']);
+      final cbz = _buildCbz([
+        'page1.jpg',
+        'thumbs.db',
+        'info.txt',
+        'page2.png',
+      ]);
       final dir = Directory.systemTemp.createTempSync('cbz_ignore');
       final file = File('${dir.path}/test.cbz');
       await file.writeAsBytes(cbz);
@@ -921,35 +942,353 @@ Uint8List _buildCbz(List<String> imageNames) {
 Uint8List _tinyJpeg() {
   // Minimal valid JPEG file (1x1 pixel, white).
   return Uint8List.fromList([
-    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
-    0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09,
-    0x09, 0x08, 0x0A, 0x0C, 0x14, 0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12,
-    0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A, 0x1C, 0x1C, 0x20,
-    0x24, 0x2E, 0x27, 0x20, 0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29,
-    0x2C, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27, 0x39, 0x3D, 0x38, 0x32,
-    0x3C, 0x2E, 0x33, 0x34, 0x32, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01,
-    0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00,
-    0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-    0x09, 0x0A, 0x0B, 0xFF, 0xC4, 0x00, 0xB5, 0x10, 0x00, 0x02, 0x01, 0x03,
-    0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7D,
-    0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06,
-    0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08,
-    0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0, 0x24, 0x33, 0x62, 0x72,
-    0x82, 0x09, 0x0A, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28,
-    0x29, 0x2A, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x43, 0x44, 0x45,
-    0x46, 0x47, 0x48, 0x49, 0x4A, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
-    0x5A, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x73, 0x74, 0x75,
-    0x76, 0x77, 0x78, 0x79, 0x7A, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
-    0x8A, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0xA2, 0xA3,
-    0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6,
-    0xB7, 0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9,
-    0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xE1, 0xE2,
-    0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF1, 0xF2, 0xF3, 0xF4,
-    0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01,
-    0x00, 0x00, 0x3F, 0x00, 0x7B, 0x94, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xD9,
+    0xFF,
+    0xD8,
+    0xFF,
+    0xE0,
+    0x00,
+    0x10,
+    0x4A,
+    0x46,
+    0x49,
+    0x46,
+    0x00,
+    0x01,
+    0x01,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0xFF,
+    0xDB,
+    0x00,
+    0x43,
+    0x00,
+    0x08,
+    0x06,
+    0x06,
+    0x07,
+    0x06,
+    0x05,
+    0x08,
+    0x07,
+    0x07,
+    0x07,
+    0x09,
+    0x09,
+    0x08,
+    0x0A,
+    0x0C,
+    0x14,
+    0x0D,
+    0x0C,
+    0x0B,
+    0x0B,
+    0x0C,
+    0x19,
+    0x12,
+    0x13,
+    0x0F,
+    0x14,
+    0x1D,
+    0x1A,
+    0x1F,
+    0x1E,
+    0x1D,
+    0x1A,
+    0x1C,
+    0x1C,
+    0x20,
+    0x24,
+    0x2E,
+    0x27,
+    0x20,
+    0x22,
+    0x2C,
+    0x23,
+    0x1C,
+    0x1C,
+    0x28,
+    0x37,
+    0x29,
+    0x2C,
+    0x30,
+    0x31,
+    0x34,
+    0x34,
+    0x34,
+    0x1F,
+    0x27,
+    0x39,
+    0x3D,
+    0x38,
+    0x32,
+    0x3C,
+    0x2E,
+    0x33,
+    0x34,
+    0x32,
+    0xFF,
+    0xC0,
+    0x00,
+    0x0B,
+    0x08,
+    0x00,
+    0x01,
+    0x00,
+    0x01,
+    0x01,
+    0x01,
+    0x11,
+    0x00,
+    0xFF,
+    0xC4,
+    0x00,
+    0x1F,
+    0x00,
+    0x00,
+    0x01,
+    0x05,
+    0x01,
+    0x01,
+    0x01,
+    0x01,
+    0x01,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x05,
+    0x06,
+    0x07,
+    0x08,
+    0x09,
+    0x0A,
+    0x0B,
+    0xFF,
+    0xC4,
+    0x00,
+    0xB5,
+    0x10,
+    0x00,
+    0x02,
+    0x01,
+    0x03,
+    0x03,
+    0x02,
+    0x04,
+    0x03,
+    0x05,
+    0x05,
+    0x04,
+    0x04,
+    0x00,
+    0x00,
+    0x01,
+    0x7D,
+    0x01,
+    0x02,
+    0x03,
+    0x00,
+    0x04,
+    0x11,
+    0x05,
+    0x12,
+    0x21,
+    0x31,
+    0x41,
+    0x06,
+    0x13,
+    0x51,
+    0x61,
+    0x07,
+    0x22,
+    0x71,
+    0x14,
+    0x32,
+    0x81,
+    0x91,
+    0xA1,
+    0x08,
+    0x23,
+    0x42,
+    0xB1,
+    0xC1,
+    0x15,
+    0x52,
+    0xD1,
+    0xF0,
+    0x24,
+    0x33,
+    0x62,
+    0x72,
+    0x82,
+    0x09,
+    0x0A,
+    0x16,
+    0x17,
+    0x18,
+    0x19,
+    0x1A,
+    0x25,
+    0x26,
+    0x27,
+    0x28,
+    0x29,
+    0x2A,
+    0x34,
+    0x35,
+    0x36,
+    0x37,
+    0x38,
+    0x39,
+    0x3A,
+    0x43,
+    0x44,
+    0x45,
+    0x46,
+    0x47,
+    0x48,
+    0x49,
+    0x4A,
+    0x53,
+    0x54,
+    0x55,
+    0x56,
+    0x57,
+    0x58,
+    0x59,
+    0x5A,
+    0x63,
+    0x64,
+    0x65,
+    0x66,
+    0x67,
+    0x68,
+    0x69,
+    0x6A,
+    0x73,
+    0x74,
+    0x75,
+    0x76,
+    0x77,
+    0x78,
+    0x79,
+    0x7A,
+    0x83,
+    0x84,
+    0x85,
+    0x86,
+    0x87,
+    0x88,
+    0x89,
+    0x8A,
+    0x92,
+    0x93,
+    0x94,
+    0x95,
+    0x96,
+    0x97,
+    0x98,
+    0x99,
+    0x9A,
+    0xA2,
+    0xA3,
+    0xA4,
+    0xA5,
+    0xA6,
+    0xA7,
+    0xA8,
+    0xA9,
+    0xAA,
+    0xB2,
+    0xB3,
+    0xB4,
+    0xB5,
+    0xB6,
+    0xB7,
+    0xB8,
+    0xB9,
+    0xBA,
+    0xC2,
+    0xC3,
+    0xC4,
+    0xC5,
+    0xC6,
+    0xC7,
+    0xC8,
+    0xC9,
+    0xCA,
+    0xD2,
+    0xD3,
+    0xD4,
+    0xD5,
+    0xD6,
+    0xD7,
+    0xD8,
+    0xD9,
+    0xDA,
+    0xE1,
+    0xE2,
+    0xE3,
+    0xE4,
+    0xE5,
+    0xE6,
+    0xE7,
+    0xE8,
+    0xE9,
+    0xEA,
+    0xF1,
+    0xF2,
+    0xF3,
+    0xF4,
+    0xF5,
+    0xF6,
+    0xF7,
+    0xF8,
+    0xF9,
+    0xFA,
+    0xFF,
+    0xDA,
+    0x00,
+    0x08,
+    0x01,
+    0x01,
+    0x00,
+    0x00,
+    0x3F,
+    0x00,
+    0x7B,
+    0x94,
+    0x11,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0xFF,
+    0xD9,
   ]);
 }
 
@@ -965,7 +1304,8 @@ Uint8List _buildEpub({
 }) {
   final archive = Archive()
     ..addFile(ArchiveFile.string('mimetype', 'application/epub+zip'))
-    ..addFile(ArchiveFile.string('META-INF/container.xml', '''
+    ..addFile(
+      ArchiveFile.string('META-INF/container.xml', '''
 <?xml version="1.0" encoding="utf-8"?>
 <container version="1.0"
     xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -973,7 +1313,8 @@ Uint8List _buildEpub({
     <rootfile full-path="OEBPS/content.opf"
         media-type="application/oebps-package+xml"/>
   </rootfiles>
-</container>'''))
+</container>'''),
+    )
     ..addFile(ArchiveFile.string('OEBPS/content.opf', opf));
   if (ncx != null) {
     archive.addFile(ArchiveFile.string('OEBPS/toc.ncx', ncx));
@@ -987,11 +1328,7 @@ Uint8List _buildEpub({
   return ZipEncoder().encodeBytes(archive);
 }
 
-String _opf({
-  required String items,
-  required String spine,
-  String? spineToc,
-}) =>
+String _opf({required String items, required String spine, String? spineToc}) =>
     '''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0"
          unique-identifier="bookid">
@@ -1008,15 +1345,18 @@ String _ncx(List<(String, String)> points) {
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><navMap>''');
   for (var i = 0; i < points.length; i++) {
     final (label, src) = points[i];
-    buf.write('<navPoint id="n$i" playOrder="${i + 1}">'
-        '<navLabel><text>$label</text></navLabel>'
-        '<content src="$src"/></navPoint>');
+    buf.write(
+      '<navPoint id="n$i" playOrder="${i + 1}">'
+      '<navLabel><text>$label</text></navLabel>'
+      '<content src="$src"/></navPoint>',
+    );
   }
   buf.write('</navMap></ncx>');
   return buf.toString();
 }
 
-String _xhtml(String body) => '''<?xml version="1.0" encoding="utf-8"?>
+String _xhtml(String body) =>
+    '''<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:epub="http://www.idpf.org/2007/ops">
   <head><title>doc</title></head>

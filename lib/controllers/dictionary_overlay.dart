@@ -44,10 +44,14 @@ class DictionaryOverlay {
               ),
             ),
             Positioned(
-              left: (globalPosition.dx - 140)
-                  .clamp(8.0, MediaQuery.sizeOf(context).width - 296.0),
-              top: (globalPosition.dy - 56)
-                  .clamp(0.0, MediaQuery.sizeOf(context).height - 60),
+              left: (globalPosition.dx - 140).clamp(
+                8.0,
+                MediaQuery.sizeOf(context).width - 296.0,
+              ),
+              top: (globalPosition.dy - 56).clamp(
+                0.0,
+                MediaQuery.sizeOf(context).height - 60,
+              ),
               child: Material(
                 color: Colors.transparent,
                 child: Container(
@@ -62,8 +66,10 @@ class DictionaryOverlay {
                       ),
                     ],
                   ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -109,10 +115,7 @@ class DictionaryOverlay {
     Overlay.of(context).insert(_dictionaryButtonEntry!);
   }
 
-  Widget _toolbarButton({
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _toolbarButton({required String label, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -146,11 +149,7 @@ class DictionaryOverlay {
 
   void openDictionarySheet(String word) {
     if (DictionaryService.instance.isDownloaded) {
-      DictionarySheet.show(
-        context,
-        word: word.toLowerCase(),
-        theme: theme,
-      );
+      DictionarySheet.show(context, word: word.toLowerCase(), theme: theme);
     } else {
       showDownloadDialog(word);
     }
@@ -183,8 +182,7 @@ class DictionaryOverlay {
                 autoDownloadDictionary: true,
               );
             },
-            child:
-                Text('Download', style: TextStyle(color: theme.accent)),
+            child: Text('Download', style: TextStyle(color: theme.accent)),
           ),
         ],
       ),

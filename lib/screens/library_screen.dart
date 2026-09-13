@@ -68,10 +68,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
   StreamSubscription<MetadataStatus>? _metadataSubscription;
 
-  List<String> get _allowedExtensions => widget.library.selectedFormats
-      .map((e) => e.replaceFirst('.', ''))
-      .toList();
-
   @override
   void initState() {
     super.initState();
@@ -281,7 +277,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _pickFile() async {
     final files = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: _allowedExtensions,
+      allowedExtensions: const ['epub', 'txt', 'pdf', 'cbz', 'cbr'],
     );
     if (files.isEmpty) return;
     final paths = files.map((f) => f.path).whereType<String>().toList();
@@ -291,13 +287,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _pickFolderAndScan() async {
     final dir = await FilePicker.getDirectoryPath();
     if (dir == null) return;
-    await _runScan(
-      ScanService.scanFolder(
-        dir,
-        knownPaths: _knownPaths(),
-        extensions: widget.library.selectedFormats,
-      ),
-    );
+    await _runScan(ScanService.scanFolder(dir, knownPaths: _knownPaths()));
   }
 
   Future<void> _scanDevice() async {
@@ -306,12 +296,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _snack('Storage permission is required to scan the device');
       return;
     }
-    await _runScan(
-      ScanService.scanDevice(
-        knownPaths: _knownPaths(),
-        extensions: widget.library.selectedFormats,
-      ),
-    );
+    await _runScan(ScanService.scanDevice(knownPaths: _knownPaths()));
   }
 
   Future<void> _onRefresh() async {
@@ -329,13 +314,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
 
-    await _runScan(
-      ScanService.scanFolders(
-        folders,
-        knownPaths: _knownPaths(),
-        extensions: widget.library.selectedFormats,
-      ),
-    );
+    await _runScan(ScanService.scanFolders(folders, knownPaths: _knownPaths()));
   }
 
   Set<String> _knownPaths() => widget.library.books.map((b) => b.path).toSet();

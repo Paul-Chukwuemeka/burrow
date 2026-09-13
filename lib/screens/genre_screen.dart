@@ -17,11 +17,7 @@ enum _SortMode { title, recent, added }
 enum _LayoutMode { grid, list }
 
 class GenreScreen extends StatefulWidget {
-  const GenreScreen({
-    super.key,
-    required this.genre,
-    required this.library,
-  });
+  const GenreScreen({super.key, required this.genre, required this.library});
 
   final String genre;
   final LibraryService library;
@@ -43,18 +39,20 @@ class _GenreScreenState extends State<GenreScreen> {
   }
 
   String _sortLabel(_SortMode m) => switch (m) {
-        _SortMode.title => 'A\u2013Z',
-        _SortMode.recent => 'Recent',
-        _SortMode.added => 'Added',
-      };
+    _SortMode.title => 'A\u2013Z',
+    _SortMode.recent => 'Recent',
+    _SortMode.added => 'Added',
+  };
 
   List<Book> get _books {
     var list = widget.library.booksByGenre(widget.genre);
     switch (_sort) {
       case _SortMode.title:
-        list.sort((a, b) => a.displayTitle
-            .toLowerCase()
-            .compareTo(b.displayTitle.toLowerCase()));
+        list.sort(
+          (a, b) => a.displayTitle.toLowerCase().compareTo(
+            b.displayTitle.toLowerCase(),
+          ),
+        );
       case _SortMode.recent:
         list.sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
       case _SortMode.added:
@@ -67,7 +65,9 @@ class _GenreScreenState extends State<GenreScreen> {
     if (!await File(book.path).exists()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${book.displayTitle}" is no longer on this device')),
+        SnackBar(
+          content: Text('"${book.displayTitle}" is no longer on this device'),
+        ),
       );
       return;
     }
@@ -102,7 +102,8 @@ class _GenreScreenState extends State<GenreScreen> {
             label: _sortLabel(_sort),
             icon: Icons.sort_rounded,
             onTap: () => setState(() {
-              _sort = _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
+              _sort =
+                  _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
             }),
           ),
           const SizedBox(width: 8),
@@ -129,8 +130,8 @@ class _GenreScreenState extends State<GenreScreen> {
               ),
             )
           : _layout == _LayoutMode.grid
-              ? _bookGrid(context, books)
-              : _bookList(books),
+          ? _bookGrid(context, books)
+          : _bookList(books),
     );
   }
 
@@ -195,7 +196,10 @@ class _GenreScreenState extends State<GenreScreen> {
             ),
             const SizedBox(height: 4),
             ListTile(
-              leading: Icon(Icons.menu_book_outlined, color: scheme.onSecondaryContainer),
+              leading: Icon(
+                Icons.menu_book_outlined,
+                color: scheme.onSecondaryContainer,
+              ),
               title: const Text('Read now'),
               onTap: () {
                 Navigator.pop(sheetContext);
@@ -208,4 +212,3 @@ class _GenreScreenState extends State<GenreScreen> {
     );
   }
 }
-
