@@ -7,6 +7,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:rar/rar.dart';
 import 'package:xml/xml.dart';
@@ -125,6 +126,28 @@ class ParsedMetadata {
   final String? source;
   final String? titleSort;
   final String? authorSort;
+
+  ParsedMetadata copyWith({List<int>? coverBytes}) {
+    return ParsedMetadata(
+      title: title,
+      author: author,
+      coverBytes: coverBytes ?? this.coverBytes,
+      description: description,
+      annotation: annotation,
+      genre: genre,
+      seriesName: seriesName,
+      seriesIndex: seriesIndex,
+      publisher: publisher,
+      isbn: isbn,
+      language: language,
+      publicationDate: publicationDate,
+      rights: rights,
+      type: type,
+      source: source,
+      titleSort: titleSort,
+      authorSort: authorSort,
+    );
+  }
 }
 
 /// One table-of-contents entry, in document order.
@@ -172,23 +195,48 @@ class DocumentParser {
     return compute(_extractMetadataIsolate, path);
   }
 
-  static Future<ParsedMetadata> _extractMetadataIsolate(String path) {
+  static Future<ParsedMetadata> _extractMetadataIsolate(String path) async {
+    ParsedMetadata meta;
     switch (formatFromExtension(path)) {
       case BookFormat.epub:
-        return _extractEpubMetadata(path);
+        meta = await _extractEpubMetadata(path);
       case BookFormat.pdf:
       case BookFormat.txt:
-        return Future.value(
-          ParsedMetadata(title: _titleFromFilename(path), author: ''),
-        );
+        meta = ParsedMetadata(title: _titleFromFilename(path), author: '');
       case BookFormat.cbz:
-        return _extractCbzMetadata(path);
+        meta = await _extractCbzMetadata(path);
       case BookFormat.cbr:
         // The rar plugin can only extract whole archives, so a CBR cover is
         // deferred until the comic is opened. Metadata needs only the title.
-        return Future.value(
-          ParsedMetadata(title: _titleFromFilename(path), author: ''),
-        );
+        meta = ParsedMetadata(title: _titleFromFilename(path), author: '');
+    }
+    final cover = _downscaleCover(meta.coverBytes);
+    return cover == null ? meta : meta.copyWith(coverBytes: cover);
+  }
+
+  /// Shrinks a cover to at most [maxDimension] px on its long edge so the
+  /// library does not decode (or store) multi-megapixel originals. Returns the
+  /// original bytes when decoding fails or the image is already small.
+  static Uint8List? _downscaleCover(
+    List<int>? bytes, {
+    int maxDimension = 600,
+  }) {
+    if (bytes == null || bytes.isEmpty) return null;
+    final original = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    try {
+      final decoded = img.decodeImage(original);
+      if (decoded == null) return original;
+      if (decoded.width <= maxDimension &&
+          decoded.height <= maxDimension &&
+          original.length <= 300 * 1024) {
+        return original;
+      }
+      final resized = decoded.width >= decoded.height
+          ? img.copyResize(decoded, width: maxDimension)
+          : img.copyResize(decoded, height: maxDimension);
+      return Uint8List.fromList(img.encodeJpg(resized, quality: 82));
+    } catch (_) {
+      return original;
     }
   }
 
