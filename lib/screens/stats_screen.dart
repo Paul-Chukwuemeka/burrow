@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../db/database.dart';
 import '../models/book_stats.dart';
 import '../services/library_service.dart';
 import '../utils/book_title.dart';
@@ -420,11 +421,12 @@ class _WeeklyChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final today = (now.millisecondsSinceEpoch / 86400000).floor();
+    final today = AppDatabase.localDayKey(now.millisecondsSinceEpoch);
+    final msPerDay = 86400000;
     final days = <MapEntry<int, String>>[];
 
     for (var i = 6; i >= 0; i--) {
-      final day = today - i;
+      final day = today - i * msPerDay;
       final label = _dayLabel(now.subtract(Duration(days: i)));
       days.add(MapEntry(day, label));
     }

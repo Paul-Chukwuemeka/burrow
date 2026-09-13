@@ -131,6 +131,14 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 6;
 
+  /// Returns the local-midnight epoch-ms for the day containing [ms].
+  /// Two timestamps on the same calendar day (in the device's local timezone)
+  /// produce the same key, regardless of UTC offset.
+  static int localDayKey(int ms) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms, isUtc: false);
+    return DateTime(dt.year, dt.month, dt.day).millisecondsSinceEpoch;
+  }
+
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
@@ -308,42 +316,53 @@ class AppDatabase extends _$AppDatabase {
     return result.isNotEmpty ? result.first.read<int>('total') : 0;
   }
 
-  /// Returns sessions grouped by day (epoch day) with total time in ms.
+  /// Returns sessions grouped by local calendar day with total time in ms.
   Future<Map<int, int>> getDailyReadingTime() async {
     final results = await customSelect(
-      'SELECT (started_at / 86400000) AS day, SUM(ended_at - started_at) AS total '
-      'FROM reading_sessions WHERE ended_at > 0 GROUP BY day',
+      'SELECT started_at, ended_at - started_at AS total '
+      'FROM reading_sessions WHERE ended_at > 0',
     ).get();
-    return {for (final r in results) r.read<int>('day'): r.read<int>('total')};
+    final map = <int, int>{};
+    for (final r in results) {
+      final day = localDayKey(r.read<int>('started_at'));
+      final total = r.read<int>('total');
+      map[day] = (map[day] ?? 0) + total;
+    }
+    return map;
   }
 
   /// Returns the number of consecutive days with reading, ending today.
   Future<int> getReadingStreak() async {
     final daily = await getDailyReadingTime();
     if (daily.isEmpty) return 0;
-    final today = (DateTime.now().millisecondsSinceEpoch / 86400000).floor();
+    final today = localDayKey(DateTime.now().millisecondsSinceEpoch);
+    final msPerDay = 86400000;
     var streak = 0;
     var day = today;
     while (daily.containsKey(day)) {
       streak++;
-      day--;
+      day -= msPerDay;
     }
     return streak;
   }
 
-  /// Returns reading time grouped by hour-of-day (0–23).
+  /// Returns reading time grouped by local hour-of-day (0–23).
   Future<Map<int, int>> getHourlyReadingTime() async {
     final results = await customSelect(
-      'SELECT (started_at % 86400000) / 3600000 AS hour, SUM(ended_at - started_at) AS total '
+      "SELECT strftime('%H', started_at / 1000, 'unixepoch', 'localtime') AS hour, "
+      'SUM(ended_at - started_at) AS total '
       'FROM reading_sessions WHERE ended_at > 0 GROUP BY hour',
     ).get();
-    return {for (final r in results) r.read<int>('hour'): r.read<int>('total')};
+    return {
+      for (final r in results)
+        int.parse(r.read<String>('hour')): r.read<int>('total'),
+    };
   }
 
-  /// Returns reading time grouped by "YYYY-MM" key.
+  /// Returns reading time grouped by local "YYYY-MM" key.
   Future<Map<String, int>> getMonthlyReadingTime() async {
     final results = await customSelect(
-      "SELECT strftime('%Y-%m', started_at / 1000, 'unixepoch') AS month, "
+      "SELECT strftime('%Y-%m', started_at / 1000, 'unixepoch', 'localtime') AS month, "
       'SUM(ended_at - started_at) AS total '
       'FROM reading_sessions WHERE ended_at > 0 GROUP BY month',
     ).get();
@@ -372,13 +391,13 @@ class AppDatabase extends _$AppDatabase {
 
   /// Returns total reading time in ms for today.
   Future<int> getTodayReadingTimeMs() async {
-    final todayEpoch = (DateTime.now().millisecondsSinceEpoch / 86400000)
-        .floor();
+    final dayStart = localDayKey(DateTime.now().millisecondsSinceEpoch);
+    final dayEnd = dayStart + 86400000;
     final result = await customSelect(
       'SELECT SUM(ended_at - started_at) AS total '
       'FROM reading_sessions '
-      'WHERE ended_at > 0 AND (started_at / 86400000) = ?',
-      variables: [Variable.withInt(todayEpoch)],
+      'WHERE ended_at > 0 AND started_at >= ? AND started_at < ?',
+      variables: [Variable.withInt(dayStart), Variable.withInt(dayEnd)],
     ).get();
     return result.isNotEmpty ? result.first.read<int>('total') : 0;
   }
