@@ -107,58 +107,39 @@ class FilterIconButton extends StatelessWidget {
       label: 'Filters${activeCount > 0 ? ' ($activeCount active)' : ''}',
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        child: Material(
-          color: activeCount > 0 ? scheme.primary : Colors.transparent,
-          shape: StadiumBorder(
-            side: BorderSide(
-              color: activeCount > 0
-                  ? scheme.primary
-                  : scheme.outlineVariant.withValues(alpha: 0.5),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            IconButton(
+              icon: Icon(
+                Icons.tune_rounded,
+                color: activeCount > 0 ? scheme.primary : scheme.onSurface,
+              ),
+              onPressed: onTap,
             ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Icon(
-                      Icons.tune_rounded,
-                      size: 18,
-                      color: activeCount > 0
-                          ? scheme.onPrimary
-                          : scheme.onSurfaceVariant,
+            if (activeCount > 0)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$activeCount',
+                    style: TextStyle(
+                      color: scheme.onPrimary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
                     ),
                   ),
-                  if (activeCount > 0)
-                    Positioned(
-                      top: -6,
-                      right: -8,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: scheme.onPrimary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '$activeCount',
-                          style: TextStyle(
-                            color: scheme.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            height: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                ),
               ),
-            ),
-          ),
+          ],
         ),
       ),
     );
