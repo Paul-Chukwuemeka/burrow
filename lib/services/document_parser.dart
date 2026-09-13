@@ -1849,12 +1849,6 @@ class DocumentParser {
   // Disk cache for parsed documents.
   // --------------------------------------------------------------------------
 
-  static Future<Directory> _cacheDir() async {
-    final dir = Directory(await _resolveCacheDirPath());
-    if (!dir.existsSync()) await dir.create(recursive: true);
-    return dir;
-  }
-
   /// Resolves (and creates) the cache directory, or throws when the platform
   /// directory is unavailable. Must be called on the main isolate.
   static Future<String> _resolveCacheDirPath() async {
@@ -2070,12 +2064,36 @@ class DocumentParser {
   /// Deletes cache entries that no longer correspond to any of [paths], then
   /// trims the cache to [maxBytes] by removing the least recently modified
   /// files. This also sweeps entries from earlier cache schema versions.
+  ///
+  /// The sweep runs in a background isolate so a large cache never janks the
+  /// UI thread at startup.
   static Future<void> pruneCache(
     Iterable<String> paths, {
     int maxBytes = 256 * 1024 * 1024,
   }) async {
+    if (_pruneRunning) return;
+    final dirPath = await _safeCacheDirPath();
+    if (dirPath == null) return;
+    _pruneRunning = true;
     try {
-      final dir = await _cacheDir();
+      await compute(_pruneCacheIsolate, (
+        dirPath,
+        [for (final p in paths) p],
+        maxBytes,
+      ));
+    } catch (_) {
+    } finally {
+      _pruneRunning = false;
+    }
+  }
+
+  static bool _pruneRunning = false;
+
+  static void _pruneCacheIsolate((String, List<String>, int) args) {
+    final (dirPath, paths, maxBytes) = args;
+    try {
+      final dir = Directory(dirPath);
+      if (!dir.existsSync()) return;
       final valid = <String>{};
       for (final p in paths) {
         try {

@@ -514,7 +514,9 @@ class LibraryService extends ChangeNotifier {
   void resumeMetadataExtraction() {
     if (_disposed) return;
     for (final book in _books) {
-      if (!book.metadataComplete) _metadataQueue.add(book.id);
+      if (!book.metadataComplete) {
+        _metadataQueue.add(book.id);
+      }
     }
     _startMetadataWorker();
   }
