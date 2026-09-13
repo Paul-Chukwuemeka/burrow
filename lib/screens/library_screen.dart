@@ -1606,7 +1606,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 filled: true,
                                 fillColor: scheme.surfaceContainerHighest,
                                 isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                                contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: OutlineInputBorder(
