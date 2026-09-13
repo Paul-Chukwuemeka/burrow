@@ -49,7 +49,8 @@ class ReaderScreen extends StatefulWidget {
 
 /// State for [ReaderScreen]. Public so tests can reach the settings-change
 /// seam without going through the bottom sheet.
-class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver {
+class ReaderScreenState extends State<ReaderScreen>
+    with WidgetsBindingObserver {
   ReaderSettings get _settings => widget.library.settings;
   Book get _book => widget.book;
 
@@ -84,25 +85,20 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _flatTotal = acc;
   }
 
-  /// True once every chapter has a real paginator, so the flat page number is
-  /// exact. Until then the UI shows a `…` placeholder for totals.
+  /// True once every chapter has a real paginator. The live set is complete at
+  /// rest, so this is true whenever a pass is not mid-flight.
   bool get _allPaginatorsReady =>
       _paginationReady.isNotEmpty &&
       _paginationReady.length >= _paginators.length &&
       _paginationReady.every((ready) => ready);
 
   /// True when no layout pass is running and none is queued.
-  bool get _passSettled =>
-      !_paginationRunning &&
-      _paginationOrderIndex >= _paginationOrder.length &&
-      !_reflowActive;
+  bool get _passSettled => !_paginationRunning && !_reflowActive;
 
-  /// Flat page index holding `(chapter, offset)`, using the current paginator
-  /// mix. Used to re-anchor after a placeholder chapter gains real pages.
+  /// Flat page index holding `(chapter, offset)` in the current paginator set.
   int _flatIndexForPosition(int chapter, int offset) {
     if (chapter < 0 || chapter >= _paginators.length) return 0;
-    final pageIdx =
-        offset > 0 ? _paginators[chapter].pageIndexFor(offset) : 0;
+    final pageIdx = offset > 0 ? _paginators[chapter].pageIndexFor(offset) : 0;
     return _flatStart[chapter] + pageIdx;
   }
 
@@ -120,23 +116,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // Pagination state.
   bool _paginationRunning = false;
 
-  /// Bumped whenever a pagination pass is superseded, so the in-flight chunk
-  /// loop of the previous pass exits instead of interleaving with the new one.
-  int _paginationGeneration = 0;
-
-  /// Whether `_paginators[i]` is a real layout (true) or a one-page placeholder
-  /// standing in for a chapter not yet paginated (false). Until every entry is
-  /// true the flat page number is only approximate, so the UI shows a `…`
-  /// placeholder rather than a wrong value.
+  /// Whether `_paginators[i]` is a real layout. The live set is always
+  /// complete (the initial pass and every reflow install a full set), so at
+  /// rest every entry is true.
   List<bool> _paginationReady = const [];
 
-  /// Chapters still to lay out, in priority order. Driven by [_scheduleNext].
-  List<int> _paginationOrder = const [];
-  int _paginationOrderIndex = 0;
-
-  /// Anchor `(chapter, offsetInChapter)` of the visible page. Placeholder
-  /// chapters expanding to real page counts shift the flat page index, so the
-  /// reader is re-anchored from this after every completion.
+  /// Anchor `(chapter, offsetInChapter)` of the visible page.
   int _anchorChapter = 0;
   int _anchorOffset = 0;
 
@@ -168,10 +153,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   /// Per-frame time budget for background pagination.
   static const Duration _paginationFrameBudget = Duration(milliseconds: 8);
 
-  /// A chapter longer than this opens behind the "Laying out pages…" view
-  /// instead of blocking the first frame silently.
-  static const int _hugeChapterChars = 60000;
-
   bool _chromeVisible = false;
   Timer? _saveDebounce;
 
@@ -194,7 +175,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   DictionaryOverlay? _dictOverlay;
 
   bool get _isPdf => _book.format == BookFormat.pdf;
-  bool get _isComic => _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
+  bool get _isComic =>
+      _book.format == BookFormat.cbz || _book.format == BookFormat.cbr;
   bool get _showSearch => !_isComic;
   bool get _showToc => !_isComic;
   bool get _showBookmark => !_isComic;
@@ -202,17 +184,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   @override
   void initState() {
     super.initState();
-    _sessionCtrl = ReadingSessionManager(
-      library: widget.library,
-      book: _book,
-    );
+    _sessionCtrl = ReadingSessionManager(library: widget.library, book: _book);
     _bookmarkCtrl = BookmarkHelper(
       library: widget.library,
       book: _book,
       isPdf: _isPdf,
       getCurrentPosition: () {
         if (_isPdf) {
-          return (chapter: _pdfCtrl.pdfPage, offset: 0, snippet: 'Page ${_pdfCtrl.pdfPage}');
+          return (
+            chapter: _pdfCtrl.pdfPage,
+            offset: 0,
+            snippet: 'Page ${_pdfCtrl.pdfPage}',
+          );
         }
         final ref = _refAt(_flatPage);
         if (ref == null || _doc == null) return null;
@@ -317,7 +300,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationCache.clear();
     _pdfCtrl.dispose();
     _comicCtrl.dispose();
-    _searchCtrl.searchController.removeListener(_searchCtrl.onSearchTextChanged);
+    _searchCtrl.searchController.removeListener(
+      _searchCtrl.onSearchTextChanged,
+    );
     _searchCtrl.dispose();
     _dictOverlay?.dismissDictionaryButton();
     _doc = null;
@@ -406,12 +391,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       '${_settings.overrideCssFontFamily}|${_settings.overrideCssColor}';
 
   Paginator _emptyPaginator() => Paginator.paginate(
-        text: '',
-        style: const TextStyle(),
-        maxWidth: 100,
-        maxHeight: 100,
-        direction: TextDirection.ltr,
-      );
+    text: '',
+    style: const TextStyle(),
+    maxWidth: 100,
+    maxHeight: 100,
+    direction: TextDirection.ltr,
+  );
 
   /// Maps a flat page index to `(chapter, pageIndex)`, or null when out of
   /// range.
@@ -513,10 +498,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     // keep its exact offset. Re-deriving the page start here would lose
     // intra-page position and drift backwards on every re-layout.
     final c = _anchorChapter;
-    if (c >= 0 &&
-        c < _paginators.length &&
-        c < _paginationReady.length &&
-        _paginationReady[c]) {
+    if (c >= 0 && c < _paginators.length) {
       final pages = _paginators[c].pages;
       final idx = _flatPage - _flatStart[c];
       if (idx >= 0 &&
@@ -529,31 +511,23 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     final ref = _refAt(_flatPage);
     if (ref == null) return (_anchorChapter, _anchorOffset);
     final rc = ref.$1;
-    if (rc < 0 ||
-        rc >= _paginators.length ||
-        rc >= _paginationReady.length ||
-        !_paginationReady[rc]) {
+    if (rc < 0 || rc >= _paginators.length) {
       return (_anchorChapter, _anchorOffset);
     }
     return (rc, _paginators[rc].pages[ref.$2].start);
   }
 
-  /// Start a fresh layout for the current style: placeholders for every
-  /// chapter, the anchor chapter laid out immediately, the rest scheduled.
-  ///
-  /// The anchor chapter is paginated synchronously unless it is very large, in
-  /// which case the progress view is shown while it lays out across frames.
-  void _beginPass({
-    required Size viewport,
-    required TextStyle style,
-    required TextScaler scaler,
-    required int anchorChapter,
-    required int anchorOffset,
-    String? signature,
-  }) {
+  /// Paginate every chapter into a buffer behind the progress view and swap
+  /// in atomically once done.  The reader opens fully laid out — no
+  /// placeholders, no `…` page counts, no re-anchor jumps.
+  void _startInitialFullPass(
+    Size viewport,
+    TextStyle style,
+    TextScaler scaler,
+    (int, int) anchor,
+    String signature,
+  ) {
     final n = _doc!.chapters.length;
-    _paginationGeneration++;
-    final generation = _paginationGeneration;
     _disposeDrivers();
     _cancelReflow();
 
@@ -562,16 +536,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       ..clear()
       ..addAll(List.generate(n, (_) => _emptyPaginator()));
     _paginationReady = List.filled(n, false);
-    _layoutSignature = signature ?? _signatureFor(viewport, style, scaler);
-    _anchorChapter = anchorChapter.clamp(0, n - 1);
-    _anchorOffset = anchorOffset;
-    // Anchor first, then forward so reading stays ahead, then the prefix that
-    // resolves the global page number.
-    _paginationOrder = [
-      for (var i = _anchorChapter; i < n; i++) i,
-      for (var i = 0; i < _anchorChapter; i++) i,
-    ];
-    _paginationOrderIndex = 0;
+    _layoutSignature = signature;
+    _anchorChapter = anchor.$1.clamp(0, n - 1);
+    _anchorOffset = anchor.$2;
     _recomputeFlatIndexes();
 
     final old = _pageController;
@@ -580,21 +547,19 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
     }
 
-    final anchorHuge =
-        _doc!.chapters[_anchorChapter].body.length > _hugeChapterChars;
-    if (anchorHuge) {
-      // Lay the anchor out across frames behind the progress view.
-      _paginationRunning = true;
-      if (mounted) setState(() {});
-      _scheduleNext(generation);
-      return;
-    }
+    // Show the progress view.
+    _paginationRunning = true;
 
-    _paginateChapterSync(_anchorChapter, viewport, style, scaler);
-    _recomputeFlatIndexes();
-    _paginationRunning = false;
-    _setControllerToAnchor(recreate: true);
-    _scheduleNext(generation);
+    // Build every chapter into the reflow buffer and swap when done.
+    _reflowPages = List.filled(n, _emptyPaginator());
+    _reflowStyles = List.filled(n, style);
+    _reflowReady = List.filled(n, false);
+    _reflowNext = 0;
+    _reflowSignature = signature;
+    _reflowGeneration++;
+    final generation = _reflowGeneration;
+    if (mounted) setState(() {});
+    _reflowNextBatch(viewport, style, scaler, generation);
   }
 
   /// Adopt a fully-built layout (cache hit or completed pass) and land on
@@ -605,7 +570,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     String? signature,
     (int, int) anchor,
   ) {
-    _paginationGeneration++;
     _disposeDrivers();
     _cancelReflow();
     _paginators
@@ -617,8 +581,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _recomputeFlatIndexes();
     _anchorChapter = anchor.$1.clamp(0, _paginators.length - 1);
     _anchorOffset = anchor.$2;
-    _paginationOrder = const [];
-    _paginationOrderIndex = 0;
     _paginationRunning = false;
     _setControllerToAnchor(recreate: true);
   }
@@ -635,13 +597,17 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     String signature,
     (int, int) anchor,
   ) {
+    // If the live set is not complete (a layout change arrived while the
+    // initial full pass was still building), do a full pass instead of a
+    // reflow so the reader opens fully laid out.
+    if (!_allPaginatorsReady) {
+      _startInitialFullPass(viewport, style, scaler, anchor, signature);
+      return;
+    }
     final n = _doc!.chapters.length;
     // Supersede any in-flight initial pass or reflow.
-    _paginationGeneration++;
     _disposeDrivers();
     _cancelReflow();
-    _paginationOrder = const [];
-    _paginationOrderIndex = 0;
     _paginationRunning = false;
 
     // Normalize the live set to the full chapter count.
@@ -705,10 +671,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       driver ??= _makeDriver(c, viewport, style, scaler);
       _reflowDrivers[c] = driver;
 
-      driver.nextChunkUntil(
-        minPages: 1,
-        budget: _paginationFrameBudget,
-      );
+      driver.nextChunkUntil(minPages: 1, budget: _paginationFrameBudget);
 
       if (driver.isDone) {
         pages[c] = driver.toPaginator();
@@ -738,6 +701,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       if (!mounted) return;
       final pages = _reflowPages;
       if (pages == null) return;
+      _paginationRunning = false;
       _paginators
         ..clear()
         ..addAll(pages);
@@ -792,31 +756,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _paginationReady[chapter] = true;
   }
 
-  /// Ensure [chapter] has a real paginator, paginating it now if necessary.
-  void _ensureChapter(int chapter) {
-    if (_doc == null ||
-        chapter < 0 ||
-        chapter >= _paginators.length ||
-        (chapter < _paginationReady.length && _paginationReady[chapter])) {
-      return;
-    }
-    // The scheduler is already laying this chapter out; let it finish rather
-    // than starting a second, conflicting layout.
-    if (_paginationDrivers.containsKey(chapter)) return;
-    if (_paginationReady.length <= chapter) {
-      _paginationReady = List.filled(_paginators.length, false);
-    }
-    final viewport = _lastViewport;
-    if (viewport == null) return;
-    final style = _chapterStyles.length > chapter
-        ? _chapterStyles[chapter]
-        : _settings.textStyle(context);
-    const scaler = TextScaler.noScaling;
-    _paginateChapterSync(chapter, viewport, style, scaler);
-    _recomputeFlatIndexes();
-    _onChapterReady(chapter);
-  }
-
   ChapterPaginationDriver _makeDriver(
     int chapter,
     Size viewport,
@@ -838,73 +777,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     );
   }
 
-  /// Advance the scheduled layout pass within the frame budget, then yield.
-  void _scheduleNext(int generation) {
-    if (!mounted || _doc == null) return;
-    if (generation != _paginationGeneration) return;
-    final viewport = _lastViewport;
-    if (viewport == null) return;
-    final stopwatch = Stopwatch()..start();
-
-    while (_paginationOrderIndex < _paginationOrder.length) {
-      final c = _paginationOrder[_paginationOrderIndex];
-      if (_paginationReady[c]) {
-        _paginationOrderIndex++;
-        continue;
-      }
-      final style = _chapterStyles.length > c
-          ? _chapterStyles[c]
-          : _settings.textStyle(context);
-      const scaler = TextScaler.noScaling;
-      var driver = _paginationDrivers[c];
-      driver ??= _makeDriver(c, viewport, style, scaler);
-      _paginationDrivers[c] = driver;
-
-      driver.nextChunkUntil(
-        minPages: 1,
-        budget: _paginationFrameBudget,
-      );
-
-      if (driver.isDone) {
-        _paginators[c] = driver.toPaginator();
-        _chapterStyles[c] = style;
-        _paginationReady[c] = true;
-        driver.dispose();
-        _paginationDrivers.remove(c);
-        _recomputeFlatIndexes();
-        _onChapterReady(c);
-        _paginationOrderIndex++;
-      }
-
-      if (stopwatch.elapsedMilliseconds > 12) {
-        if (mounted) setState(() {});
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scheduleNext(generation);
-        });
-        return;
-      }
-    }
-
-    // Pass complete.
-    _paginationRunning = false;
-    if (_allPaginatorsReady && _layoutSignature != null) {
-      _paginationCache[_layoutSignature!] = List.unmodifiable(_paginators);
-    }
-    if (mounted) setState(() {});
-  }
-
-  /// Called after a chapter gains real pages. Mounts the reader once the anchor
-  /// chapter is ready, and re-anchors the flat index as placeholders expand.
-  void _onChapterReady(int chapter) {
-    if (_pageController == null) {
-      if (chapter != _anchorChapter) return;
-      _paginationRunning = false;
-      _setControllerToAnchor(recreate: true);
-      return;
-    }
-    _reanchor();
-  }
-
   /// Runs [action] once the page view is not mid-drag or mid-animation, so a
   /// background pass can never cancel a page turn the reader is making.
   void _whenPageIdle(VoidCallback action) {
@@ -918,25 +790,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       return;
     }
     action();
-  }
-
-  void _reanchor() {
-    if (_pageController == null) return;
-    _whenPageIdle(() {
-      if (!mounted || _pageController == null) return;
-      final flat = _flatIndexForPosition(_anchorChapter, _anchorOffset);
-      if (flat == _flatPage) {
-        setState(() {});
-        return;
-      }
-      _programmaticTarget = flat;
-      setState(() => _flatPage = flat);
-      final controller = _pageController;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _pageController != controller) return;
-        if (controller!.hasClients) controller.jumpToPage(flat);
-      });
-    });
   }
 
   void _setControllerToAnchor({required bool recreate}) {
@@ -990,10 +843,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   bool get debugPaginationRunning => _paginationRunning;
 
   @visibleForTesting
-  bool get debugLazyRunning =>
-      _paginationRunning ||
-      _paginationOrderIndex < _paginationOrder.length ||
-      _reflowActive;
+  bool get debugLazyRunning => _paginationRunning || _reflowActive;
 
   @visibleForTesting
   int get debugChapterCount => _doc?.chapters.length ?? -1;
@@ -1097,10 +947,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     _searchCtrl.jumpToResult(index);
     if (!_isPdf) {
       final result = _searchCtrl.searchResults[index];
-      _ensureChapter(result.chapter);
       final pag = _paginators[result.chapter];
-      final pageIndex =
-          result.offset > 0 ? pag.pageIndexFor(result.offset) : 0;
+      final pageIndex = result.offset > 0 ? pag.pageIndexFor(result.offset) : 0;
       final flat = _flatIndexForChapter(result.chapter) + pageIndex;
       _anchorChapter = result.chapter;
       _anchorOffset = result.offset;
@@ -1159,12 +1007,18 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                         hintText: 'Search book…',
                         hintStyle: TextStyle(color: theme.muted),
                         border: InputBorder.none,
-                        prefixIcon:
-                            Icon(Icons.search, color: theme.muted, size: 20),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: theme.muted,
+                          size: 20,
+                        ),
                         suffixIcon: _searchCtrl.searchController.text.isNotEmpty
                             ? IconButton(
-                                icon:
-                                    Icon(Icons.clear, color: theme.muted, size: 20),
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: theme.muted,
+                                  size: 20,
+                                ),
                                 onPressed: () {
                                   _searchCtrl.searchController.clear();
                                   _onSearchTextChanged();
@@ -1197,16 +1051,30 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(Icons.keyboard_arrow_up, color: theme.text, size: 22),
+                      icon: Icon(
+                        Icons.keyboard_arrow_up,
+                        color: theme.text,
+                        size: 22,
+                      ),
                       onPressed: _prevResult,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.keyboard_arrow_down, color: theme.text, size: 22),
+                      icon: Icon(
+                        Icons.keyboard_arrow_down,
+                        color: theme.text,
+                        size: 22,
+                      ),
                       onPressed: _nextResult,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                   ],
                 ),
@@ -1225,13 +1093,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     final label = _isPdf
                         ? 'Page ${r.chapter}'
                         : (_doc?.chapters[r.chapter].title ?? '').isEmpty
-                            ? 'Chapter ${r.chapter + 1}'
-                            : _doc!.chapters[r.chapter].title;
+                        ? 'Chapter ${r.chapter + 1}'
+                        : _doc!.chapters[r.chapter].title;
                     return InkWell(
                       onTap: () => _jumpToResult(i),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         color: isCurrent
                             ? theme.accent.withValues(alpha: 0.15)
                             : null,
@@ -1251,10 +1121,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                               r.snippet,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: theme.text,
-                                fontSize: 13,
-                              ),
+                              style: TextStyle(color: theme.text, fontSize: 13),
                             ),
                           ],
                         ),
@@ -1281,7 +1148,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   // Word selection toolbar
   // ---------------------------------------------------------------------------
 
-  void _showWordToolbar(Offset globalPosition, String word, int bodyStart, int bodyEnd) {
+  void _showWordToolbar(
+    Offset globalPosition,
+    String word,
+    int bodyStart,
+    int bodyEnd,
+  ) {
     _dictOverlay ??= DictionaryOverlay(
       context: context,
       theme: _settings.colors,
@@ -1340,80 +1212,85 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
     final viewer = PdfViewer.file(
       _book.path,
-      initialPageNumber:
-          _book.lastChapter + 1 < 1 ? 1 : _book.lastChapter + 1,
+      initialPageNumber: _book.lastChapter + 1 < 1 ? 1 : _book.lastChapter + 1,
       controller: _pdfCtrl.pdfController,
-        params: PdfViewerParams(
-          backgroundColor: theme.background,
-          textSelectionParams: PdfTextSelectionParams(
-            enabled: true,
-            onTextSelectionChange: (selection) async {
-              if (!selection.hasSelectedText) {
-                _dismissDictionaryButton();
-                return;
+      params: PdfViewerParams(
+        backgroundColor: theme.background,
+        textSelectionParams: PdfTextSelectionParams(
+          enabled: true,
+          onTextSelectionChange: (selection) async {
+            if (!selection.hasSelectedText) {
+              _dismissDictionaryButton();
+              return;
+            }
+            final selectedText = await selection.getSelectedText();
+            if (!mounted) return;
+            final trimmed = selectedText.trim();
+            if (trimmed.isNotEmpty && trimmed.length < 50) {
+              final words = trimmed.split(RegExp(r'\s+'));
+              final word = words.first.replaceAll(
+                RegExp(r'[^a-zA-Z\u00C0-\u024F]'),
+                '',
+              );
+              if (word.length >= 2) {
+                final size = MediaQuery.sizeOf(context);
+                _showWordToolbar(
+                  Offset(size.width / 2, size.height / 2),
+                  word,
+                  0,
+                  0,
+                );
               }
-              final selectedText = await selection.getSelectedText();
-              if (!mounted) return;
-              final trimmed = selectedText.trim();
-              if (trimmed.isNotEmpty && trimmed.length < 50) {
-                final words = trimmed.split(RegExp(r'\s+'));
-                final word = words.first.replaceAll(RegExp(r'[^a-zA-Z\u00C0-\u024F]'), '');
-                if (word.length >= 2) {
-                  final size = MediaQuery.sizeOf(context);
-                  _showWordToolbar(
-                    Offset(size.width / 2, size.height / 2),
-                    word,
-                    0,
-                    0,
+            }
+          },
+        ),
+        scrollPhysics: _settings.pdfContinuousScroll
+            ? null
+            : const NeverScrollableScrollPhysics(),
+        layoutPages: _settings.pdfLayoutDirection == PdfLayoutDirection.vertical
+            ? null
+            : (pages, params) {
+                final margin = params.margin;
+                final height =
+                    pages.fold(
+                      0.0,
+                      (prev, page) => math.max(prev, page.height),
+                    ) +
+                    margin * 2;
+                final pageLayouts = <Rect>[];
+                double x = margin;
+                final rtl =
+                    _settings.pdfLayoutDirection ==
+                    PdfLayoutDirection.horizontalRtl;
+                for (final page in pages) {
+                  pageLayouts.add(
+                    Rect.fromLTWH(
+                      x,
+                      (height - page.height) / 2,
+                      page.width,
+                      page.height,
+                    ),
                   );
+                  x += page.width + margin;
                 }
-              }
-            },
-          ),
-          scrollPhysics: _settings.pdfContinuousScroll
-              ? null
-              : const NeverScrollableScrollPhysics(),
-          layoutPages: _settings.pdfLayoutDirection == PdfLayoutDirection.vertical
-              ? null
-              : (pages, params) {
-                  final margin = params.margin;
-                  final height = pages.fold(
-                          0.0,
-                          (prev, page) => math.max(prev, page.height)) +
-                      margin * 2;
-                  final pageLayouts = <Rect>[];
-                  double x = margin;
-                  final rtl = _settings.pdfLayoutDirection ==
-                      PdfLayoutDirection.horizontalRtl;
-                  for (final page in pages) {
-                    pageLayouts.add(
-                      Rect.fromLTWH(
-                        x,
-                        (height - page.height) / 2,
-                        page.width,
-                        page.height,
-                      ),
+                if (rtl) {
+                  final totalWidth = x;
+                  for (var i = 0; i < pageLayouts.length; i++) {
+                    final r = pageLayouts[i];
+                    pageLayouts[i] = Rect.fromLTWH(
+                      totalWidth - r.right,
+                      r.top,
+                      r.width,
+                      r.height,
                     );
-                    x += page.width + margin;
                   }
-                  if (rtl) {
-                    final totalWidth = x;
-                    for (var i = 0; i < pageLayouts.length; i++) {
-                      final r = pageLayouts[i];
-                      pageLayouts[i] = Rect.fromLTWH(
-                        totalWidth - r.right,
-                        r.top,
-                        r.width,
-                        r.height,
-                      );
-                    }
-                  }
-                  return PdfPageLayout(
-                    pageLayouts: pageLayouts,
-                    documentSize: Size(x, height),
-                  );
-                },
-          onDocumentChanged: (document) {
+                }
+                return PdfPageLayout(
+                  pageLayouts: pageLayouts,
+                  documentSize: Size(x, height),
+                );
+              },
+        onDocumentChanged: (document) {
           if (document == null) return;
           setState(() => _pdfCtrl.pdfLoading = false);
           _loadPdfOutline(document);
@@ -1451,15 +1328,21 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         IgnorePointer(
           ignoring: !_chromeVisible,
           child: _chrome(
-            centerLabel:
-                _pdfCtrl.pdfPageCount == 0 ? '-/-' : 'Page $_pdfCtrl.pdfPage of $_pdfCtrl.pdfPageCount',
+            centerLabel: _pdfCtrl.pdfPageCount == 0
+                ? '-/-'
+                : 'Page $_pdfCtrl.pdfPage of $_pdfCtrl.pdfPageCount',
             sliderMax: _pdfCtrl.pdfPageCount > 1 ? _pdfCtrl.pdfPageCount : 1,
-            sliderValue: _pdfCtrl.pdfPage.clamp(1, _pdfCtrl.pdfPageCount > 0 ? _pdfCtrl.pdfPageCount : 1),
+            sliderValue: _pdfCtrl.pdfPage.clamp(
+              1,
+              _pdfCtrl.pdfPageCount > 0 ? _pdfCtrl.pdfPageCount : 1,
+            ),
             sliderLabel: _pdfCtrl.pdfPageCount == 0
                 ? '-/-'
                 : '${((_pdfCtrl.pdfPage / _pdfCtrl.pdfPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              if (_pdfCtrl.pdfController.isReady) _pdfCtrl.pdfController.goToPage(pageNumber: v);
+              if (_pdfCtrl.pdfController.isReady) {
+                _pdfCtrl.pdfController.goToPage(pageNumber: v);
+              }
             },
           ),
         ),
@@ -1522,7 +1405,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 id: _book.id,
                 chapter: i,
                 offset: 0,
-                progress: _comicCtrl.comicPageCount == 0 ? 0 : i / _comicCtrl.comicPageCount,
+                progress: _comicCtrl.comicPageCount == 0
+                    ? 0
+                    : i / _comicCtrl.comicPageCount,
               );
               if (_comicCtrl.isLazy) _prefetchComicPages(i);
               if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(i);
@@ -1546,7 +1431,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           child: _chrome(
             centerLabel:
                 'Page ${_comicCtrl.comicPage + 1} of $_comicCtrl.comicPageCount',
-            sliderMax: _comicCtrl.comicPageCount > 1 ? _comicCtrl.comicPageCount : 1,
+            sliderMax: _comicCtrl.comicPageCount > 1
+                ? _comicCtrl.comicPageCount
+                : 1,
             sliderValue: (_comicCtrl.comicPage + 1).clamp(
               1,
               _comicCtrl.comicPageCount > 0 ? _comicCtrl.comicPageCount : 1,
@@ -1574,8 +1461,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         if (count == 0) return;
         final viewportHeight = MediaQuery.sizeOf(context).height;
         if (viewportHeight <= 0) return;
-        final newIndex =
-            (controller.offset / viewportHeight).round().clamp(0, count - 1);
+        final newIndex = (controller.offset / viewportHeight).round().clamp(
+          0,
+          count - 1,
+        );
         if (newIndex != _comicCtrl.comicPage) {
           setState(() => _comicCtrl.comicPage = newIndex);
           widget.library.savePosition(
@@ -1617,7 +1506,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
           child: _chrome(
             centerLabel:
                 'Page ${_comicCtrl.comicPage + 1} of $_comicCtrl.comicPageCount',
-            sliderMax: _comicCtrl.comicPageCount > 1 ? _comicCtrl.comicPageCount : 1,
+            sliderMax: _comicCtrl.comicPageCount > 1
+                ? _comicCtrl.comicPageCount
+                : 1,
             sliderValue: (_comicCtrl.comicPage + 1).clamp(
               1,
               _comicCtrl.comicPageCount > 0 ? _comicCtrl.comicPageCount : 1,
@@ -1647,31 +1538,47 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   // ---------------------------- Reflowable -----------------------------------
 
+  /// Fraction of chapters laid out in the pass currently running.
+  double get _paginationProgress {
+    final n = _doc?.chapters.length ?? 0;
+    if (n == 0) return 0;
+    final ready = _reflowActive ? _reflowReady : _paginationReady;
+    if (ready.isEmpty) return 0;
+    return ready.where((r) => r).length / n;
+  }
+
+  /// Progress view shown while the whole book is being laid out on first open.
+  Widget _buildLayingOutView(ReaderTheme theme) {
+    final progress = _paginationProgress;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LinearProgressIndicator(
+              value: progress > 0 ? progress : null,
+              backgroundColor: theme.muted.withValues(alpha: 0.2),
+              valueColor: AlwaysStoppedAnimation(theme.accent),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Laying out pages…',
+              style: TextStyle(fontSize: 14, color: theme.muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildReflowable(BuildContext context, ReaderTheme theme) {
     if (_doc == null) {
       return Center(child: CircularProgressIndicator(color: theme.accent));
     }
 
     if (_paginationRunning) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              LinearProgressIndicator(
-                backgroundColor: theme.muted.withValues(alpha: 0.2),
-                valueColor: AlwaysStoppedAnimation(theme.accent),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Laying out pages…',
-                style: TextStyle(fontSize: 14, color: theme.muted),
-              ),
-            ],
-          ),
-        ),
-      );
+      return _buildLayingOutView(theme);
     }
 
     return LayoutBuilder(
@@ -1705,9 +1612,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
         final controller = _pageController;
         if (controller == null) {
-          return Center(
-            child: CircularProgressIndicator(color: theme.accent),
-          );
+          // First layout is starting; show the same view so there is no flash.
+          return _buildLayingOutView(theme);
         }
 
         final itemCount = _flatPageCount;
@@ -1723,16 +1629,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 final ref = _refAt(i);
                 // Record user-driven page changes even while a background pass
                 // is running, or the pass would re-anchor back to the page the
-                // reader was on before they navigated. A not-yet-laid-out
-                // chapter contributes a single placeholder page, so its start
-                // is the intent to preserve.
+                // reader was on before they navigated.
                 if (!programmatic && ref != null) {
                   final c = ref.$1;
-                  final ready =
-                      c < _paginationReady.length && _paginationReady[c];
-                  final offset =
-                      ready ? _paginators[c].pages[ref.$2].start : 0;
-                  _onPositionChanged(c, offset);
+                  _onPositionChanged(c, _paginators[c].pages[ref.$2].start);
                 }
                 _bookmarkCtrl.checkBookmarkState();
               },
@@ -1740,20 +1640,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 final ref = _refAt(i);
                 if (ref == null) return const SizedBox.shrink();
                 final chapter = ref.$1;
-                // Not yet paginated: show a spinner and lay it out on demand.
-                if (chapter >= _paginationReady.length ||
-                    !_paginationReady[chapter]) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _ensureChapter(chapter);
-                  });
-                  return Center(
-                    child: CircularProgressIndicator(color: theme.accent),
-                  );
-                }
                 final page = _paginators[chapter].pages[ref.$2];
                 // Compute highlights for this page.
                 List<SearchResult>? highlights;
-                if (_searchCtrl.searchOpen && _searchCtrl.bookSearch != null && _searchCtrl.searchResults.isNotEmpty) {
+                if (_searchCtrl.searchOpen &&
+                    _searchCtrl.bookSearch != null &&
+                    _searchCtrl.searchResults.isNotEmpty) {
                   highlights = _searchCtrl.bookSearch!.matchesForPage(
                     chapter,
                     page.start,
@@ -1765,10 +1657,12 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                 // repagination the reader's chapter is new while the rest is
                 // still old. Refresh only the color, which never affects
                 // layout but must re-apply instantly on a theme change.
-                final chapterStyle =
-                    chapter < _chapterStyles.length ? _chapterStyles[chapter] : style;
-                final renderStyle =
-                    chapterStyle.copyWith(color: _settings.colors.text);
+                final chapterStyle = chapter < _chapterStyles.length
+                    ? _chapterStyles[chapter]
+                    : style;
+                final renderStyle = chapterStyle.copyWith(
+                  color: _settings.colors.text,
+                );
                 return _PageContent(
                   chapterTitle: _doc!.chapters[chapter].title,
                   text: _doc!.chapters[chapter].body,
@@ -1791,16 +1685,20 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     setState(() => _chromeVisible = !_chromeVisible);
                   },
                   highlightMatches: highlights,
-                  currentMatch: _searchCtrl.currentResultIndex >= 0 &&
-                          _searchCtrl.currentResultIndex < _searchCtrl.searchResults.length
-                      ? _searchCtrl.searchResults[_searchCtrl.currentResultIndex]
+                  currentMatch:
+                      _searchCtrl.currentResultIndex >= 0 &&
+                          _searchCtrl.currentResultIndex <
+                              _searchCtrl.searchResults.length
+                      ? _searchCtrl.searchResults[_searchCtrl
+                            .currentResultIndex]
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
                   onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
                     _showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
                   },
                   selectedWordRange: _dictOverlay?.selectedWordRange,
-                  textAlign: _settings.textJustification == TextJustification.justify
+                  textAlign:
+                      _settings.textJustification == TextJustification.justify
                       ? TextAlign.justify
                       : TextAlign.left,
                   horizontalMargin: _settings.horizontalMargin,
@@ -1811,14 +1709,10 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
               ignoring: !_chromeVisible,
               child: _chrome(
                 centerLabel: _pageLabel(),
-                sliderMax: _allPaginatorsReady
-                    ? (itemCount - 1).clamp(0, 1 << 30)
-                    : 0,
-                sliderValue:
-                    _allPaginatorsReady ? _flatPage.clamp(0, itemCount - 1) : 0,
+                sliderMax: (itemCount - 1).clamp(0, 1 << 30),
+                sliderValue: _flatPage.clamp(0, itemCount - 1),
                 sliderLabel: _progressPercent(),
                 onSliderChanged: (v) {
-                  if (!_allPaginatorsReady) return;
                   if (v != _flatPage) controller.jumpToPage(v);
                 },
               ),
@@ -1848,14 +1742,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
       return;
     }
 
-    _beginPass(
-      viewport: viewport,
-      style: style,
-      scaler: scaler,
-      anchorChapter: target,
-      anchorOffset: offset,
-      signature: sig,
-    );
+    _startInitialFullPass(viewport, style, scaler, (target, offset), sig);
   }
 
   void _flip(int direction) {
@@ -1869,8 +1756,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     if (_isComic) {
       if (_comicCtrl.comicPageCount == 0) return;
       // In RTL mode the PageView is reversed, so negate the direction.
-      final rtl =
-          _settings.comicReadingDirection == ComicReadingDirection.rtl;
+      final rtl = _settings.comicReadingDirection == ComicReadingDirection.rtl;
       final target = _comicCtrl.comicPage + (rtl ? -direction : direction);
       if (target < 0 || target >= _comicCtrl.comicPageCount) return;
       _comicCtrl.comicPageController?.animateToPage(
@@ -1882,17 +1768,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
     }
     final controller = _pageController;
     if (controller == null) return;
-    var target = _flatPage + direction;
+    final target = _flatPage + direction;
     if (target < 0 || target >= _flatPageCount) return;
-    // If the neighbouring page belongs to a chapter that isn't laid out yet,
-    // paginate it now; that may shift the flat index, so re-read the target.
-    final ref = _refAt(target);
-    if (ref != null &&
-        (ref.$1 >= _paginationReady.length || !_paginationReady[ref.$1])) {
-      _ensureChapter(ref.$1);
-      target = _flatPage + direction;
-      if (target < 0 || target >= _flatPageCount) return;
-    }
     controller.animateToPage(
       target,
       duration: const Duration(milliseconds: 220),
@@ -1910,7 +1787,6 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
   /// Jump directly to the start of [chapterIndex].
   void _jumpToChapter(int chapterIndex) {
     if (_doc == null || _pageController == null) return;
-    _ensureChapter(chapterIndex);
     final flat = _flatIndexForChapter(chapterIndex);
     _anchorChapter = chapterIndex;
     _anchorOffset = 0;
@@ -1963,16 +1839,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
 
   String _progressPercent() {
     if (_flatPageCount == 0) return '';
-    // Until every chapter is laid out the flat index is only approximate, so
-    // show a placeholder rather than a number that would change.
-    if (!_allPaginatorsReady) return '… / …';
     return '${_flatPage + 1} / $_flatPageCount';
   }
 
   void _showGoToPageDialog() {
     final theme = _settings.colors;
     final controller = TextEditingController();
-    final maxPage = _isPdf ? _pdfCtrl.pdfPageCount : (_isComic ? _comicCtrl.comicPageCount : _flatPageCount);
+    final maxPage = _isPdf
+        ? _pdfCtrl.pdfPageCount
+        : (_isComic ? _comicCtrl.comicPageCount : _flatPageCount);
     void goToPage(BuildContext dialogContext) {
       final page = int.tryParse(controller.text);
       if (page != null && page >= 1 && page <= maxPage) {
@@ -1990,6 +1865,7 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
         }
       }
     }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2101,10 +1977,14 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                       _comicCtrl.comicPreviewVisible
                           ? Icons.view_carousel
                           : Icons.view_carousel_outlined,
-                      color: _comicCtrl.comicPreviewVisible ? theme.accent : theme.text,
+                      color: _comicCtrl.comicPreviewVisible
+                          ? theme.accent
+                          : theme.text,
                     ),
-                    onPressed: () =>
-                        setState(() => _comicCtrl.comicPreviewVisible = !_comicCtrl.comicPreviewVisible),
+                    onPressed: () => setState(
+                      () => _comicCtrl.comicPreviewVisible =
+                          !_comicCtrl.comicPreviewVisible,
+                    ),
                   ),
                 IconButton(
                   icon: Icon(Icons.text_fields, color: theme.text),
@@ -2115,15 +1995,15 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     format: _book.format,
                     onPdfFitWidth: _isPdf
                         ? () => _pdfCtrl.pdfController.goToPage(
-                              pageNumber: _pdfCtrl.pdfPage,
-                              anchor: PdfPageAnchor.left,
-                            )
+                            pageNumber: _pdfCtrl.pdfPage,
+                            anchor: PdfPageAnchor.left,
+                          )
                         : null,
                     onPdfFitPage: _isPdf
                         ? () => _pdfCtrl.pdfController.goToPage(
-                              pageNumber: _pdfCtrl.pdfPage,
-                              anchor: PdfPageAnchor.center,
-                            )
+                            pageNumber: _pdfCtrl.pdfPage,
+                            anchor: PdfPageAnchor.center,
+                          )
                         : null,
                   ),
                 ),
@@ -2206,7 +2086,8 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
             onTap: () {
               if (_comicCtrl.isLazy) {
                 _comicCtrl.comicPageController?.jumpToPage(i);
-              } else if (_settings.comicReadingMode == ComicReadingMode.vertical) {
+              } else if (_settings.comicReadingMode ==
+                  ComicReadingMode.vertical) {
                 final vh = MediaQuery.sizeOf(context).height;
                 _comicCtrl.comicVerticalScrollController?.animateTo(
                   i * vh,
@@ -2242,8 +2123,13 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                               fit: BoxFit.cover,
                             )
                           : (i < _comicCtrl.comicPages.length
-                              ? Image.memory(_comicCtrl.comicPages[i], fit: BoxFit.cover)
-                              : Container(color: theme.muted.withValues(alpha: 0.2))),
+                                ? Image.memory(
+                                    _comicCtrl.comicPages[i],
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    color: theme.muted.withValues(alpha: 0.2),
+                                  )),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2252,8 +2138,9 @@ class ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver 
                     style: TextStyle(
                       fontSize: 9,
                       color: isCurrent ? theme.accent : theme.muted,
-                      fontWeight:
-                          isCurrent ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: isCurrent
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                     ),
                   ),
                 ],
@@ -2325,11 +2212,7 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
         ? meta.intrinsicWidth / meta.intrinsicHeight
         : 0.67;
     final h = screenW / aspect;
-    return Container(
-      width: screenW,
-      height: h,
-      color: const Color(0xFF1A1A2E),
-    );
+    return Container(width: screenW, height: h, color: const Color(0xFF1A1A2E));
   }
 }
 
@@ -2371,7 +2254,13 @@ class _PageContent extends StatelessWidget {
   final List<SearchResult>? highlightMatches;
   final SearchResult? currentMatch;
   final double pageMaxHeight;
-  final void Function(String word, Offset globalPosition, int bodyStart, int bodyEnd)? onLongPressWord;
+  final void Function(
+    String word,
+    Offset globalPosition,
+    int bodyStart,
+    int bodyEnd,
+  )?
+  onLongPressWord;
   final ({int start, int end})? selectedWordRange;
   final TextAlign textAlign;
   final double horizontalMargin;
@@ -2400,8 +2289,10 @@ class _PageContent extends StatelessWidget {
       child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
         child: Padding(
-          padding:
-              EdgeInsets.symmetric(horizontal: horizontalMargin, vertical: 28),
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalMargin,
+            vertical: 28,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -2422,9 +2313,9 @@ class _PageContent extends StatelessWidget {
                     text: TextSpan(
                       style: style,
                       children: _buildPageText(
-                          context,
-                          MediaQuery.sizeOf(context).width -
-                              horizontalMargin * 2),
+                        context,
+                        MediaQuery.sizeOf(context).width - horizontalMargin * 2,
+                      ),
                     ),
                   ),
                 ),
@@ -2482,7 +2373,8 @@ class _PageContent extends StatelessWidget {
   }
 
   static bool _isWordChar(String ch) {
-    return ch.runes.any((r) => r > 127) || RegExp(r'[a-zA-Z\u00C0-\u024F]').hasMatch(ch);
+    return ch.runes.any((r) => r > 127) ||
+        RegExp(r'[a-zA-Z\u00C0-\u024F]').hasMatch(ch);
   }
 
   /// Builds the page's TextSpan, merging style runs (emphasis, quotes) with
@@ -2588,10 +2480,12 @@ class _CoverIntroOverlay extends StatefulWidget {
 
 class _CoverIntroOverlayState extends State<_CoverIntroOverlay>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 750),
-  )..addStatusListener(_onStatus)
+  late final AnimationController _controller =
+      AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 750),
+        )
+        ..addStatusListener(_onStatus)
         ..forward();
 
   bool _done = false;

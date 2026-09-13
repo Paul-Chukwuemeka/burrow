@@ -31,8 +31,10 @@ String _bookText() {
     // Paragraphs must not start with "Chapter N" or the TXT chapterizer
     // treats every line as a heading.
     for (var p = 0; p < 24; p++) {
-      b.writeln('Para $c.$p opens here. '
-          '${List.generate(45, (i) => 'w$c-$p-$i').join(' ')}');
+      b.writeln(
+        'Para $c.$p opens here. '
+        '${List.generate(45, (i) => 'w$c-$p-$i').join(' ')}',
+      );
     }
     // Blank-line run: chapter boundary for the TXT chapterizer.
     b.write('\n\n\n\n');
@@ -76,9 +78,11 @@ Future<int> _settlePagination(WidgetTester tester) async {
     frames++;
     final e = tester.takeException();
     if (e != null) {
-      problems.add('frame $frames (running=${state.debugPaginationRunning} '
-          'lazy=${state.debugLazyRunning} '
-          'ctl=${state.debugHasController}): $e');
+      problems.add(
+        'frame $frames (running=${state.debugPaginationRunning} '
+        'lazy=${state.debugLazyRunning} '
+        'ctl=${state.debugHasController}): $e',
+      );
       if (problems.length > 3) break;
     }
   }
@@ -92,10 +96,7 @@ Future<int> _settlePagination(WidgetTester tester) async {
 
 /// Apply a settings mutation through the same path the sheet's callback uses,
 /// so these tests stay focused on the reader's response to it.
-Future<void> _applySettings(
-  WidgetTester tester,
-  void Function() mutate,
-) async {
+Future<void> _applySettings(WidgetTester tester, void Function() mutate) async {
   mutate();
   _readerState(tester).debugApplySettingsChange();
   await tester.pump();
@@ -155,7 +156,9 @@ void main() {
     addTearDown(() => tester.pumpWidget(const SizedBox()));
 
     await tester.pumpWidget(
-      MaterialApp(home: ReaderScreen(book: book, library: library)),
+      MaterialApp(
+        home: ReaderScreen(book: book, library: library),
+      ),
     );
     for (var i = 0; i < 100; i++) {
       if (_readerState(tester).debugHasDocument) break;
@@ -164,8 +167,11 @@ void main() {
       );
       await tester.pump();
     }
-    expect(_readerState(tester).debugHasDocument, isTrue,
-        reason: 'document should have parsed');
+    expect(
+      _readerState(tester).debugHasDocument,
+      isTrue,
+      reason: 'document should have parsed',
+    );
     // The reflowable LayoutBuilder starts pagination in a post-frame callback.
     await tester.pump();
     await tester.pump();
@@ -174,24 +180,39 @@ void main() {
   Future<void> openReader(WidgetTester tester) async {
     await mountReader(tester);
     await _settlePagination(tester);
-    expect(find.byType(PageView), findsOneWidget,
-        reason: 'reader should be showing pages');
+    expect(
+      find.byType(PageView),
+      findsOneWidget,
+      reason: 'reader should be showing pages',
+    );
   }
 
   group('Reader repagination', () {
-    testWidgets('opens immediately and paginates the rest in the background',
-        (tester) async {
+    testWidgets('full pass on initial load, then opens the reader', (
+      tester,
+    ) async {
       await mountReader(tester);
-      // The reader is shown without waiting for the whole book.
-      expect(_progressView, findsNothing,
-          reason: 'normal chapters open without a progress view');
-      expect(find.byType(PageView), findsOneWidget);
-      expect(_readerState(tester).debugLazyRunning, isTrue,
-          reason: 'remaining chapters paginate in the background');
+      // The whole book is laid out behind the progress view; no pages before
+      // the pass finishes, so the first impression is never a partial layout.
+      expect(
+        _progressView,
+        findsOneWidget,
+        reason: 'initial load shows progress while paginating',
+      );
+      expect(
+        find.byType(PageView),
+        findsNothing,
+        reason: 'PageView is not shown until the pass completes',
+      );
 
       await _settlePagination(tester);
       expect(find.byType(PageView), findsOneWidget);
       expect(_readerState(tester).debugLazyRunning, isFalse);
+      expect(
+        _readerState(tester).debugAllReady,
+        isTrue,
+        reason: 'the whole book is laid out after the initial pass',
+      );
     });
 
     testWidgets('a font-size change does not block the frame', (tester) async {
@@ -201,20 +222,30 @@ void main() {
       await _applySettings(tester, () => library.settings.fontSize = 28);
 
       // Lazy pagination: the reader stays interactive, no progress indicator.
-      expect(_progressView, findsNothing,
-          reason: 'lazy pagination does not show a progress view');
-      expect(find.byType(PageView), findsOneWidget,
-          reason: 'PageView stays visible during background pagination');
+      expect(
+        _progressView,
+        findsNothing,
+        reason: 'lazy pagination does not show a progress view',
+      );
+      expect(
+        find.byType(PageView),
+        findsOneWidget,
+        reason: 'PageView stays visible during background pagination',
+      );
 
       await _settlePagination(tester);
 
       expect(find.byType(PageView), findsOneWidget);
-      expect(_pageCount(tester), greaterThan(before),
-          reason: 'a bigger font must produce more pages');
+      expect(
+        _pageCount(tester),
+        greaterThan(before),
+        reason: 'a bigger font must produce more pages',
+      );
     });
 
-    testWidgets('a font-size change re-paginates the current chapter at once',
-        (tester) async {
+    testWidgets('a font-size change re-paginates the current chapter at once', (
+      tester,
+    ) async {
       await openReader(tester);
       tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(3);
       await tester.pump();
@@ -229,22 +260,34 @@ void main() {
         fail('no styled RichText on the visible page');
       }
 
-      expect(bodyFontSize(), 18,
-          reason: 'the initial layout renders at the default font size');
+      expect(
+        bodyFontSize(),
+        18,
+        reason: 'the initial layout renders at the default font size',
+      );
 
       await _applySettings(tester, () => library.settings.fontSize = 28);
 
       // The visible chapter is re-paginated synchronously, so the new font is
       // on screen immediately while the rest of the book pages in background.
-      expect(bodyFontSize(), 28,
-          reason: 'the current chapter must switch to the new font at once');
-      expect(_readerState(tester).debugLazyRunning, isTrue,
-          reason: 'the remaining chapters paginate in the background');
+      expect(
+        bodyFontSize(),
+        28,
+        reason: 'the current chapter must switch to the new font at once',
+      );
+      expect(
+        _readerState(tester).debugLazyRunning,
+        isTrue,
+        reason: 'the remaining chapters paginate in the background',
+      );
 
       await _settlePagination(tester);
 
-      expect(bodyFontSize(), 28,
-          reason: 'the new font persists after the background pass settles');
+      expect(
+        bodyFontSize(),
+        28,
+        reason: 'the new font persists after the background pass settles',
+      );
       final err = tester.takeException();
       if (err != null) fail('exception after settle: $err');
     });
@@ -267,19 +310,25 @@ void main() {
       await tester.pump();
       final e3 = tester.takeException();
       if (e3 != null) {
-        fail('overflow on first frame after apply '
-            '(running=${_readerState(tester).debugPaginationRunning} '
-            'lazy=${_readerState(tester).debugLazyRunning} '
-            'ctl=${_readerState(tester).debugHasController}): $e3');
+        fail(
+          'overflow on first frame after apply '
+          '(running=${_readerState(tester).debugPaginationRunning} '
+          'lazy=${_readerState(tester).debugLazyRunning} '
+          'ctl=${_readerState(tester).debugHasController}): $e3',
+        );
       }
       await _settlePagination(tester);
 
-      expect(_visibleText(tester), contains(word),
-          reason: 'should land back on the text we were reading');
+      expect(
+        _visibleText(tester),
+        contains(word),
+        reason: 'should land back on the text we were reading',
+      );
     });
 
-    testWidgets('line-height change repaginates and keeps position',
-        (tester) async {
+    testWidgets('line-height change repaginates and keeps position', (
+      tester,
+    ) async {
       await openReader(tester);
       final before = _pageCount(tester);
 
@@ -299,7 +348,10 @@ void main() {
     testWidgets('font-family change repaginates', (tester) async {
       await openReader(tester);
 
-      await _applySettings(tester, () => library.settings.fontFamily = 'Bitter');
+      await _applySettings(
+        tester,
+        () => library.settings.fontFamily = 'Bitter',
+      );
       // Lazy pagination: no progress indicator.
       expect(_progressView, findsNothing);
       await _settlePagination(tester);
@@ -307,15 +359,19 @@ void main() {
       expect(find.byType(PageView), findsOneWidget);
     });
 
-    testWidgets('a non-layout setting change does not repaginate',
-        (tester) async {
+    testWidgets('a non-layout setting change does not repaginate', (
+      tester,
+    ) async {
       await openReader(tester);
       final before = _pageCount(tester);
 
       await _applySettings(tester, () => library.settings.keepScreenOn = true);
 
-      expect(_progressView, findsNothing,
-          reason: 'signature is unchanged, so no pass should start');
+      expect(
+        _progressView,
+        findsNothing,
+        reason: 'signature is unchanged, so no pass should start',
+      );
       expect(find.byType(PageView), findsOneWidget);
       expect(_pageCount(tester), before);
     });
@@ -333,8 +389,9 @@ void main() {
       expect(_pageCount(tester), before);
     });
 
-    testWidgets('rapid changes leave the original position intact',
-        (tester) async {
+    testWidgets('rapid changes leave the original position intact', (
+      tester,
+    ) async {
       await openReader(tester);
 
       tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(4);
@@ -350,8 +407,11 @@ void main() {
 
       await _settlePagination(tester);
 
-      expect(_visibleText(tester), contains(word),
-          reason: 'the position captured before the first pass must be kept');
+      expect(
+        _visibleText(tester),
+        contains(word),
+        reason: 'the position captured before the first pass must be kept',
+      );
     });
 
     testWidgets('superseded passes do not corrupt the layout', (tester) async {
@@ -375,7 +435,10 @@ void main() {
       expect(interleaved, _pageCount(tester));
     });
 
-    testWidgets('navigating during a layout pass is not undone', (tester) async {      await openReader(tester);
+    testWidgets('navigating during a layout pass is not undone', (
+      tester,
+    ) async {
+      await openReader(tester);
       tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(3);
       await tester.pump();
 
@@ -383,8 +446,11 @@ void main() {
       library.settings.fontSize = 28;
       _readerState(tester).debugApplySettingsChange();
       await tester.pump();
-      expect(_readerState(tester).debugLazyRunning, isTrue,
-          reason: 'the reflow should still be running');
+      expect(
+        _readerState(tester).debugLazyRunning,
+        isTrue,
+        reason: 'the reflow should still be running',
+      );
 
       tester.widget<PageView>(find.byType(PageView)).controller!.jumpToPage(6);
       await tester.pump();
@@ -392,8 +458,11 @@ void main() {
 
       await _settlePagination(tester);
 
-      expect(_visibleText(tester), contains(word),
-          reason: 'the page navigated to during the pass must be kept');
+      expect(
+        _visibleText(tester),
+        contains(word),
+        reason: 'the page navigated to during the pass must be kept',
+      );
     });
 
     testWidgets('turning a page after a pass sticks', (tester) async {
@@ -405,16 +474,24 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final after = _marker.firstMatch(_visibleText(tester))!.group(0)!;
-      expect(after, isNot(equals(before)),
-          reason: 'the tap should turn the page');
+      expect(
+        after,
+        isNot(equals(before)),
+        reason: 'the tap should turn the page',
+      );
 
       await _settlePagination(tester);
-      expect(_marker.firstMatch(_visibleText(tester))!.group(0), equals(after),
-          reason: 'the turned page must stick');
+      expect(
+        _marker.firstMatch(_visibleText(tester))!.group(0),
+        equals(after),
+        reason: 'the turned page must stick',
+      );
     });
 
-    testWidgets('turning a page during a reflow is not cancelled',
-        (tester) async {      await openReader(tester);
+    testWidgets('turning a page during a reflow is not cancelled', (
+      tester,
+    ) async {
+      await openReader(tester);
       final size = tester.getSize(find.byType(PageView));
 
       library.settings.fontSize = 28;
@@ -426,16 +503,23 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final word = _marker.firstMatch(_visibleText(tester))!.group(0)!;
-      expect(word, isNot(equals('w1-0-0')),
-          reason: 'the page turn should have advanced');
+      expect(
+        word,
+        isNot(equals('w1-0-0')),
+        reason: 'the page turn should have advanced',
+      );
 
       await _settlePagination(tester);
-      expect(_visibleText(tester), contains(word),
-          reason: 'the turned page must survive the reflow swap');
+      expect(
+        _visibleText(tester),
+        contains(word),
+        reason: 'the turned page must survive the reflow swap',
+      );
     });
 
-    testWidgets('a layout change keeps the page count complete during reflow',
-        (tester) async {
+    testWidgets('a layout change keeps the page count complete during reflow', (
+      tester,
+    ) async {
       await openReader(tester);
       final before = _pageCount(tester);
 
@@ -446,10 +530,16 @@ void main() {
       _readerState(tester).debugApplySettingsChange();
       await tester.pump();
 
-      expect(_readerState(tester).debugAllReady, isTrue,
-          reason: 'the live layout stays complete during the reflow');
-      expect(_readerState(tester).debugLazyRunning, isTrue,
-          reason: 'the reflow runs in the background');
+      expect(
+        _readerState(tester).debugAllReady,
+        isTrue,
+        reason: 'the live layout stays complete during the reflow',
+      );
+      expect(
+        _readerState(tester).debugLazyRunning,
+        isTrue,
+        reason: 'the reflow runs in the background',
+      );
       expect(find.byType(PageView), findsOneWidget);
       expect(tester.takeException(), isNull);
 
@@ -458,8 +548,9 @@ void main() {
       expect(_pageCount(tester), greaterThan(before));
     });
 
-    testWidgets('reader layout ignores the app-wide text size scale',
-        (tester) async {
+    testWidgets('reader layout ignores the app-wide text size scale', (
+      tester,
+    ) async {
       // The reader body has its own font size; the global "Text size" must not
       // change pagination or the rendered page, or pages would break early.
       await openReader(tester);
@@ -469,14 +560,19 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
       tester.platformDispatcher.textScaleFactorTestValue = 1.2;
-      addTearDown(
-          tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await openReader(tester);
 
-      expect(tester.takeException(), isNull,
-          reason: 'the page must not overflow at a larger global text size');
-      expect(_pageCount(tester), pagesAt100,
-          reason: 'pagination is independent of the global text size');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'the page must not overflow at a larger global text size',
+      );
+      expect(
+        _pageCount(tester),
+        pagesAt100,
+        reason: 'pagination is independent of the global text size',
+      );
 
       final pageRichTexts = tester.widgetList<RichText>(
         find.descendant(
