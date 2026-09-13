@@ -541,9 +541,9 @@ class LibraryService extends ChangeNotifier {
             continue;
           }
 
-          ParsedDocument doc;
+          ParsedMetadata doc;
           try {
-            doc = await DocumentParser.parse(book.path);
+            doc = await DocumentParser.extractMetadata(book.path);
           } on FormatException {
             debugPrint('Metadata parse skip (format): ${book.title}');
             completed++;

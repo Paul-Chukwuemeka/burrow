@@ -83,6 +83,50 @@ class ParsedDocument {
   final Map<String, FontFaceInfo> fontFaces;
 }
 
+/// Metadata and cover extracted from a document without parsing its content.
+///
+/// Mirrors the metadata fields of [ParsedDocument] so the background metadata
+/// worker can populate a book by reading OPF/manifest data only, skipping the
+/// expensive chapter/CSS/image pipeline.
+class ParsedMetadata {
+  const ParsedMetadata({
+    required this.title,
+    required this.author,
+    this.coverBytes,
+    this.description,
+    this.annotation,
+    this.genre,
+    this.seriesName,
+    this.seriesIndex,
+    this.publisher,
+    this.isbn,
+    this.language,
+    this.publicationDate,
+    this.rights,
+    this.type,
+    this.source,
+    this.titleSort,
+    this.authorSort,
+  });
+  final String title;
+  final String author;
+  final List<int>? coverBytes;
+  final String? description;
+  final String? annotation;
+  final String? genre;
+  final String? seriesName;
+  final double? seriesIndex;
+  final String? publisher;
+  final String? isbn;
+  final String? language;
+  final String? publicationDate;
+  final String? rights;
+  final String? type;
+  final String? source;
+  final String? titleSort;
+  final String? authorSort;
+}
+
 /// One table-of-contents entry, in document order.
 ///
 /// [fragment] is kept (not stripped) because several entries commonly point
@@ -116,6 +160,157 @@ class DocumentParser {
   /// Parses a document into chapters. Heavy work runs in a background isolate.
   static Future<ParsedDocument> parse(String path) {
     return compute(_parseIsolate, path);
+  }
+
+  /// Extracts only metadata and cover bytes from a document.
+  ///
+  /// Far cheaper than [parse]: it reads the EPUB OPF/manifest (and the cover
+  /// entry) without touching chapter text, CSS, embedded fonts, or images, and
+  /// never writes the content cache. Intended for the background metadata
+  /// worker so a freshly imported library becomes usable quickly.
+  static Future<ParsedMetadata> extractMetadata(String path) {
+    return compute(_extractMetadataIsolate, path);
+  }
+
+  static Future<ParsedMetadata> _extractMetadataIsolate(String path) {
+    switch (formatFromExtension(path)) {
+      case BookFormat.epub:
+        return _extractEpubMetadata(path);
+      case BookFormat.pdf:
+      case BookFormat.txt:
+        return Future.value(
+          ParsedMetadata(title: _titleFromFilename(path), author: ''),
+        );
+      case BookFormat.cbz:
+        return _extractCbzMetadata(path);
+      case BookFormat.cbr:
+        // The rar plugin can only extract whole archives, so a CBR cover is
+        // deferred until the comic is opened. Metadata needs only the title.
+        return Future.value(
+          ParsedMetadata(title: _titleFromFilename(path), author: ''),
+        );
+    }
+  }
+
+  /// Reads only the OPF metadata and cover entry from an EPUB.
+  static Future<ParsedMetadata> _extractEpubMetadata(String path) async {
+    final file = File(path);
+    final length = await file.length();
+    if (length > 100 * 1024 * 1024) {
+      throw const FormatException('EPUB file too large (limit 100 MB)');
+    }
+    final Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      throw const FormatException('Not a valid EPUB file');
+    }
+    return extractEpubMetadataBytes(
+      bytes,
+      fallbackTitle: _titleFromFilename(path),
+    );
+  }
+
+  /// In-memory counterpart of [_extractEpubMetadata], for tests.
+  @visibleForTesting
+  static ParsedMetadata extractEpubMetadataBytes(
+    Uint8List bytes, {
+    String fallbackTitle = '',
+  }) {
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      throw const FormatException('Not a valid EPUB file');
+    }
+
+    final entries = <String, ArchiveFile>{
+      for (final f in archive.files)
+        Uri.decodeComponent(f.name.toLowerCase()): f,
+    };
+    ArchiveFile? lookup(String name) => entries[name.toLowerCase()];
+
+    // container.xml -> rootfile (the .opf path).
+    String opfPath = '';
+    final containerData = lookup('META-INF/container.xml')?.content;
+    if (containerData != null) {
+      try {
+        final container = XmlDocument.parse(
+          utf8.decode(containerData, allowMalformed: true),
+        );
+        for (final el in _els(container, 'rootfile')) {
+          final full = el.getAttribute('full-path');
+          if (full != null && full.isNotEmpty) {
+            opfPath = full;
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final opfData = lookup(opfPath)?.content;
+    if (opfData == null) throw const FormatException('Not a valid EPUB file');
+    final XmlDocument opf;
+    try {
+      opf = XmlDocument.parse(utf8.decode(opfData, allowMalformed: true));
+    } catch (_) {
+      throw const FormatException('Not a valid EPUB file');
+    }
+
+    final meta = _parseOpfMetadata(opf);
+    return ParsedMetadata(
+      title: meta.title.isEmpty ? fallbackTitle : meta.title,
+      author: meta.author,
+      coverBytes: _extractCover(archive, entries, opf),
+      description: meta.description,
+      annotation: meta.annotation,
+      genre: meta.genre,
+      seriesName: meta.seriesName,
+      seriesIndex: meta.seriesIndex,
+      publisher: meta.publisher,
+      isbn: meta.isbn,
+      language: meta.language,
+      publicationDate: meta.publicationDate,
+      rights: meta.rights,
+      type: meta.type,
+      source: meta.source,
+      titleSort: meta.titleSort,
+      authorSort: meta.authorSort,
+    );
+  }
+
+  /// Reads the zip directory and only the first page image of a CBZ.
+  static Future<ParsedMetadata> _extractCbzMetadata(String path) async {
+    final Uint8List bytes;
+    try {
+      bytes = await File(path).readAsBytes();
+    } catch (_) {
+      throw const FormatException('Not a valid CBZ file');
+    }
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      throw const FormatException('Not a valid CBZ/ZIP archive');
+    }
+    final names =
+        archive.files
+            .where((f) => f.isFile && _isImage(f.name))
+            .map((f) => f.name)
+            .toList()
+          ..sort(_naturalCompare);
+    if (names.isEmpty) {
+      throw const FormatException('No images found in comic archive');
+    }
+    // Accessing `.content` decompresses only this entry.
+    final cover = archive.files
+        .firstWhere((f) => f.name == names.first)
+        .content;
+    return ParsedMetadata(
+      title: _titleFromFilename(path),
+      author: '',
+      coverBytes: cover,
+    );
   }
 
   static Future<ParsedDocument> _parseIsolate(String path) async {
@@ -220,163 +415,7 @@ class DocumentParser {
         ? opfPath.substring(0, opfPath.lastIndexOf('/'))
         : '';
 
-    // Metadata.
-    var title = '';
-    var author = '';
-    for (final el in _els(opf, 'title')) {
-      final t = el.innerText.trim();
-      if (t.isNotEmpty) {
-        title = t;
-        break;
-      }
-    }
-    for (final el in _els(opf, 'creator')) {
-      final a = el.innerText.trim();
-      if (a.isNotEmpty) {
-        author = a;
-        break;
-      }
-    }
-
-    String? description;
-    for (final el in _els(opf, 'description')) {
-      final d = htmlToText(el.innerText.trim());
-      if (d.isNotEmpty) {
-        description = d;
-        break;
-      }
-    }
-
-    // Annotation: Calibre stores this in <meta name="calibre:annotation">.
-    String? annotation;
-    for (final el in _els(opf, 'meta')) {
-      if ((el.getAttribute('name') ?? '') == 'calibre:annotation') {
-        annotation = el.getAttribute('content')?.trim();
-        break;
-      }
-    }
-
-    String? language;
-    for (final el in _els(opf, 'language')) {
-      final l = el.innerText.trim();
-      if (l.isNotEmpty) {
-        language = l;
-        break;
-      }
-    }
-
-    String? publisher;
-    for (final el in _els(opf, 'publisher')) {
-      final p = el.innerText.trim();
-      if (p.isNotEmpty) {
-        publisher = p;
-        break;
-      }
-    }
-
-    // Genre: collect ALL dc:subject values and join with comma.
-    final genres = <String>[];
-    for (final el in _els(opf, 'subject')) {
-      final s = el.innerText.trim();
-      if (s.isNotEmpty) genres.add(s);
-    }
-    final genre = genres.isEmpty ? null : genres.join(', ');
-
-    // ISBN: strip hyphens, prefer explicit scheme, handle ISBN-10 with X.
-    String? isbn;
-    for (final el in _els(opf, 'identifier')) {
-      final scheme =
-          (el.getAttribute('scheme') ?? el.getAttribute('opf:scheme') ?? '')
-              .toLowerCase();
-      final raw = el.innerText.trim();
-      final v = raw.replaceAll('-', '');
-      if (scheme == 'isbn') {
-        isbn = raw;
-        break;
-      }
-      if (isbn == null &&
-          v.isNotEmpty &&
-          RegExp(r'^\d{9}[\dXx]$').hasMatch(v)) {
-        isbn = raw;
-      }
-    }
-
-    // Series: Calibre convention <meta name="calibre:series" content="..."/>
-    // or EPUB3 <meta property="belongs-to-series">.
-    String? seriesName;
-    double? seriesIndex;
-    for (final el in _els(opf, 'meta')) {
-      final name = el.getAttribute('name') ?? '';
-      if (name == 'calibre:series') {
-        seriesName = el.getAttribute('content')?.trim();
-      } else if (name == 'calibre:series_index') {
-        seriesIndex = double.tryParse(el.getAttribute('content')?.trim() ?? '');
-      }
-    }
-    if (seriesName == null) {
-      for (final el in _els(opf, 'meta')) {
-        final prop = el.getAttribute('property') ?? '';
-        if (prop == 'belongs-to-series') {
-          seriesName = el.innerText.trim();
-        } else if (prop == 'group-position') {
-          seriesIndex ??= double.tryParse(el.innerText.trim());
-        }
-      }
-    }
-
-    String? publicationDate;
-    for (final el in _els(opf, 'date')) {
-      final d = el.innerText.trim();
-      if (d.isNotEmpty) {
-        publicationDate = d;
-        break;
-      }
-    }
-
-    String? rights;
-    for (final el in _els(opf, 'rights')) {
-      final r = el.innerText.trim();
-      if (r.isNotEmpty) {
-        rights = r;
-        break;
-      }
-    }
-
-    String? type;
-    for (final el in _els(opf, 'type')) {
-      final t = el.innerText.trim();
-      if (t.isNotEmpty) {
-        type = t;
-        break;
-      }
-    }
-
-    String? source;
-    for (final el in _els(opf, 'source')) {
-      final s = el.innerText.trim();
-      if (s.isNotEmpty) {
-        source = s;
-        break;
-      }
-    }
-
-    // Sort forms from opf:file-as attribute.
-    String? titleSort;
-    for (final el in _els(opf, 'title')) {
-      final fa = el.getAttribute('opf:file-as')?.trim();
-      if (fa != null && fa.isNotEmpty) {
-        titleSort = fa;
-        break;
-      }
-    }
-    String? authorSort;
-    for (final el in _els(opf, 'creator')) {
-      final fa = el.getAttribute('opf:file-as')?.trim();
-      if (fa != null && fa.isNotEmpty) {
-        authorSort = fa;
-        break;
-      }
-    }
+    final meta = _parseOpfMetadata(opf);
 
     // Manifest: id -> resolved href. The item flagged properties="nav" is the
     // EPUB3 table of contents.
@@ -543,10 +582,193 @@ class DocumentParser {
     }
 
     return ParsedDocument(
-      title: title.isEmpty ? fallbackTitle : title,
-      author: author,
+      title: meta.title.isEmpty ? fallbackTitle : meta.title,
+      author: meta.author,
       chapters: chapters,
       coverBytes: _extractCover(archive, entries, opf),
+      description: meta.description,
+      annotation: meta.annotation,
+      genre: meta.genre,
+      seriesName: meta.seriesName,
+      seriesIndex: meta.seriesIndex,
+      publisher: meta.publisher,
+      isbn: meta.isbn,
+      language: meta.language,
+      publicationDate: meta.publicationDate,
+      rights: meta.rights,
+      type: meta.type,
+      source: meta.source,
+      titleSort: meta.titleSort,
+      authorSort: meta.authorSort,
+      fontFaces: cssParser.fontFaces,
+    );
+  }
+
+  /// Parses the OPF `<metadata>` block into a [ParsedMetadata].
+  ///
+  /// Shared by the full parse path and the lightweight metadata path so the
+  /// two can never disagree about how fields are extracted.
+  static ParsedMetadata _parseOpfMetadata(XmlDocument opf) {
+    var title = '';
+    for (final el in _els(opf, 'title')) {
+      final t = el.innerText.trim();
+      if (t.isNotEmpty) {
+        title = t;
+        break;
+      }
+    }
+    var author = '';
+    for (final el in _els(opf, 'creator')) {
+      final a = el.innerText.trim();
+      if (a.isNotEmpty) {
+        author = a;
+        break;
+      }
+    }
+
+    String? description;
+    for (final el in _els(opf, 'description')) {
+      final d = htmlToText(el.innerText.trim());
+      if (d.isNotEmpty) {
+        description = d;
+        break;
+      }
+    }
+
+    // Annotation: Calibre stores this in <meta name="calibre:annotation">.
+    String? annotation;
+    for (final el in _els(opf, 'meta')) {
+      if ((el.getAttribute('name') ?? '') == 'calibre:annotation') {
+        annotation = el.getAttribute('content')?.trim();
+        break;
+      }
+    }
+
+    String? language;
+    for (final el in _els(opf, 'language')) {
+      final l = el.innerText.trim();
+      if (l.isNotEmpty) {
+        language = l;
+        break;
+      }
+    }
+
+    String? publisher;
+    for (final el in _els(opf, 'publisher')) {
+      final p = el.innerText.trim();
+      if (p.isNotEmpty) {
+        publisher = p;
+        break;
+      }
+    }
+
+    // Genre: collect ALL dc:subject values and join with comma.
+    final genres = <String>[];
+    for (final el in _els(opf, 'subject')) {
+      final s = el.innerText.trim();
+      if (s.isNotEmpty) genres.add(s);
+    }
+    final genre = genres.isEmpty ? null : genres.join(', ');
+
+    // ISBN: strip hyphens, prefer explicit scheme, handle ISBN-10 with X.
+    String? isbn;
+    for (final el in _els(opf, 'identifier')) {
+      final scheme =
+          (el.getAttribute('scheme') ?? el.getAttribute('opf:scheme') ?? '')
+              .toLowerCase();
+      final raw = el.innerText.trim();
+      final v = raw.replaceAll('-', '');
+      if (scheme == 'isbn') {
+        isbn = raw;
+        break;
+      }
+      if (isbn == null &&
+          v.isNotEmpty &&
+          RegExp(r'^\d{9}[\dXx]$').hasMatch(v)) {
+        isbn = raw;
+      }
+    }
+
+    // Series: Calibre convention <meta name="calibre:series" content="..."/>
+    // or EPUB3 <meta property="belongs-to-series">.
+    String? seriesName;
+    double? seriesIndex;
+    for (final el in _els(opf, 'meta')) {
+      final name = el.getAttribute('name') ?? '';
+      if (name == 'calibre:series') {
+        seriesName = el.getAttribute('content')?.trim();
+      } else if (name == 'calibre:series_index') {
+        seriesIndex = double.tryParse(el.getAttribute('content')?.trim() ?? '');
+      }
+    }
+    if (seriesName == null) {
+      for (final el in _els(opf, 'meta')) {
+        final prop = el.getAttribute('property') ?? '';
+        if (prop == 'belongs-to-series') {
+          seriesName = el.innerText.trim();
+        } else if (prop == 'group-position') {
+          seriesIndex ??= double.tryParse(el.innerText.trim());
+        }
+      }
+    }
+
+    String? publicationDate;
+    for (final el in _els(opf, 'date')) {
+      final d = el.innerText.trim();
+      if (d.isNotEmpty) {
+        publicationDate = d;
+        break;
+      }
+    }
+
+    String? rights;
+    for (final el in _els(opf, 'rights')) {
+      final r = el.innerText.trim();
+      if (r.isNotEmpty) {
+        rights = r;
+        break;
+      }
+    }
+
+    String? type;
+    for (final el in _els(opf, 'type')) {
+      final t = el.innerText.trim();
+      if (t.isNotEmpty) {
+        type = t;
+        break;
+      }
+    }
+
+    String? source;
+    for (final el in _els(opf, 'source')) {
+      final s = el.innerText.trim();
+      if (s.isNotEmpty) {
+        source = s;
+        break;
+      }
+    }
+
+    // Sort forms from opf:file-as attribute.
+    String? titleSort;
+    for (final el in _els(opf, 'title')) {
+      final fa = el.getAttribute('opf:file-as')?.trim();
+      if (fa != null && fa.isNotEmpty) {
+        titleSort = fa;
+        break;
+      }
+    }
+    String? authorSort;
+    for (final el in _els(opf, 'creator')) {
+      final fa = el.getAttribute('opf:file-as')?.trim();
+      if (fa != null && fa.isNotEmpty) {
+        authorSort = fa;
+        break;
+      }
+    }
+
+    return ParsedMetadata(
+      title: title,
+      author: author,
       description: description,
       annotation: annotation,
       genre: genre,
@@ -561,7 +783,6 @@ class DocumentParser {
       source: source,
       titleSort: titleSort,
       authorSort: authorSort,
-      fontFaces: cssParser.fontFaces,
     );
   }
 
