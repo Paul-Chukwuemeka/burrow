@@ -964,6 +964,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       _query = '';
                       _searchController.clear();
                     }),
+                    filter: _filter,
+                    onFormatFilterChanged: (f) => setState(() => _filter = f),
                     onStats: () =>
                         StatsScreen.show(context, library: widget.library),
                     onExport: _exportLibrary,
@@ -1061,14 +1063,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
           onChanged: (v) => setState(() => _query = v),
         ),
       ),
-      SliverToBoxAdapter(
-        child: FilterRow(
-          filter: _filter,
-          onFilter: (f) => setState(() => _filter = f),
-          activeFilterCount: _activeFilterCount,
-          onFilterTap: () => _showFilterSheet(context),
-        ),
-      ),
       if (recent != null)
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
@@ -1121,6 +1115,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     setState(() => _layout = next);
                     widget.library.saveLibraryLayout(next.name);
                   },
+                ),
+                const SizedBox(width: 8),
+                FilterIconButton(
+                  activeCount: _activeFilterCount,
+                  onTap: () => _showFilterSheet(context),
                 ),
               ],
             ),

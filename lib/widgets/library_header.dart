@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/book.dart';
 import '../models/library_enums.dart';
 import '../theme/burrow_tokens.dart';
 
@@ -7,6 +8,8 @@ class BurrowHeader extends StatelessWidget {
   const BurrowHeader({
     required this.tab,
     required this.onTabChanged,
+    this.filter,
+    this.onFormatFilterChanged,
     this.onStats,
     this.onExport,
     this.onImportBackup,
@@ -15,6 +18,8 @@ class BurrowHeader extends StatelessWidget {
 
   final LibraryTab tab;
   final ValueChanged<LibraryTab> onTabChanged;
+  final BookFormat? filter;
+  final ValueChanged<BookFormat?>? onFormatFilterChanged;
   final VoidCallback? onStats;
   final VoidCallback? onExport;
   final VoidCallback? onImportBackup;
@@ -28,12 +33,52 @@ class BurrowHeader extends StatelessWidget {
       title: Text(
         'burrow',
         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-              color: scheme.onSurface,
-            ),
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          color: scheme.onSurface,
+        ),
       ),
       actions: [
+        if (onFormatFilterChanged != null)
+          PopupMenuButton<BookFormat?>(
+            icon: Icon(
+              filter != null
+                  ? Icons.filter_list_rounded
+                  : Icons.filter_list_off_rounded,
+              color: filter != null ? scheme.primary : scheme.onSurface,
+            ),
+            tooltip: 'Filter formats',
+            onSelected: onFormatFilterChanged,
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: null,
+                child: ListTile(
+                  leading: Icon(
+                    filter == null
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                    color: filter == null ? scheme.primary : null,
+                    size: 20,
+                  ),
+                  title: const Text('All formats'),
+                ),
+              ),
+              for (final f in BookFormat.values)
+                PopupMenuItem(
+                  value: f,
+                  child: ListTile(
+                    leading: Icon(
+                      filter == f
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      color: filter == f ? scheme.primary : null,
+                      size: 20,
+                    ),
+                    title: Text(f.name.toUpperCase()),
+                  ),
+                ),
+            ],
+          ),
         if (onStats != null)
           IconButton(
             icon: Icon(Icons.bar_chart_rounded, color: scheme.onSurface),

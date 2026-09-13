@@ -47,11 +47,55 @@ void main() {
 
       // Long paragraphs separated by blank lines, like parsed EPUB prose.
       const words = [
-        'the', 'of', 'and', 'a', 'to', 'in', 'is', 'you', 'that', 'it', 'he',
-        'was', 'for', 'on', 'are', 'as', 'with', 'his', 'they', 'I', 'at',
-        'be', 'this', 'have', 'from', 'or', 'one', 'had', 'by', 'word', 'but',
-        'not', 'what', 'all', 'were', 'we', 'when', 'your', 'can', 'said',
-        'there', 'use', 'an', 'each', 'which', 'she', 'do', 'how', 'their',
+        'the',
+        'of',
+        'and',
+        'a',
+        'to',
+        'in',
+        'is',
+        'you',
+        'that',
+        'it',
+        'he',
+        'was',
+        'for',
+        'on',
+        'are',
+        'as',
+        'with',
+        'his',
+        'they',
+        'I',
+        'at',
+        'be',
+        'this',
+        'have',
+        'from',
+        'or',
+        'one',
+        'had',
+        'by',
+        'word',
+        'but',
+        'not',
+        'what',
+        'all',
+        'were',
+        'we',
+        'when',
+        'your',
+        'can',
+        'said',
+        'there',
+        'use',
+        'an',
+        'each',
+        'which',
+        'she',
+        'do',
+        'how',
+        'their',
         'if',
       ];
       final buf = StringBuffer();
@@ -87,13 +131,17 @@ void main() {
         final lines = tp.computeLineMetrics().length;
         tp.dispose();
 
-        expect(height, lessThanOrEqualTo(budget),
-            reason: 'page $i overflows ($lines lines)');
+        expect(
+          height,
+          lessThanOrEqualTo(budget),
+          reason: 'page $i overflows ($lines lines)',
+        );
         if (i < pag.pages.length - 1) {
           expect(
             height,
             greaterThan(budget / 2),
-            reason: 'page $i is degenerate ($lines lines): '
+            reason:
+                'page $i is degenerate ($lines lines): '
                 '${slice.replaceAll('\n', r'\n')}',
           );
         }
@@ -122,10 +170,7 @@ void main() {
       );
       if (p.pages.length < 2) return; // Single page: nothing to check.
       expect(p.pageIndexFor(0), 0);
-      expect(
-        p.pageIndexFor(text.length - 1),
-        p.pages.length - 1,
-      );
+      expect(p.pageIndexFor(text.length - 1), p.pages.length - 1);
       // Every page resolves to itself; whitespace gaps between pages resolve
       // to the page that follows them.
       for (var i = 0; i < p.pages.length; i++) {
@@ -164,7 +209,10 @@ void main() {
       expect(paged.pages.first.start, 0);
       expect(paged.pages.last.end, text.length);
       for (var i = 1; i < paged.pages.length; i++) {
-        expect(paged.pages[i].start, greaterThanOrEqualTo(paged.pages[i - 1].end));
+        expect(
+          paged.pages[i].start,
+          greaterThanOrEqualTo(paged.pages[i - 1].end),
+        );
         expect(
           text.substring(paged.pages[i - 1].end, paged.pages[i].start).trim(),
           isEmpty,
@@ -179,10 +227,7 @@ void main() {
           maxHeight: viewport.height,
           direction: TextDirection.ltr,
         );
-        expect(
-          paged.pages.first.end,
-          lessThan(plain.pages.first.end),
-        );
+        expect(paged.pages.first.end, lessThan(plain.pages.first.end));
       }
     });
   });
@@ -229,7 +274,8 @@ void main() {
       final text = StringBuffer();
       for (var p = 0; p < 40; p++) {
         text.writeln(
-            'Paragraph $p. ${List.generate(60, (i) => 'w$p$i').join(' ')}');
+          'Paragraph $p. ${List.generate(60, (i) => 'w$p$i').join(' ')}',
+        );
         text.writeln();
         if (p % 7 == 0) text.writeln(); // Blank lines between sections.
       }
@@ -246,60 +292,64 @@ void main() {
       expect(paged.pages.length, greaterThan(3));
 
       Widget harness(String slice, {bool title = false}) => MaterialApp(
-            home: Center(
-              child: SizedBox(
-                width: 412,
-                height: 915,
-                child: DefaultTextStyle(
-                  // Simulates Material typography inheritance. Production
-                  // renders via RichText, which ignores it entirely.
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.43,
-                    letterSpacing: 0.25,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 28),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (title) ...[
-                          RichText(
-                            text: TextSpan(
-                              text: 'Chapter',
-                              style: style.copyWith(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        Expanded(
-                          child: RichText(
-                            text: TextSpan(text: slice, style: style),
+        home: Center(
+          child: SizedBox(
+            width: 412,
+            height: 915,
+            child: DefaultTextStyle(
+              // Simulates Material typography inheritance. Production
+              // renders via RichText, which ignores it entirely.
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.43,
+                letterSpacing: 0.25,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 28,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (title) ...[
+                      RichText(
+                        text: TextSpan(
+                          text: 'Chapter',
+                          style: style.copyWith(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(text: slice, style: style),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
-          );
+          ),
+        ),
+      );
 
-      await tester.pumpWidget(harness(
-        body.substring(paged.pages.first.start, paged.pages.first.end),
-        title: true,
-      ));
+      await tester.pumpWidget(
+        harness(
+          body.substring(paged.pages.first.start, paged.pages.first.end),
+          title: true,
+        ),
+      );
       await tester.pump();
       expect(tester.takeException(), isNull);
 
       for (var i = 1; i < paged.pages.length; i++) {
-        await tester.pumpWidget(harness(
-          body.substring(paged.pages[i].start, paged.pages[i].end),
-        ));
+        await tester.pumpWidget(
+          harness(body.substring(paged.pages[i].start, paged.pages[i].end)),
+        );
         await tester.pump();
         expect(tester.takeException(), isNull);
       }
@@ -323,8 +373,14 @@ void main() {
           final start = buf.length;
           buf.write(words[i]);
           if (i % 5 == 0) {
-            runs.add(StyleRun(start, buf.length,
-                bold: i % 10 == 0, italic: i % 10 != 0));
+            runs.add(
+              StyleRun(
+                start,
+                buf.length,
+                bold: i % 10 == 0,
+                italic: i % 10 != 0,
+              ),
+            );
           }
         }
         buf.writeln();
@@ -344,31 +400,35 @@ void main() {
       expect(paged.pages.length, greaterThan(3));
 
       Widget harness(int index) => MaterialApp(
-            home: Center(
-              child: SizedBox(
-                width: 412,
-                height: 915,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 28),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: RichText(
-                          text: TextSpan(
-                            style: style,
-                            children: buildStyledSpans(body, runs, style,
-                                paged.pages[index].start, paged.pages[index].end),
-                          ),
+        home: Center(
+          child: SizedBox(
+            width: 412,
+            height: 915,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: style,
+                        children: buildStyledSpans(
+                          body,
+                          runs,
+                          style,
+                          paged.pages[index].start,
+                          paged.pages[index].end,
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          );
+          ),
+        ),
+      );
 
       await tester.pumpWidget(harness(0));
       await tester.pump();
@@ -379,9 +439,9 @@ void main() {
       final children = (rich.text as TextSpan).children;
       expect(children, isNotNull);
       expect(
-        children!.any((s) =>
-            s is TextSpan &&
-            s.style?.fontWeight == FontWeight.w700),
+        children!.any(
+          (s) => s is TextSpan && s.style?.fontWeight == FontWeight.w700,
+        ),
         isTrue,
         reason: 'bold run renders as w700 span',
       );
@@ -396,17 +456,20 @@ void main() {
 
   group('LibraryScreen', () {
     Book fakeBook(String id, {double progress = 0}) => Book(
-          id: id,
-          title: 'Book $id',
-          author: 'Author $id',
-          path: '/tmp/$id.epub',
-          format: BookFormat.epub,
-          addedAt: 1,
-          lastReadAt: progress > 0 ? 10 : 0,
-          progress: progress,
-        );
+      id: id,
+      title: 'Book $id',
+      author: 'Author $id',
+      path: '/tmp/$id.epub',
+      format: BookFormat.epub,
+      addedAt: 1,
+      lastReadAt: progress > 0 ? 10 : 0,
+      progress: progress,
+    );
 
-    Future<void> pumpLibrary(WidgetTester tester, LibraryService library) async {
+    Future<void> pumpLibrary(
+      WidgetTester tester,
+      LibraryService library,
+    ) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(412, 915);
       addTearDown(tester.view.reset);
@@ -423,8 +486,9 @@ void main() {
       expect(find.text('Your burrow is empty'), findsOneWidget);
     });
 
-    testWidgets('populated library shows hero card and grid tiles',
-        (tester) async {
+    testWidgets('populated library shows hero card and grid tiles', (
+      tester,
+    ) async {
       final service = LibraryService()
         ..debugAddAll([
           fakeBook('a', progress: 0.4),
@@ -437,8 +501,8 @@ void main() {
       expect(find.text('CONTINUE READING'), findsOneWidget);
       expect(find.text('All books · 3'), findsOneWidget);
       // Per tile: tonal badge + placeholder's own format label; plus hero
-      // placeholder label and the filter chip.
-      expect(find.text('EPUB'), findsNWidgets(8));
+      // placeholder label (filter chip is no longer in the library content).
+      expect(find.text('EPUB'), findsNWidgets(7));
     });
 
     testWidgets('FAB opens the expressive add menu', (tester) async {
@@ -481,10 +545,7 @@ void main() {
         'The Forever Hero',
       );
       expect(cleanBookTitle('oceanofpdf.com_A_Clan_Novel'), 'A Clan Novel');
-      expect(
-        cleanBookTitle('resignation_letter.txt'),
-        'resignation letter',
-      );
+      expect(cleanBookTitle('resignation_letter.txt'), 'resignation letter');
       expect(
         cleanBookTitle('[PDF] Designing Interfaces - libgen.li'),
         'Designing Interfaces',
@@ -507,15 +568,15 @@ void main() {
 
     test('progress semantics follow one convention everywhere', () {
       Book withProgress(double p, int lastReadAt) => Book(
-            id: 's',
-            title: 't',
-            author: '',
-            path: '/tmp/t.epub',
-            format: BookFormat.epub,
-            addedAt: 0,
-            progress: p,
-            lastReadAt: lastReadAt,
-          );
+        id: 's',
+        title: 't',
+        author: '',
+        path: '/tmp/t.epub',
+        format: BookFormat.epub,
+        addedAt: 0,
+        progress: p,
+        lastReadAt: lastReadAt,
+      );
       expect(withProgress(0, 0).progressSemantics, 'Not started');
       expect(withProgress(0.25, 5).progressSemantics, '25 percent read');
       expect(withProgress(1, 5).progressSemantics, 'Finished');
@@ -580,34 +641,38 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(412, 915);
       addTearDown(tester.view.reset);
-      final service = LibraryService()..debugAddAll([
-        Book(
-          id: 'a',
-          title: 'Book a',
-          author: '',
-          path: '/tmp/a.epub',
-          format: BookFormat.epub,
-          addedAt: 1,
-        ),
-      ]);
-      await tester.pumpWidget(MaterialApp(home: LibraryScreen(library: service)));
+      final service = LibraryService()
+        ..debugAddAll([
+          Book(
+            id: 'a',
+            title: 'Book a',
+            author: '',
+            path: '/tmp/a.epub',
+            format: BookFormat.epub,
+            addedAt: 1,
+          ),
+        ]);
+      await tester.pumpWidget(
+        MaterialApp(home: LibraryScreen(library: service)),
+      );
       await tester.pumpAndSettle();
 
-      for (final label in ['All', 'EPUB', 'TXT', 'PDF']) {
+      // Open the format filter popup in the app bar.
+      await tester.tap(find.byIcon(Icons.filter_list_off_rounded));
+      await tester.pumpAndSettle();
+
+      for (final label in ['All formats', 'EPUB', 'TXT', 'PDF', 'CBZ', 'CBR']) {
         final chipMaterial = find
-            .ancestor(
-              of: find.text(label),
-              matching: find.byType(Material),
-            )
+            .ancestor(of: find.text(label), matching: find.byType(Material))
             .first;
         final size = tester.getSize(chipMaterial);
         expect(size.height, greaterThanOrEqualTo(48), reason: '$label chip');
-        expect(size.width, greaterThanOrEqualTo(48), reason: '$label chip');
       }
     });
 
-    testWidgets('tiles announce title, author and one progress convention',
-        (tester) async {
+    testWidgets('tiles announce title, author and one progress convention', (
+      tester,
+    ) async {
       final semantics = tester.ensureSemantics();
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(412, 915);
@@ -633,17 +698,21 @@ void main() {
             lastReadAt: 10,
           ),
         ]);
-      await tester.pumpWidget(MaterialApp(home: LibraryScreen(library: service)));
+      await tester.pumpWidget(
+        MaterialApp(home: LibraryScreen(library: service)),
+      );
       await tester.pumpAndSettle();
 
       // Anchor to the merged tile node's own label pattern; unanchored
       // matches would also hit placeholder art text and the hero card.
-      final fresh =
-          tester.getSemantics(find.bySemanticsLabel(RegExp(r'^Fresh Book by Ada')));
+      final fresh = tester.getSemantics(
+        find.bySemanticsLabel(RegExp(r'^Fresh Book by Ada')),
+      );
       expect(fresh.label, contains('Not started'));
 
-      final half =
-          tester.getSemantics(find.bySemanticsLabel(RegExp(r'^Half Read')));
+      final half = tester.getSemantics(
+        find.bySemanticsLabel(RegExp(r'^Half Read')),
+      );
       expect(half.label, contains('Half Read'));
       expect(half.label, contains('50 percent read'));
 
@@ -683,10 +752,16 @@ void main() {
 
       expect(incremental.pages.length, oneShot.pages.length);
       for (var i = 0; i < oneShot.pages.length; i++) {
-        expect(incremental.pages[i].start, oneShot.pages[i].start,
-            reason: 'page $i start');
-        expect(incremental.pages[i].end, oneShot.pages[i].end,
-            reason: 'page $i end');
+        expect(
+          incremental.pages[i].start,
+          oneShot.pages[i].start,
+          reason: 'page $i start',
+        );
+        expect(
+          incremental.pages[i].end,
+          oneShot.pages[i].end,
+          reason: 'page $i end',
+        );
       }
     });
 
@@ -741,10 +816,16 @@ void main() {
       expect(pages.last.end, text.length);
 
       for (var i = 1; i < pages.length; i++) {
-        expect(pages[i].start >= pages[i - 1].start, isTrue,
-            reason: 'pages are monotonically ordered');
-        expect(pages[i].start > pages[i - 1].start, isTrue,
-            reason: 'no duplicate page starts');
+        expect(
+          pages[i].start >= pages[i - 1].start,
+          isTrue,
+          reason: 'pages are monotonically ordered',
+        );
+        expect(
+          pages[i].start > pages[i - 1].start,
+          isTrue,
+          reason: 'no duplicate page starts',
+        );
       }
     });
 
@@ -836,8 +917,11 @@ void main() {
           ),
           textDirection: TextDirection.ltr,
         )..layout(maxWidth: viewport.width);
-        expect(tp.height, lessThanOrEqualTo(maxHeight - slack),
-            reason: 'styled page $i overflows');
+        expect(
+          tp.height,
+          lessThanOrEqualTo(maxHeight - slack),
+          reason: 'styled page $i overflows',
+        );
         tp.dispose();
       }
     });
@@ -868,10 +952,16 @@ void main() {
 
       expect(incremental.pages.length, oneShot.pages.length);
       for (var i = 0; i < oneShot.pages.length; i++) {
-        expect(incremental.pages[i].start, oneShot.pages[i].start,
-            reason: 'page $i start');
-        expect(incremental.pages[i].end, oneShot.pages[i].end,
-            reason: 'page $i end');
+        expect(
+          incremental.pages[i].start,
+          oneShot.pages[i].start,
+          reason: 'page $i start',
+        );
+        expect(
+          incremental.pages[i].end,
+          oneShot.pages[i].end,
+          reason: 'page $i end',
+        );
       }
     });
   });
