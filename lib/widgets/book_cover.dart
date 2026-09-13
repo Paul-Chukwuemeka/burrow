@@ -196,39 +196,41 @@ class _FittedTitle extends StatelessWidget {
         while (size > _minFontSize && !_fits(size, constraints)) {
           size -= 0.5;
         }
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: size,
-                fontWeight: FontWeight.w700,
-                height: 1.22,
-                letterSpacing: 0.1,
-              ),
-            ),
-            if (author.isNotEmpty && constraints.maxHeight > 40)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  author,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.78),
-                    fontSize: size * 0.58,
-                    fontWeight: FontWeight.w500,
-                    height: 1,
-                  ),
+        return ClipRect(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: size,
+                  fontWeight: FontWeight.w700,
+                  height: 1.22,
+                  letterSpacing: 0.1,
                 ),
               ),
-          ],
+              if (author.isNotEmpty && constraints.maxHeight > 40)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    author,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: size * 0.58,
+                      fontWeight: FontWeight.w500,
+                      height: 1,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
