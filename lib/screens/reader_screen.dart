@@ -695,8 +695,7 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   /// Swap the completed reflow buffer in atomically.
-  void _applyReflow(
-      TextStyle style, String? signature, int generation) {
+  void _applyReflow(TextStyle style, String? signature, int generation) {
     // Don't cancel a page turn the reader is making; swap once it settles.
     _whenPageIdle(() {
       if (!mounted) return;

@@ -181,8 +181,13 @@ class TocEntry {
 
 class DocumentParser {
   /// Parses a document into chapters. Heavy work runs in a background isolate.
-  static Future<ParsedDocument> parse(String path) {
-    return compute(_parseIsolate, path);
+  ///
+  /// The cache directory is resolved here, on the main isolate, because
+  /// `path_provider` uses a platform channel that is unavailable inside a
+  /// `compute` isolate.
+  static Future<ParsedDocument> parse(String path) async {
+    final cacheDir = await _safeCacheDirPath();
+    return compute(_parseIsolate, (path, cacheDir));
   }
 
   /// Extracts only metadata and cover bytes from a document.
@@ -217,6 +222,8 @@ class DocumentParser {
   /// Shrinks a cover to at most [maxDimension] px on its long edge so the
   /// library does not decode (or store) multi-megapixel originals. Returns the
   /// original bytes when decoding fails or the image is already small.
+  static Uint8List? prepareCover(List<int>? bytes) => _downscaleCover(bytes);
+
   static Uint8List? _downscaleCover(
     List<int>? bytes, {
     int maxDimension = 600,
@@ -361,12 +368,25 @@ class DocumentParser {
     );
   }
 
-  static Future<ParsedDocument> _parseIsolate(String path) async {
+  static Future<ParsedDocument> _parseIsolate((String, String?) args) async {
+    final (path, cacheDirPath) = args;
     // Check disk cache for EPUB/TXT (formats where parsing is expensive).
     final fmt = formatFromExtension(path);
-    if (fmt == BookFormat.epub || fmt == BookFormat.txt) {
-      final cached = await _loadFromCache(path);
-      if (cached != null) return cached;
+    if ((fmt == BookFormat.epub || fmt == BookFormat.txt) &&
+        cacheDirPath != null) {
+      final cached = await _loadFromCache(path, cacheDirPath);
+      if (cached != null) {
+        // The cache stores image/font references, not bytes; re-read them
+        // from the source EPUB. If that fails (source moved/changed), drop the
+        // stale entry and fall through to a full parse.
+        if (fmt == BookFormat.epub) {
+          final hydrated = _hydrateAssets(cached, path);
+          if (hydrated != null) return hydrated;
+          _deleteCacheFile(path, cacheDirPath);
+        } else {
+          return cached;
+        }
+      }
     }
 
     ParsedDocument doc;
@@ -387,8 +407,9 @@ class DocumentParser {
     }
 
     // Save to disk cache for expensive formats.
-    if (fmt == BookFormat.epub || fmt == BookFormat.txt) {
-      await _saveToCache(path, doc);
+    if ((fmt == BookFormat.epub || fmt == BookFormat.txt) &&
+        cacheDirPath != null) {
+      await _saveToCache(path, doc, cacheDirPath);
     }
 
     return doc;
@@ -936,6 +957,7 @@ class DocumentParser {
             intrinsicHeight: img.intrinsicHeight,
             alt: img.alt,
             fullWidth: img.fullWidth,
+            sourceKey: img.sourceKey,
           ),
         );
       }
@@ -1815,6 +1837,7 @@ class DocumentParser {
             elementId: images[i].elementId,
             htmlWidth: images[i].htmlWidth,
             htmlHeight: images[i].htmlHeight,
+            sourceKey: images[i].sourceKey,
           );
           break;
         }
@@ -1827,10 +1850,28 @@ class DocumentParser {
   // --------------------------------------------------------------------------
 
   static Future<Directory> _cacheDir() async {
+    final dir = Directory(await _resolveCacheDirPath());
+    if (!dir.existsSync()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// Resolves (and creates) the cache directory, or throws when the platform
+  /// directory is unavailable. Must be called on the main isolate.
+  static Future<String> _resolveCacheDirPath() async {
     final tmp = await getTemporaryDirectory();
     final dir = Directory('${tmp.path}/burrow_doc_cache');
     if (!dir.existsSync()) await dir.create(recursive: true);
-    return dir;
+    return dir.path;
+  }
+
+  /// Main-isolate-safe resolver used by [parse]: returns null when the cache
+  /// directory cannot be resolved (e.g. the platform channel is unavailable).
+  static Future<String?> _safeCacheDirPath() async {
+    try {
+      return await _resolveCacheDirPath();
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _cacheKey(String path) {
@@ -1839,15 +1880,18 @@ class DocumentParser {
     final size = file.lengthSync();
     // Bump the schema tag when the cached shape changes so stale entries from
     // an older format are ignored instead of deserialized with missing fields.
-    final id = 'v2_${path}_${mtime}_$size';
+    // v3: images/fonts store archive entry names instead of base64 bytes.
+    final id = 'v3_${path}_${mtime}_$size';
     return id.hashCode.toRadixString(16);
   }
 
-  static Future<ParsedDocument?> _loadFromCache(String path) async {
+  static Future<ParsedDocument?> _loadFromCache(
+    String path,
+    String cacheDirPath,
+  ) async {
     try {
-      final dir = await _cacheDir();
       final key = _cacheKey(path);
-      final cacheFile = File('${dir.path}/$key.json');
+      final cacheFile = File('$cacheDirPath/$key.json');
       if (!cacheFile.existsSync()) return null;
       final json =
           jsonDecode(await cacheFile.readAsString()) as Map<String, dynamic>;
@@ -1857,11 +1901,14 @@ class DocumentParser {
     }
   }
 
-  static Future<void> _saveToCache(String path, ParsedDocument doc) async {
+  static Future<void> _saveToCache(
+    String path,
+    ParsedDocument doc,
+    String cacheDirPath,
+  ) async {
     try {
-      final dir = await _cacheDir();
       final key = _cacheKey(path);
-      final cacheFile = File('${dir.path}/$key.json');
+      final cacheFile = File('$cacheDirPath/$key.json');
       await cacheFile.writeAsString(jsonEncode(_docToJson(doc)));
     } catch (_) {}
   }
@@ -1905,7 +1952,13 @@ class DocumentParser {
                   .map(
                     (img) => {
                       'o': img.offset,
-                      'b': base64Encode(img.bytes),
+                      // Store the source archive entry when known; the bytes
+                      // are re-read from the EPUB on cache load. Only fall
+                      // back to inlining base64 when there is no source key.
+                      if (img.sourceKey != null)
+                        'k': img.sourceKey
+                      else
+                        'b': base64Encode(img.bytes),
                       'w': img.intrinsicWidth,
                       'h': img.intrinsicHeight,
                       'a': img.alt,
@@ -1921,11 +1974,9 @@ class DocumentParser {
           )
           .toList(),
       'fontFaces': {
-        for (final e in doc.fontFaces.entries)
-          e.key: {
-            'src': e.value.src,
-            if (e.value.bytes != null) 'bytes': base64Encode(e.value.bytes!),
-          },
+        // Font bytes are re-read from the EPUB on load; only the resolved
+        // archive-relative src is cached.
+        for (final e in doc.fontFaces.entries) e.key: {'src': e.value.src},
       },
     };
   }
@@ -1948,9 +1999,10 @@ class DocumentParser {
       }).toList();
       final images = (ch['images'] as List? ?? []).map((img) {
         final im = img as Map<String, dynamic>;
+        final encoded = im['b'] as String?;
         return ImageRun(
           offset: im['o'] as int,
-          bytes: base64Decode(im['b'] as String),
+          bytes: encoded == null ? Uint8List(0) : base64Decode(encoded),
           intrinsicWidth: im['w'] as int,
           intrinsicHeight: im['h'] as int,
           alt: im['a'] as String? ?? '',
@@ -1958,6 +2010,7 @@ class DocumentParser {
           elementId: im['eid'] as String? ?? '',
           htmlWidth: (im['hw'] as num?)?.toDouble(),
           htmlHeight: (im['hh'] as num?)?.toDouble(),
+          sourceKey: im['k'] as String?,
           css: im['css'] is Map
               ? CssStyle.fromJson((im['css'] as Map).cast<String, dynamic>())
               : null,
@@ -1998,6 +2051,163 @@ class DocumentParser {
       authorSort: json['authorSort'] as String?,
       fontFaces: fontFaces,
     );
+  }
+
+  /// Deletes the cache entry for [path], if one exists.
+  static Future<void> clearCacheFor(String path) async {
+    final dirPath = await _safeCacheDirPath();
+    if (dirPath != null) _deleteCacheFile(path, dirPath);
+  }
+
+  static void _deleteCacheFile(String path, String cacheDirPath) {
+    try {
+      final key = _cacheKey(path);
+      final file = File('$cacheDirPath/$key.json');
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {}
+  }
+
+  /// Deletes cache entries that no longer correspond to any of [paths], then
+  /// trims the cache to [maxBytes] by removing the least recently modified
+  /// files. This also sweeps entries from earlier cache schema versions.
+  static Future<void> pruneCache(
+    Iterable<String> paths, {
+    int maxBytes = 256 * 1024 * 1024,
+  }) async {
+    try {
+      final dir = await _cacheDir();
+      final valid = <String>{};
+      for (final p in paths) {
+        try {
+          valid.add(_cacheKey(p));
+        } catch (_) {}
+      }
+
+      final files = <File>[];
+      var total = 0;
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last;
+        final base = name.endsWith('.json')
+            ? name.substring(0, name.length - '.json'.length)
+            : name;
+        if (!valid.contains(base)) {
+          try {
+            entity.deleteSync();
+          } catch (_) {}
+          continue;
+        }
+        files.add(entity);
+        total += entity.lengthSync();
+      }
+
+      if (total > maxBytes && files.isNotEmpty) {
+        files.sort(
+          (a, b) => a.statSync().modified.compareTo(b.statSync().modified),
+        );
+        for (final f in files) {
+          if (total <= maxBytes) break;
+          final size = f.lengthSync();
+          try {
+            f.deleteSync();
+            total -= size;
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Returns a copy of [doc] with image/font bytes re-read from the source
+  /// EPUB, or null when the source is missing/unreadable or a referenced image
+  /// entry is gone (the caller then falls back to a full parse).
+  static ParsedDocument? _hydrateAssets(ParsedDocument doc, String path) {
+    if (!_docNeedsHydration(doc)) return doc;
+    final file = File(path);
+    if (!file.existsSync()) return null;
+
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(file.readAsBytesSync());
+    } catch (_) {
+      return null;
+    }
+    final entries = <String, ArchiveFile>{
+      for (final f in archive.files)
+        Uri.decodeComponent(f.name.toLowerCase()): f,
+    };
+    Uint8List? read(String key) {
+      final entry = entries[key.toLowerCase()];
+      if (entry == null) return null;
+      final bytes = entry.content;
+      return bytes.isEmpty ? null : bytes;
+    }
+
+    final chapters = <Chapter>[];
+    for (final ch in doc.chapters) {
+      if (ch.images.isEmpty) {
+        chapters.add(ch);
+        continue;
+      }
+      final images = <ImageRun>[];
+      for (final img in ch.images) {
+        if (img.bytes.isNotEmpty || img.sourceKey == null) {
+          images.add(img);
+          continue;
+        }
+        final bytes = read(img.sourceKey!);
+        if (bytes == null) return null;
+        images.add(img.copyWith(bytes: bytes));
+      }
+      chapters.add(Chapter(ch.title, ch.body, ch.runs, images));
+    }
+
+    final fontFaces = <String, FontFaceInfo>{};
+    for (final e in doc.fontFaces.entries) {
+      final info = e.value;
+      if (info.bytes != null || info.src.isEmpty) {
+        fontFaces[e.key] = info;
+        continue;
+      }
+      fontFaces[e.key] = FontFaceInfo(
+        family: info.family,
+        src: info.src,
+        bytes: read(info.src),
+      );
+    }
+
+    return ParsedDocument(
+      title: doc.title,
+      author: doc.author,
+      chapters: chapters,
+      coverBytes: doc.coverBytes,
+      description: doc.description,
+      annotation: doc.annotation,
+      genre: doc.genre,
+      seriesName: doc.seriesName,
+      seriesIndex: doc.seriesIndex,
+      publisher: doc.publisher,
+      isbn: doc.isbn,
+      language: doc.language,
+      publicationDate: doc.publicationDate,
+      rights: doc.rights,
+      type: doc.type,
+      source: doc.source,
+      titleSort: doc.titleSort,
+      authorSort: doc.authorSort,
+      fontFaces: fontFaces,
+    );
+  }
+
+  static bool _docNeedsHydration(ParsedDocument doc) {
+    for (final ch in doc.chapters) {
+      for (final img in ch.images) {
+        if (img.bytes.isEmpty && img.sourceKey != null) return true;
+      }
+    }
+    for (final info in doc.fontFaces.values) {
+      if (info.bytes == null && info.src.isNotEmpty) return true;
+    }
+    return false;
   }
 }
 
@@ -2078,8 +2288,9 @@ class _RichTextBuilder {
     }
     // Resolve the image path against the chapter's base directory.
     final resolved = DocumentParser._resolveHref(baseDir, src);
-    final entry = _findImageEntry(resolved);
-    if (entry == null) return;
+    final entryName = _findImageEntryName(resolved);
+    if (entryName == null) return;
+    final entry = archiveEntries![entryName]!;
     final offset = _buf.length;
     _buf.write('\uFFFC');
     final (w, h) = _decodeImageDimensions(entry);
@@ -2104,22 +2315,25 @@ class _RichTextBuilder {
         elementId: elementId,
         htmlWidth: effectiveHtmlWidth,
         htmlHeight: effectiveHtmlHeight,
+        sourceKey: entryName,
       ),
     );
   }
 
-  Uint8List? _findImageEntry(String resolved) {
+  String? _findImageEntryName(String resolved) {
     final entries = archiveEntries!;
     // Try exact match first.
     final key = Uri.decodeComponent(resolved.toLowerCase());
-    if (entries.containsKey(key)) return entries[key];
+    if (entries.containsKey(key)) return key;
     // Try filename-only match (handles path mismatches in EPUBs).
-    final filename = resolved.contains('/')
-        ? resolved.substring(resolved.lastIndexOf('/') + 1)
-        : resolved;
-    for (final e in entries.entries) {
-      if (e.key.endsWith('/$filename') || e.key == filename) {
-        return e.value;
+    final filename =
+        (resolved.contains('/')
+                ? resolved.substring(resolved.lastIndexOf('/') + 1)
+                : resolved)
+            .toLowerCase();
+    for (final e in entries.keys) {
+      if (e.endsWith('/$filename') || e == filename) {
+        return e;
       }
     }
     return null;
@@ -2394,6 +2608,7 @@ class _RichTextBuilder {
       elementId: img.elementId,
       htmlWidth: img.htmlWidth,
       htmlHeight: img.htmlHeight,
+      sourceKey: img.sourceKey,
     );
   }
 

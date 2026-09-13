@@ -248,6 +248,10 @@ class LibraryService extends ChangeNotifier {
     await _cleanupOrphanedCovers();
 
     notifyListeners();
+
+    // Sweep stale/orphaned parsed-document cache entries (and earlier cache
+    // schema versions) in the background.
+    unawaited(DocumentParser.pruneCache([for (final b in _books) b.path]));
   }
 
   Future<void> saveSettings() async {
@@ -741,6 +745,9 @@ class LibraryService extends ChangeNotifier {
   Future<void> deleteBookWithFile(String id, {bool deleteFile = false}) async {
     final book = _books.where((b) => b.id == id).firstOrNull;
     if (book == null) return;
+    // Drop the parsed-document cache while the source file still exists, so
+    // the key (path + mtime + size) can be computed.
+    await DocumentParser.clearCacheFor(book.path);
     final cover = book.coverPath;
     if (cover != null) {
       try {
@@ -856,6 +863,21 @@ class LibraryService extends ChangeNotifier {
   // ---------------------------------------------------------------------------
   // Cover storage
   // ---------------------------------------------------------------------------
+
+  /// Saves [bytes] as [book]'s cover if it has none yet, downscaling first.
+  /// Used to backfill covers that metadata extraction intentionally defers
+  /// (e.g. CBR, whose archive cannot be read entry-by-entry).
+  Future<void> setCoverIfMissing(Book book, List<int> bytes) async {
+    if (book.coverPath != null || bytes.isEmpty) return;
+    final prepared = DocumentParser.prepareCover(bytes) ?? bytes;
+    final path = await _saveCover(prepared);
+    if (path == null) return;
+    book.coverPath = path;
+    if (_db != null) {
+      await _db!.updateBook(db.bookToCompanionForUpdate(book));
+    }
+    notifyListeners();
+  }
 
   Future<String?> _saveCover(List<int>? bytes) async {
     if (bytes == null || bytes.isEmpty) return null;

@@ -710,9 +710,7 @@ void main() {
       await tester.pumpAndSettle();
       // Scope to the filter sheet to avoid hitting the "PDF" badge on the tile.
       final sheet = find.byType(BottomSheet);
-      await tester.tap(
-        find.descendant(of: sheet, matching: find.text('PDF')),
-      );
+      await tester.tap(find.descendant(of: sheet, matching: find.text('PDF')));
       await tester.pumpAndSettle();
 
       // Dismiss the sheet.

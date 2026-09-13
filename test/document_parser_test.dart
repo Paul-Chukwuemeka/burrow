@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/document_parser.dart';
 
@@ -718,6 +720,95 @@ More text.''';
     });
   });
 
+  group('extractMetadata', () {
+    test('EPUB extracts metadata and cover without parsing chapters', () {
+      final cover = _tinyJpeg();
+      final meta = DocumentParser.extractEpubMetadataBytes(
+        _buildEpubWithCover(cover),
+        fallbackTitle: 'Fallback',
+      );
+
+      expect(meta.title, 'Covered Book');
+      expect(meta.author, 'C. Over');
+      expect(meta.coverBytes, isNotNull);
+      expect(meta.coverBytes, equals(cover));
+    });
+
+    test('EPUB falls back to the filename when metadata has no title', () {
+      final meta = DocumentParser.extractEpubMetadataBytes(
+        _buildEpubWithCover(_tinyJpeg(), title: ''),
+        fallbackTitle: 'From Filename',
+      );
+
+      expect(meta.title, 'From Filename');
+    });
+
+    test('rejects a file that is not a zip', () {
+      expect(
+        () => DocumentParser.extractEpubMetadataBytes(
+          Uint8List.fromList('not a zip'.codeUnits),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('CBZ uses the first page as the cover', () async {
+      final cbz = _buildCbz(['10.jpg', '2.jpg']);
+      final dir = Directory.systemTemp.createTempSync('meta_cbz');
+      final file = File('${dir.path}/comic.cbz');
+      await file.writeAsBytes(cbz);
+
+      try {
+        final meta = await DocumentParser.extractMetadata(file.path);
+        expect(meta.title, 'comic');
+        expect(meta.coverBytes, isNotNull);
+        expect(meta.coverBytes, equals(_tinyJpeg()));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
+
+    test('prepareCover shrinks a large cover to the max dimension', () {
+      final big = img.encodePng(img.Image(width: 2000, height: 1500));
+      final out = DocumentParser.prepareCover(big);
+
+      expect(out, isNotNull);
+      final decoded = img.decodeImage(out!);
+      expect(decoded, isNotNull);
+      expect(math.max(decoded!.width, decoded.height), lessThanOrEqualTo(600));
+    });
+
+    test('prepareCover leaves a small cover untouched', () {
+      final small = _tinyJpeg();
+      expect(DocumentParser.prepareCover(small), equals(small));
+    });
+
+    test('parsing twice preserves inline image bytes and source key', () async {
+      final dir = Directory.systemTemp.createTempSync('cache_round');
+      final file = File('${dir.path}/book.epub');
+      await file.writeAsBytes(_buildEpubWithCover(_tinyJpeg()));
+
+      try {
+        final first = await DocumentParser.parse(file.path);
+        final firstImage = first.chapters
+            .expand((c) => c.images)
+            .firstWhere((i) => i.sourceKey != null);
+
+        // Second parse may hit the v3 cache and rehydrate from the EPUB.
+        final second = await DocumentParser.parse(file.path);
+        final secondImage = second.chapters
+            .expand((c) => c.images)
+            .firstWhere((i) => i.sourceKey != null);
+
+        expect(secondImage.sourceKey, firstImage.sourceKey);
+        expect(secondImage.bytes, equals(firstImage.bytes));
+        expect(secondImage.bytes, isNotEmpty);
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
+  });
+
   group('parseComicBook (CBZ)', () {
     test('parses a CBZ archive with images', () async {
       final cbz = _buildCbz(['page1.jpg', 'page2.png', 'page3.gif']);
@@ -1325,6 +1416,50 @@ Uint8List _buildEpub({
   docs.forEach((name, content) {
     archive.addFile(ArchiveFile.string('OEBPS/$name', content));
   });
+  return ZipEncoder().encodeBytes(archive);
+}
+
+Uint8List _buildEpubWithCover(
+  Uint8List cover, {
+  String title = 'Covered Book',
+  String author = 'C. Over',
+}) {
+  final opf =
+      '''<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0"
+         unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    ${title.isEmpty ? '' : '<dc:title>$title</dc:title>'}
+    <dc:creator>$author</dc:creator>
+  </metadata>
+  <manifest>
+    <item id="book" href="book.xhtml" media-type="application/xhtml+xml"/>
+    <item id="cover" href="cover.jpg" media-type="image/jpeg"
+        properties="cover-image"/>
+  </manifest>
+  <spine><itemref idref="book"/></spine>
+</package>''';
+  final archive = Archive()
+    ..addFile(ArchiveFile.string('mimetype', 'application/epub+zip'))
+    ..addFile(
+      ArchiveFile.string('META-INF/container.xml', '''
+<?xml version="1.0" encoding="utf-8"?>
+<container version="1.0"
+    xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf"
+        media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>'''),
+    )
+    ..addFile(ArchiveFile.string('OEBPS/content.opf', opf))
+    ..addFile(ArchiveFile.bytes('OEBPS/cover.jpg', cover))
+    ..addFile(
+      ArchiveFile.string(
+        'OEBPS/book.xhtml',
+        _xhtml('<p>hello</p><img src="cover.jpg" alt="c"/>'),
+      ),
+    );
   return ZipEncoder().encodeBytes(archive);
 }
 

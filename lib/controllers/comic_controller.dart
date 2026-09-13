@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -71,6 +72,8 @@ class ComicReaderController extends ChangeNotifier {
           initialPage: comicPage.clamp(0, math.max(0, comicPageCount - 1)),
         );
         onLoaded?.call();
+        // Backfill deferred covers (no-op when one already exists).
+        unawaited(library.setCoverIfMissing(book, firstBytes));
         return;
       }
 
@@ -90,6 +93,10 @@ class ComicReaderController extends ChangeNotifier {
         initialPage: comicPage.clamp(0, math.max(0, comicPages.length - 1)),
       );
       restoreComicPosition();
+      // CBR covers are deferred by metadata extraction; save the first page.
+      if (pages.isNotEmpty) {
+        unawaited(library.setCoverIfMissing(book, pages.first));
+      }
     } catch (e) {
       if (!_mounted) return;
       comicLoading = false;

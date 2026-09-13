@@ -61,6 +61,7 @@ class ImageRun {
     this.elementId = '',
     this.htmlWidth,
     this.htmlHeight,
+    this.sourceKey,
   });
 
   /// Character offset in the chapter body where the `\uFFFC` placeholder lives.
@@ -93,6 +94,43 @@ class ImageRun {
 
   /// HTML `height` attribute value (pixels), used as fallback sizing.
   final double? htmlHeight;
+
+  /// EPUB archive entry this image was read from, when known.
+  ///
+  /// The content cache stores this instead of the raw bytes, and hydration
+  /// re-reads the entry from the source file on load. Null for images that
+  /// have no backing archive entry (e.g. comics, or legacy data).
+  final String? sourceKey;
+
+  ImageRun copyWith({
+    int? offset,
+    Uint8List? bytes,
+    int? intrinsicWidth,
+    int? intrinsicHeight,
+    String? alt,
+    bool? fullWidth,
+    VoidCallback? onTap,
+    CssStyle? css,
+    String? elementId,
+    double? htmlWidth,
+    double? htmlHeight,
+    String? sourceKey,
+  }) {
+    return ImageRun(
+      offset: offset ?? this.offset,
+      bytes: bytes ?? this.bytes,
+      intrinsicWidth: intrinsicWidth ?? this.intrinsicWidth,
+      intrinsicHeight: intrinsicHeight ?? this.intrinsicHeight,
+      alt: alt ?? this.alt,
+      fullWidth: fullWidth ?? this.fullWidth,
+      onTap: onTap ?? this.onTap,
+      css: css ?? this.css,
+      elementId: elementId ?? this.elementId,
+      htmlWidth: htmlWidth ?? this.htmlWidth,
+      htmlHeight: htmlHeight ?? this.htmlHeight,
+      sourceKey: sourceKey ?? this.sourceKey,
+    );
+  }
 
   /// Maximum pixel height for inline images regardless of page size.
   /// Set to [double.infinity] to disable.
