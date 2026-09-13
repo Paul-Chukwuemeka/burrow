@@ -46,7 +46,6 @@ class LibraryService extends ChangeNotifier {
   static const _layoutKey = 'burrow.library.layout.v1';
   static const _legacyLibraryKey = 'burrow.library.v1';
   static const _onboardingKey = 'burrow.onboarding.complete.v1';
-  static const _formatsKey = 'burrow.selectedFormats.v1';
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
@@ -55,10 +54,6 @@ class LibraryService extends ChangeNotifier {
   final List<db.Collection> _collections = [];
   ReaderSettings settings = ReaderSettings();
   String libraryLayout = 'grid';
-
-  /// File extensions the user chose during onboarding. Persisted so that
-  /// post-onboarding rescan / refresh uses the same selection.
-  Set<String> selectedFormats = const {'.epub', '.txt', '.pdf', '.cbz', '.cbr'};
 
   void _invalidateSortCache() => _sortedCache = null;
 
@@ -244,12 +239,6 @@ class LibraryService extends ChangeNotifier {
     // First-run onboarding state.
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;
 
-    // Persisted file-format selection from onboarding.
-    final formatsRaw = prefs.getStringList(_formatsKey);
-    if (formatsRaw != null && formatsRaw.isNotEmpty) {
-      selectedFormats = Set<String>.from(formatsRaw);
-    }
-
     // Clean up orphaned cover files (e.g. from interrupted imports).
     await _cleanupOrphanedCovers();
 
@@ -267,15 +256,6 @@ class LibraryService extends ChangeNotifier {
     onboardingComplete = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_onboardingKey, true);
-    notifyListeners();
-  }
-
-  /// Persists the file-format extensions chosen during onboarding so that
-  /// post-onboarding rescans and refreshes use the same selection.
-  Future<void> saveSelectedFormats(Set<String> formats) async {
-    selectedFormats = Set.unmodifiable(formats);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_formatsKey, formats.toList());
     notifyListeners();
   }
 
@@ -1146,19 +1126,15 @@ class LibraryService extends ChangeNotifier {
 
   /// Validates that a book path from a backup is not obviously malicious.
   /// Rejects paths with null bytes, paths that are just filenames (no directory),
-  /// and paths containing suspicious traversal patterns.
-  static bool _isValidBookPath(String path) {
-    if (path.isEmpty) return false;
-    if (path.contains('\x00')) return false;
+  /// and paths containing path-traversal segments.
+  static bool _isValidBookPath(String filePath) {
+    if (filePath.isEmpty) return false;
+    if (filePath.contains('\x00')) return false;
     // Reject paths that are just a filename with no directory component.
-    if (!path.contains('/') && !path.contains('\\')) return false;
-    // Reject path traversal (e.g. /foo/../../../etc/passwd) but allow
-    // directory names containing ".." (e.g. /foo/The..Theory/book.epub).
-    if (_traversalPattern.hasMatch(path)) return false;
+    if (!filePath.contains('/') && !filePath.contains('\\')) return false;
+    // Reject traversal: any segment that is exactly ".." (e.g. /foo/../../etc/passwd).
+    // Names containing ".." as part of a larger segment (e.g. /foo/The..Theory/book.epub) are fine.
+    if (p.split(filePath).contains('..')) return false;
     return true;
   }
-
-  // Matches ".." not surrounded by word chars or slashes, so
-  // "/foo/../../../etc/passwd" matches but "/foo/The..Theory/book.epub" does not.
-  static final _traversalPattern = RegExp(r'(?<![/\w])\.\.(?![/\w])');
 }

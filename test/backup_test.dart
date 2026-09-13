@@ -153,5 +153,64 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('import rejects books with path traversal in their paths', () async {
+      final beforeCount = service.books.length;
+      final crafted = {
+        'format': 'burrow-backup',
+        'version': 2,
+        'books': [
+          {
+            'id': 'evil1',
+            'title': 'Traversal',
+            'author': '',
+            'path': '/foo/../../etc/passwd',
+            'format': 'pdf',
+            'addedAt': 1000,
+          },
+          {
+            'id': 'evil2',
+            'title': 'Dots',
+            'author': '',
+            'path': '../relative/book.epub',
+            'format': 'epub',
+            'addedAt': 1000,
+          },
+        ],
+      };
+      final f = File('${tempDir.path}/traversal.json')
+        ..writeAsStringSync(jsonEncode(crafted));
+
+      final count = await service.importLibrary(f.path);
+      expect(count, 0);
+      expect(service.books.length, beforeCount);
+    });
+
+    test('import accepts paths with ".." inside a directory name', () async {
+      final beforeCount = service.books.length;
+      final crafted = {
+        'format': 'burrow-backup',
+        'version': 2,
+        'books': [
+          {
+            'id': 'good1',
+            'title': 'The..Theory',
+            'author': '',
+            'path': '/sdcard/books/The..Theory/book.epub',
+            'format': 'epub',
+            'addedAt': 1000,
+          },
+        ],
+      };
+      final f = File('${tempDir.path}/good-traversal.json')
+        ..writeAsStringSync(jsonEncode(crafted));
+
+      final count = await service.importLibrary(f.path);
+      expect(count, 1);
+      expect(service.books.length, beforeCount + 1);
+      final imported =
+          service.books.firstWhere((b) => b.id == 'good1');
+      expect(imported.path, '/sdcard/books/The..Theory/book.epub');
+    });
   });
 }
