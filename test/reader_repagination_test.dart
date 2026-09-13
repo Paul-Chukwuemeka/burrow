@@ -435,6 +435,36 @@ void main() {
       expect(interleaved, _pageCount(tester));
     });
 
+    testWidgets(
+        'stale applyReflow callback does not install layout under wrong style',
+        (tester) async {
+      // Open reader at fontSize 20, trigger a reflow, then supersede it with a
+      // different font size before the deferred apply callback can fire.
+      // Without a generation guard the stale callback would install the first
+      // pass's pages (laid out at size 20) while tagging them with the second
+      // pass's style, causing a mismatch between text layout and metadata.
+      await openReader(tester);
+      await _applySettings(tester, () => library.settings.fontSize = 20);
+      await tester.pump();
+      // Let one reflow frame start but not finish.
+      await tester.pump();
+      // Supersede immediately.
+      await _applySettings(tester, () => library.settings.fontSize = 28);
+      await _settlePagination(tester);
+
+      // A fresh reader at 28 should produce the same page count.
+      final refCount = _pageCount(tester);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      library.settings.fontSize = 28;
+      await openReader(tester);
+      await _settlePagination(tester);
+
+      expect(_pageCount(tester), refCount,
+          reason:
+              'a stale apply should not have corrupted the interleaved layout');
+    });
+
     testWidgets('navigating during a layout pass is not undone', (
       tester,
     ) async {
