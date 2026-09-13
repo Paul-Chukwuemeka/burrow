@@ -671,6 +671,58 @@ void main() {
       }
     });
 
+    testWidgets('selecting a format filter hides other formats', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 915);
+      addTearDown(tester.view.reset);
+      final service = LibraryService()
+        ..debugAddAll([
+          Book(
+            id: 'epub1',
+            title: 'EPUB Book',
+            author: '',
+            path: '/tmp/e.epub',
+            format: BookFormat.epub,
+            addedAt: 1,
+          ),
+          Book(
+            id: 'pdf1',
+            title: 'PDF Book',
+            author: '',
+            path: '/tmp/p.pdf',
+            format: BookFormat.pdf,
+            addedAt: 2,
+          ),
+        ]);
+      await tester.pumpWidget(
+        MaterialApp(home: LibraryScreen(library: service)),
+      );
+      await tester.pumpAndSettle();
+
+      // Both books visible.
+      expect(find.text('EPUB Book'), findsAtLeastNWidgets(1));
+      expect(find.text('PDF Book'), findsAtLeastNWidgets(1));
+
+      // Open filter sheet and select PDF.
+      await tester.tap(find.byIcon(Icons.tune_rounded));
+      await tester.pumpAndSettle();
+      // Scope to the filter sheet to avoid hitting the "PDF" badge on the tile.
+      final sheet = find.byType(BottomSheet);
+      await tester.tap(
+        find.descendant(of: sheet, matching: find.text('PDF')),
+      );
+      await tester.pumpAndSettle();
+
+      // Dismiss the sheet.
+      Navigator.of(tester.element(sheet)).pop();
+      await tester.pumpAndSettle();
+
+      // Only the PDF book should remain visible.
+      expect(find.text('EPUB Book'), findsNothing);
+    });
+
     testWidgets('tiles announce title, author and one progress convention', (
       tester,
     ) async {

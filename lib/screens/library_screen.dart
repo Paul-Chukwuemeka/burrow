@@ -156,7 +156,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         }),
         onGenreChanged: (g) => setState(() => _genreFilter = g),
         onSeriesChanged: (s) => setState(() => _seriesFilter = s),
-        onFormatsChanged: (f) => setState(() => _formatFilters = f),
+        onFormatsChanged: (f) => setState(() => _formatFilters = Set.of(f)),
         onClearAll: () => setState(() {
           _statusFilter = _ReadingStatus.all;
           _genreFilter = null;
