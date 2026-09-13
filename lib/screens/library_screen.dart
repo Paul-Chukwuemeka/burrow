@@ -1549,118 +1549,130 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final scheme = Theme.of(context).colorScheme;
     final q = _query.trim().toLowerCase();
     final searchResults = q.isEmpty
-        ? widget.library.books
+        ? <Book>[]
         : widget.library.books.where((b) {
             return b.displayTitle.toLowerCase().contains(q) ||
                 b.author.toLowerCase().contains(q);
-          }).toList();
+          }).take(10).toList();
 
-    return Positioned(
-      left: 0,
-      right: 0,
-      top: 0,
-      bottom: 0,
-      child: Column(
-        children: [
-          Material(
-            color: scheme.surface,
-            elevation: 2,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      onPressed: () => setState(() {
-                        _searchOpen = false;
-                        _query = '';
-                        _searchController.clear();
-                      }),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        autofocus: true,
-                        onChanged: (v) => setState(() => _query = v),
-                        style: Theme.of(context).textTheme.bodyLarge,
-                        decoration: InputDecoration(
-                          hintText: 'Search your burrow',
-                          suffixIcon: _query.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.close_rounded, size: 20),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _query = '');
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: scheme.surfaceContainerHighest,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: Burrow.r(Burrow.shapeLg),
-                            borderSide: BorderSide(color: scheme.primary, width: 2),
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _searchOpen = false;
+          _query = '';
+          _searchController.clear();
+        }),
+        child: ColoredBox(
+          color: scheme.scrim.withValues(alpha: 0.4),
+          child: GestureDetector(
+            onTap: () {},
+            child: Column(
+              children: [
+                Material(
+                  color: scheme.surface,
+                  elevation: 2,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            onPressed: () => setState(() {
+                              _searchOpen = false;
+                              _query = '';
+                              _searchController.clear();
+                            }),
                           ),
-                        ),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              autofocus: true,
+                              onChanged: (v) => setState(() => _query = v),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                              decoration: InputDecoration(
+                                hintText: 'Search your burrow',
+                                suffixIcon: _query.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.close_rounded, size: 20),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() => _query = '');
+                                        },
+                                      )
+                                    : null,
+                                filled: true,
+                                fillColor: scheme.surfaceContainerHighest,
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: Burrow.r(Burrow.shapeLg),
+                                  borderSide: BorderSide(color: scheme.primary, width: 2),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: ColoredBox(
+                    color: scheme.surface,
+                    child: searchResults.isEmpty
+                        ? Center(
+                            child: Text(
+                              q.isEmpty ? 'Type to search' : 'No results found',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 16,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemCount: searchResults.length,
+                            itemBuilder: (context, i) {
+                              final book = searchResults[i];
+                              return ListTile(
+                                leading: SizedBox(
+                                  width: 36,
+                                  height: 54,
+                                  child: BookCover(book: book, borderRadius: 4, spine: false),
+                                ),
+                                title: Text(
+                                  book.displayTitle,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: book.author.isEmpty
+                                    ? null
+                                    : Text(
+                                        book.author,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                onTap: () {
+                                  setState(() {
+                                    _searchOpen = false;
+                                    _query = '';
+                                    _searchController.clear();
+                                  });
+                                  _openBookInfo(book);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
-          Expanded(
-            child: searchResults.isEmpty
-                ? Center(
-                    child: Text(
-                      'No results found',
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 16,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: searchResults.length,
-                    itemBuilder: (context, i) {
-                      final book = searchResults[i];
-                      return ListTile(
-                        leading: SizedBox(
-                          width: 36,
-                          height: 54,
-                          child: BookCover(book: book, borderRadius: 4, spine: false),
-                        ),
-                        title: Text(
-                          book.displayTitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: book.author.isEmpty
-                            ? null
-                            : Text(
-                                book.author,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                        onTap: () {
-                          setState(() {
-                            _searchOpen = false;
-                            _query = '';
-                            _searchController.clear();
-                          });
-                          _openBookInfo(book);
-                        },
-                      );
-                    },
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }
