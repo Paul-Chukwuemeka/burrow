@@ -135,6 +135,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: false,
       builder: (context) => FilterSheet(
         statusFilter: _statusFilter == _ReadingStatus.all
             ? ReadingStatus.all
@@ -1574,7 +1575,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: SafeArea(
                     bottom: false,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                       child: Row(
                         children: [
                           IconButton(
