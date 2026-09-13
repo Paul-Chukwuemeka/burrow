@@ -46,6 +46,7 @@ class LibraryService extends ChangeNotifier {
   static const _layoutKey = 'burrow.library.layout.v1';
   static const _legacyLibraryKey = 'burrow.library.v1';
   static const _onboardingKey = 'burrow.onboarding.complete.v1';
+  static const _formatsKey = 'burrow.selectedFormats.v1';
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
@@ -55,16 +56,21 @@ class LibraryService extends ChangeNotifier {
   ReaderSettings settings = ReaderSettings();
   String libraryLayout = 'grid';
 
+  /// File extensions the user chose during onboarding. Persisted so that
+  /// post-onboarding rescan / refresh uses the same selection.
+  Set<String> selectedFormats = const {'.epub', '.txt', '.pdf', '.cbz', '.cbr'};
+
   void _invalidateSortCache() => _sortedCache = null;
 
   // Background metadata extraction queue.
   final Queue<String> _metadataQueue = Queue<String>();
   bool _metadataWorkerRunning = false;
   bool _disposed = false;
-  
+
   /// Stream controller for metadata extraction status events.
-  final _metadataStatusController = StreamController<MetadataStatus>.broadcast();
-  
+  final _metadataStatusController =
+      StreamController<MetadataStatus>.broadcast();
+
   /// Stream of metadata extraction status events.
   Stream<MetadataStatus> get metadataStatus => _metadataStatusController.stream;
 
@@ -89,7 +95,8 @@ class LibraryService extends ChangeNotifier {
   /// Starts a background scan that imports books into the library.
   /// The scan runs independently of any screen; books appear as they are
   /// found because [importFile] calls [notifyListeners].
-  void startBackgroundScan(Future<List<String>> scanFuture, {
+  void startBackgroundScan(
+    Future<List<String>> scanFuture, {
     Set<String> extensions = const {},
   }) {
     if (_activeScan != null) return; // already scanning
@@ -223,8 +230,9 @@ class LibraryService extends ChangeNotifier {
     final settingsRaw = prefs.getString(_settingsKey);
     if (settingsRaw != null) {
       try {
-        settings =
-            ReaderSettings.fromJson(jsonDecode(settingsRaw) as Map<String, dynamic>);
+        settings = ReaderSettings.fromJson(
+          jsonDecode(settingsRaw) as Map<String, dynamic>,
+        );
       } catch (e) {
         debugPrint('Failed to load settings: $e');
       }
@@ -235,6 +243,12 @@ class LibraryService extends ChangeNotifier {
 
     // First-run onboarding state.
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;
+
+    // Persisted file-format selection from onboarding.
+    final formatsRaw = prefs.getStringList(_formatsKey);
+    if (formatsRaw != null && formatsRaw.isNotEmpty) {
+      selectedFormats = Set<String>.from(formatsRaw);
+    }
 
     // Clean up orphaned cover files (e.g. from interrupted imports).
     await _cleanupOrphanedCovers();
@@ -256,6 +270,15 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Persists the file-format extensions chosen during onboarding so that
+  /// post-onboarding rescans and refreshes use the same selection.
+  Future<void> saveSelectedFormats(Set<String> formats) async {
+    selectedFormats = Set.unmodifiable(formats);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_formatsKey, formats.toList());
+    notifyListeners();
+  }
+
   Future<void> saveLibraryLayout(String layout) async {
     libraryLayout = layout;
     final prefs = await SharedPreferences.getInstance();
@@ -274,18 +297,23 @@ class LibraryService extends ChangeNotifier {
   Future<String> exportLibrary() async {
     final dir = await getApplicationDocumentsDirectory();
     final now = DateTime.now();
-    final stamp = '${now.year.toString().padLeft(4, '0')}'
+    final stamp =
+        '${now.year.toString().padLeft(4, '0')}'
         '${now.month.toString().padLeft(2, '0')}'
         '${now.day.toString().padLeft(2, '0')}'
         '-${now.hour.toString().padLeft(2, '0')}'
         '${now.minute.toString().padLeft(2, '0')}';
     final file = File(p.join(dir.path, 'burrow-backup-$stamp.json'));
 
-    final bookmarks = _db == null ? <db.Bookmark>[] : await _db!.getAllBookmarks();
-    final sessions =
-        _db == null ? <db.ReadingSession>[] : await _db!.getAllSessions();
-    final collectionBooks =
-        _db == null ? <db.CollectionBook>[] : await _db!.getAllCollectionBooks();
+    final bookmarks = _db == null
+        ? <db.Bookmark>[]
+        : await _db!.getAllBookmarks();
+    final sessions = _db == null
+        ? <db.ReadingSession>[]
+        : await _db!.getAllSessions();
+    final collectionBooks = _db == null
+        ? <db.CollectionBook>[]
+        : await _db!.getAllCollectionBooks();
 
     final payload = {
       'format': 'burrow-backup',
@@ -295,7 +323,9 @@ class LibraryService extends ChangeNotifier {
       'bookmarks': [for (final b in bookmarks) db.bookmarkToJson(b)],
       'sessions': [for (final s in sessions) db.sessionToJson(s)],
       'collections': [for (final c in _collections) db.collectionToJson(c)],
-      'collectionBooks': [for (final cb in collectionBooks) db.collectionBookToJson(cb)],
+      'collectionBooks': [
+        for (final cb in collectionBooks) db.collectionBookToJson(cb),
+      ],
     };
     await file.writeAsString(jsonEncode(payload));
     return file.path;
@@ -367,8 +397,7 @@ class LibraryService extends ChangeNotifier {
             }
           }
           for (final m in sessionsByBook[book.id] ?? const []) {
-            if (!await _db!.sessionExists(
-                book.id, m['startedAt'] as int)) {
+            if (!await _db!.sessionExists(book.id, m['startedAt'] as int)) {
               await _db!.insertSession(db.sessionFromJson(m));
             }
           }
@@ -441,7 +470,7 @@ class LibraryService extends ChangeNotifier {
     try {
       final format = formatFromExtension(path);
       final title = _titleFromFilename(path);
-      
+
       final book = Book(
         id: _newId(),
         title: title,
@@ -451,7 +480,7 @@ class LibraryService extends ChangeNotifier {
         addedAt: DateTime.now().millisecondsSinceEpoch,
         metadataComplete: false,
       );
-      
+
       _books.add(book);
       try {
         if (_db != null) await _db!.insertBook(db.bookToCompanion(book));
@@ -489,15 +518,17 @@ class LibraryService extends ChangeNotifier {
     });
     final totalToProcess = _metadataQueue.length;
     var completed = 0;
-    
+
     if (totalToProcess > 0) {
-      _metadataStatusController.add(MetadataStatus(
-        type: MetadataStatusType.started,
-        total: totalToProcess,
-        completed: 0,
-      ));
+      _metadataStatusController.add(
+        MetadataStatus(
+          type: MetadataStatusType.started,
+          total: totalToProcess,
+          completed: 0,
+        ),
+      );
     }
-    
+
     try {
       while (_metadataQueue.isNotEmpty && !_disposed) {
         final bookId = _metadataQueue.removeFirst();
@@ -505,12 +536,14 @@ class LibraryService extends ChangeNotifier {
         if (book == null) continue;
 
         try {
-          _metadataStatusController.add(MetadataStatus(
-            type: MetadataStatusType.progress,
-            total: totalToProcess,
-            completed: completed,
-            bookTitle: book.title,
-          ));
+          _metadataStatusController.add(
+            MetadataStatus(
+              type: MetadataStatusType.progress,
+              total: totalToProcess,
+              completed: completed,
+              bookTitle: book.title,
+            ),
+          );
         } catch (_) {
           break;
         }
@@ -577,7 +610,7 @@ class LibraryService extends ChangeNotifier {
         } catch (e) {
           debugPrint('Metadata queue processing failed for ${book.title}: $e');
         }
-        
+
         completed++;
         // Throttle UI rebuilds: notify at most every 5 books and always
         // on the final one to avoid 100+ full rebuilds during batch imports.
@@ -593,11 +626,13 @@ class LibraryService extends ChangeNotifier {
 
     if (totalToProcess > 0) {
       try {
-        _metadataStatusController.add(MetadataStatus(
-          type: MetadataStatusType.completed,
-          total: totalToProcess,
-          completed: totalToProcess,
-        ));
+        _metadataStatusController.add(
+          MetadataStatus(
+            type: MetadataStatusType.completed,
+            total: totalToProcess,
+            completed: totalToProcess,
+          ),
+        );
       } catch (_) {}
     }
   }
@@ -655,12 +690,17 @@ class LibraryService extends ChangeNotifier {
     }
     if (_db != null) {
       await _db!.transaction(() async {
+        await _db!.customStatement('DELETE FROM bookmarks WHERE bookId = ?', [
+          id,
+        ]);
         await _db!.customStatement(
-          'DELETE FROM bookmarks WHERE bookId = ?', [id]);
+          'DELETE FROM reading_sessions WHERE bookId = ?',
+          [id],
+        );
         await _db!.customStatement(
-          'DELETE FROM reading_sessions WHERE bookId = ?', [id]);
-        await _db!.customStatement(
-          'DELETE FROM collection_books WHERE bookId = ?', [id]);
+          'DELETE FROM collection_books WHERE bookId = ?',
+          [id],
+        );
         await _db!.deleteBookById(id);
       });
     }
@@ -874,10 +914,7 @@ class LibraryService extends ChangeNotifier {
     final existing = _collections.where((c) => c.id == id).firstOrNull;
     if (existing == null) return;
     await _db!.updateCollection(
-      db.CollectionsCompanion(
-        id: Value(id),
-        name: Value(name),
-      ),
+      db.CollectionsCompanion(id: Value(id), name: Value(name)),
     );
     final updated = await _db!.getAllCollections();
     _collections
@@ -893,7 +930,9 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<void> removeBookFromCollection(
-      String collectionId, String bookId) async {
+    String collectionId,
+    String bookId,
+  ) async {
     if (_db == null) return;
     await _db!.removeBookFromCollection(collectionId, bookId);
     notifyListeners();
@@ -922,7 +961,9 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<void> reorderCollectionBook(
-      String collectionId, List<String> bookIds) async {
+    String collectionId,
+    List<String> bookIds,
+  ) async {
     if (_db == null) return;
     final links = await _db!.getBooksForCollection(collectionId);
     for (var i = 0; i < bookIds.length; i++) {

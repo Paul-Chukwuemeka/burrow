@@ -91,6 +91,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ? DateTime.now().difference(_flowStartedAt!).inMilliseconds
         : 0;
     _analytics.onboardingCompleted(totalDurationMs: elapsed);
+    // Persist the chosen formats so post-onboarding scans honour them.
+    if (_ctrl.selectedFormats.isNotEmpty) {
+      _lib.saveSelectedFormats(_ctrl.selectedFormats);
+    }
     widget.onDone(context);
   }
 
@@ -134,13 +138,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   String _pageName(int i) => switch (i) {
-        0 => 'welcome',
-        1 => 'permission',
-        2 => 'format',
-        3 => 'theme',
-        4 => 'import',
-        _ => 'unknown',
-      };
+    0 => 'welcome',
+    1 => 'permission',
+    2 => 'format',
+    3 => 'theme',
+    4 => 'import',
+    _ => 'unknown',
+  };
 
   Widget _topBar(BuildContext context) {
     return Padding(
@@ -219,35 +223,36 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   String _title(int i) => switch (i) {
-        0 => 'burrow',
-        1 => 'let burrow find your books',
-        2 => 'what formats do you read?',
-        3 => 'make it yours',
-        4 => switch (_ctrl.scanStatus) {
-            ScanStatus.running => 'settling in…',
-            ScanStatus.done => _ctrl.scanPaths.isEmpty
-                ? 'no new books found'
-                : 'found ${_ctrl.scanPaths.length} books',
-            ScanStatus.error => 'something went wrong',
-            ScanStatus.none => 'your den is waiting',
-          },
-        _ => '',
-      };
+    0 => 'burrow',
+    1 => 'let burrow find your books',
+    2 => 'what formats do you read?',
+    3 => 'make it yours',
+    4 => switch (_ctrl.scanStatus) {
+      ScanStatus.running => 'settling in…',
+      ScanStatus.done =>
+        _ctrl.scanPaths.isEmpty
+            ? 'no new books found'
+            : 'found ${_ctrl.scanPaths.length} books',
+      ScanStatus.error => 'something went wrong',
+      ScanStatus.none => 'your den is waiting',
+    },
+    _ => '',
+  };
 
   String _subtitle(int i) => switch (i) {
-        0 => 'a cozy den for all your books.',
-        1 => 'we only look for your books — nothing leaves your device.',
-        2 => 'pick the types you want to scan for.',
-        3 => 'what feels like reading?',
-        4 => switch (_ctrl.scanStatus) {
-            ScanStatus.running => 'scanning your device…',
-            ScanStatus.done =>
-              '${_ctrl.added} added${_ctrl.failed > 0 ? ' · ${_ctrl.failed} unreadable' : ''}.',
-            ScanStatus.error => 'you can still add books one at a time.',
-            ScanStatus.none => 'add one book and make it yours.',
-          },
-        _ => '',
-      };
+    0 => 'a cozy den for all your books.',
+    1 => 'we only look for your books — nothing leaves your device.',
+    2 => 'pick the types you want to scan for.',
+    3 => 'what feels like reading?',
+    4 => switch (_ctrl.scanStatus) {
+      ScanStatus.running => 'scanning your device…',
+      ScanStatus.done =>
+        '${_ctrl.added} added${_ctrl.failed > 0 ? ' · ${_ctrl.failed} unreadable' : ''}.',
+      ScanStatus.error => 'you can still add books one at a time.',
+      ScanStatus.none => 'add one book and make it yours.',
+    },
+    _ => '',
+  };
 
   Widget _headline(BuildContext context, int i) {
     final scheme = Theme.of(context).colorScheme;
@@ -272,10 +277,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _subtitle(i),
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: scheme.onSurfaceVariant,
-            fontSize: 15,
-            height: 1.45,
-          ),
+        color: scheme.onSurfaceVariant,
+        fontSize: 15,
+        height: 1.45,
+      ),
     );
   }
 
@@ -289,10 +294,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _preferences(BuildContext context) {
-    return ThemePicker(
-      library: _lib,
-      onChanged: () => setState(() {}),
-    );
+    return ThemePicker(library: _lib, onChanged: () => setState(() {}));
   }
 
   Widget _importBody(BuildContext context) {
@@ -341,100 +343,98 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   List<Widget> _ctas(BuildContext context) {
     return switch (_ctrl.currentPageIndex) {
       0 => [
-          buildCta(context, 'Tuck in', () {
-            _ctrl.nextPage();
-            _page.animateToPage(
-              _ctrl.currentPageIndex,
-              duration: const Duration(milliseconds: 520),
-              curve: Easing.emphasizedDecelerate,
-            );
-          }),
-        ],
+        buildCta(context, 'Tuck in', () {
+          _ctrl.nextPage();
+          _page.animateToPage(
+            _ctrl.currentPageIndex,
+            duration: const Duration(milliseconds: 520),
+            curve: Easing.emphasizedDecelerate,
+          );
+        }),
+      ],
       1 => [
-          _ctrl.permissionGranted
-              ? buildCta(context, 'Continue', () {
-                  _ctrl.nextPage();
-                  _page.animateToPage(
-                    _ctrl.currentPageIndex,
-                    duration: const Duration(milliseconds: 520),
-                    curve: Easing.emphasizedDecelerate,
-                  );
-                })
-              : buildCta(context, 'Find my books', () {
-                  _analytics.permissionGranted();
-                  _ctrl.grantAndProceed();
-                }),
-          const SizedBox(height: 10),
+        _ctrl.permissionGranted
+            ? buildCta(context, 'Continue', () {
+                _ctrl.nextPage();
+                _page.animateToPage(
+                  _ctrl.currentPageIndex,
+                  duration: const Duration(milliseconds: 520),
+                  curve: Easing.emphasizedDecelerate,
+                );
+              })
+            : buildCta(context, 'Find my books', () {
+                _analytics.permissionGranted();
+                _ctrl.grantAndProceed();
+              }),
+        const SizedBox(height: 10),
+        buildCta(
+          context,
+          'Choose a folder instead',
+          _ctrl.startFolderScan,
+          variant: CtaVariant.outlined,
+        ),
+        const SizedBox(height: 6),
+        buildCta(context, 'Skip for now', () {
+          _analytics.skippedFrom(1);
+          _ctrl.skipToEnd();
+          _page.animateToPage(
+            _ctrl.currentPageIndex,
+            duration: const Duration(milliseconds: 520),
+            curve: Easing.emphasizedDecelerate,
+          );
+        }, variant: CtaVariant.text),
+      ],
+      2 => [
+        _ctrl.selectedFormats.isEmpty
+            ? buildCta(context, 'Skip for now', () {
+                _ctrl.nextPage();
+                _page.animateToPage(
+                  _ctrl.currentPageIndex,
+                  duration: const Duration(milliseconds: 520),
+                  curve: Easing.emphasizedDecelerate,
+                );
+              }, variant: CtaVariant.text)
+            : buildCta(context, 'Next', () {
+                _ctrl.nextPage();
+                _page.animateToPage(
+                  _ctrl.currentPageIndex,
+                  duration: const Duration(milliseconds: 520),
+                  curve: Easing.emphasizedDecelerate,
+                );
+              }),
+      ],
+      3 => [
+        buildCta(context, 'Next', () {
+          _ctrl.nextPage();
+          _page.animateToPage(
+            _ctrl.currentPageIndex,
+            duration: const Duration(milliseconds: 520),
+            curve: Easing.emphasizedDecelerate,
+          );
+        }),
+      ],
+      4 => switch (_ctrl.scanStatus) {
+        ScanStatus.running => [
+          buildCta(context, 'Browse library', () {
+            _ctrl.handOffScanToLibrary();
+            _finish();
+          }),
+          const SizedBox(height: 6),
+          buildCta(context, 'Scanning…', null, variant: CtaVariant.text),
+        ],
+        ScanStatus.done ||
+        ScanStatus.error => [buildCta(context, 'Open your burrow', _finish)],
+        ScanStatus.none => [
+          buildCta(context, 'Add your first book', _ctrl.pickAndImport),
+          const SizedBox(height: 6),
           buildCta(
             context,
-            'Choose a folder instead',
-            _ctrl.startFolderScan,
-            variant: CtaVariant.outlined,
+            'Open your burrow',
+            _finish,
+            variant: CtaVariant.text,
           ),
-          const SizedBox(height: 6),
-          buildCta(context, 'Skip for now', () {
-            _analytics.skippedFrom(1);
-            _ctrl.skipToEnd();
-            _page.animateToPage(
-              _ctrl.currentPageIndex,
-              duration: const Duration(milliseconds: 520),
-              curve: Easing.emphasizedDecelerate,
-            );
-          }, variant: CtaVariant.text),
         ],
-      2 => [
-          _ctrl.selectedFormats.isEmpty
-              ? buildCta(context, 'Skip for now', () {
-                  _ctrl.nextPage();
-                  _page.animateToPage(
-                    _ctrl.currentPageIndex,
-                    duration: const Duration(milliseconds: 520),
-                    curve: Easing.emphasizedDecelerate,
-                  );
-                }, variant: CtaVariant.text)
-              : buildCta(context, 'Next', () {
-                  _ctrl.nextPage();
-                  _page.animateToPage(
-                    _ctrl.currentPageIndex,
-                    duration: const Duration(milliseconds: 520),
-                    curve: Easing.emphasizedDecelerate,
-                  );
-                }),
-        ],
-      3 => [
-          buildCta(context, 'Next', () {
-            _ctrl.nextPage();
-            _page.animateToPage(
-              _ctrl.currentPageIndex,
-              duration: const Duration(milliseconds: 520),
-              curve: Easing.emphasizedDecelerate,
-            );
-          }),
-        ],
-      4 => switch (_ctrl.scanStatus) {
-          ScanStatus.running => [
-              buildCta(context, 'Browse library', () {
-                _ctrl.handOffScanToLibrary();
-                _finish();
-              }),
-              const SizedBox(height: 6),
-              buildCta(
-                context,
-                'Scanning…',
-                null,
-                variant: CtaVariant.text,
-              ),
-            ],
-          ScanStatus.done ||
-          ScanStatus.error =>
-            [buildCta(context, 'Open your burrow', _finish)],
-          ScanStatus.none => [
-              buildCta(context, 'Add your first book', _ctrl.pickAndImport),
-              const SizedBox(height: 6),
-              buildCta(context, 'Open your burrow', _finish,
-                  variant: CtaVariant.text),
-            ],
-        },
+      },
       _ => [buildCta(context, 'Open your burrow', _finish)],
     };
   }

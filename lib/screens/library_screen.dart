@@ -68,7 +68,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
   StreamSubscription<MetadataStatus>? _metadataSubscription;
 
-  static const _allowedExtensions = ['epub', 'txt', 'pdf', 'cbz', 'cbr'];
+  List<String> get _allowedExtensions => widget.library.selectedFormats
+      .map((e) => e.replaceFirst('.', ''))
+      .toList();
 
   @override
   void initState() {
@@ -119,10 +121,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   String get _sortLabel => switch (_sort) {
-        SortMode.recent => 'Recent',
-        SortMode.added => 'Added',
-        SortMode.title => 'A–Z',
-      };
+    SortMode.recent => 'Recent',
+    SortMode.added => 'Added',
+    SortMode.title => 'A–Z',
+  };
 
   int get _activeFilterCount {
     var count = 0;
@@ -140,10 +142,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         statusFilter: _statusFilter == _ReadingStatus.all
             ? ReadingStatus.all
             : _statusFilter == _ReadingStatus.reading
-                ? ReadingStatus.reading
-                : _statusFilter == _ReadingStatus.finished
-                    ? ReadingStatus.finished
-                    : ReadingStatus.new_,
+            ? ReadingStatus.reading
+            : _statusFilter == _ReadingStatus.finished
+            ? ReadingStatus.finished
+            : ReadingStatus.new_,
         genreFilter: _genreFilter,
         seriesFilter: _seriesFilter,
         books: widget.library.books,
@@ -167,7 +169,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   List<Book> get _visibleBooks {
-    final key = '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
+    final key =
+        '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
       return _cachedVisibleBooks!;
     }
@@ -191,7 +194,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       }
       if (genreLower != null) {
         if (b.genre == null) return false;
-        if (!b.genre!.split(',').any((g) => g.trim().toLowerCase() == genreLower)) {
+        if (!b.genre!
+            .split(',')
+            .any((g) => g.trim().toLowerCase() == genreLower)) {
           return false;
         }
       }
@@ -213,9 +218,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case SortMode.added:
         books.sort((a, b) => b.addedAt.compareTo(a.addedAt));
       case SortMode.title:
-        books.sort((a, b) => a.displayTitle
-            .toLowerCase()
-            .compareTo(b.displayTitle.toLowerCase()));
+        books.sort(
+          (a, b) => a.displayTitle.toLowerCase().compareTo(
+            b.displayTitle.toLowerCase(),
+          ),
+        );
     }
 
     _cacheKey = key;
@@ -281,7 +288,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _pickFolderAndScan() async {
     final dir = await FilePicker.getDirectoryPath();
     if (dir == null) return;
-    await _runScan(ScanService.scanFolder(dir, knownPaths: _knownPaths()));
+    await _runScan(
+      ScanService.scanFolder(
+        dir,
+        knownPaths: _knownPaths(),
+        extensions: widget.library.selectedFormats,
+      ),
+    );
   }
 
   Future<void> _scanDevice() async {
@@ -290,7 +303,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _snack('Storage permission is required to scan the device');
       return;
     }
-    await _runScan(ScanService.scanDevice(knownPaths: _knownPaths()));
+    await _runScan(
+      ScanService.scanDevice(
+        knownPaths: _knownPaths(),
+        extensions: widget.library.selectedFormats,
+      ),
+    );
   }
 
   Future<void> _onRefresh() async {
@@ -308,15 +326,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
 
-    await _runScan(ScanService.scanFolders(folders, knownPaths: _knownPaths()));
+    await _runScan(
+      ScanService.scanFolders(
+        folders,
+        knownPaths: _knownPaths(),
+        extensions: widget.library.selectedFormats,
+      ),
+    );
   }
 
   Set<String> _knownPaths() => widget.library.books.map((b) => b.path).toSet();
 
   /// Extracts unique parent folders from all known book paths.
-  Set<String> _knownFolders() => widget.library.books
-      .map((b) => File(b.path).parent.path)
-      .toSet();
+  Set<String> _knownFolders() =>
+      widget.library.books.map((b) => File(b.path).parent.path).toSet();
 
   Future<void> _exportLibrary() async {
     try {
@@ -344,9 +367,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final count = await widget.library.importLibrary(path);
       if (!mounted) return;
-      _snack(count > 0
-          ? 'Restored $count book${count == 1 ? '' : 's'} from backup'
-          : 'Backup matches the current library');
+      _snack(
+        count > 0
+            ? 'Restored $count book${count == 1 ? '' : 's'} from backup'
+            : 'Backup matches the current library',
+      );
     } on FormatException catch (e) {
       _snack(e.message);
     } catch (_) {
@@ -390,7 +415,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final msg = paths.isEmpty
           ? 'No new books found'
           : 'Added ${added.length} book${added.length == 1 ? '' : 's'}'
-              '${failed > 0 ? ', $failed unreadable' : ''}';
+                '${failed > 0 ? ', $failed unreadable' : ''}';
       setState(() {
         _activeStatus = StatusType.completed;
         _statusResult = msg;
@@ -434,7 +459,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!mounted) return;
     if (openFirst && added.isNotEmpty) await _openBook(added.first);
     if (paths.length > 1) {
-      final msg = StringBuffer('Added ${added.length} book${added.length == 1 ? '' : 's'}');
+      final msg = StringBuffer(
+        'Added ${added.length} book${added.length == 1 ? '' : 's'}',
+      );
       if (errors.isNotEmpty) {
         msg.write(' (${errors.length} failed)');
       }
@@ -461,77 +488,80 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-              leading: SizedBox(
-                width: 46,
-                height: 69,
-                child: BookCover(book: book, borderRadius: 10, spine: false),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                leading: SizedBox(
+                  width: 46,
+                  height: 69,
+                  child: BookCover(book: book, borderRadius: 10, spine: false),
+                ),
+                title: Text(
+                  book.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: book.author.isEmpty
+                    ? null
+                    : Text(
+                        book.author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
               ),
-              title: Text(
-                book.displayTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+              const SizedBox(height: 4),
+              SheetAction(
+                icon: Icons.menu_book_outlined,
+                label: 'Read now',
+                iconColor: scheme.onSecondaryContainer,
+                iconBg: scheme.secondaryContainer,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openBook(book);
+                },
               ),
-              subtitle: book.author.isEmpty
-                  ? null
-                  : Text(book.author,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-            const SizedBox(height: 4),
-            SheetAction(
-              icon: Icons.menu_book_outlined,
-              label: 'Read now',
-              iconColor: scheme.onSecondaryContainer,
-              iconBg: scheme.secondaryContainer,
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _openBook(book);
-              },
-            ),
-            SheetAction(
-              icon: Icons.edit_outlined,
-              label: 'Edit metadata',
-              iconColor: scheme.onTertiaryContainer,
-              iconBg: scheme.tertiaryContainer,
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showEditMetadataSheet(book);
-              },
-            ),
-            SheetAction(
-              icon: Icons.info_outline_rounded,
-              label: 'Book details',
-              iconColor: scheme.onSurfaceVariant,
-              iconBg: scheme.surfaceContainerHighest,
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showBookDetailsSheet(book);
-              },
-            ),
-            SheetAction(
-              icon: Icons.collections_bookmark_outlined,
-              label: 'Add to collection',
-              iconColor: scheme.onPrimaryContainer,
-              iconBg: scheme.primaryContainer,
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showAddToCollectionSheet(book);
-              },
-            ),
-            SheetAction(
-              icon: Icons.delete_outline_rounded,
-              label: 'Remove from library',
-              iconColor: scheme.onErrorContainer,
-              iconBg: scheme.errorContainer,
-              labelColor: scheme.error,
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showRemoveBookSheet(book);
-              },
-            ),
-          ],
+              SheetAction(
+                icon: Icons.edit_outlined,
+                label: 'Edit metadata',
+                iconColor: scheme.onTertiaryContainer,
+                iconBg: scheme.tertiaryContainer,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showEditMetadataSheet(book);
+                },
+              ),
+              SheetAction(
+                icon: Icons.info_outline_rounded,
+                label: 'Book details',
+                iconColor: scheme.onSurfaceVariant,
+                iconBg: scheme.surfaceContainerHighest,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showBookDetailsSheet(book);
+                },
+              ),
+              SheetAction(
+                icon: Icons.collections_bookmark_outlined,
+                label: 'Add to collection',
+                iconColor: scheme.onPrimaryContainer,
+                iconBg: scheme.primaryContainer,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showAddToCollectionSheet(book);
+                },
+              ),
+              SheetAction(
+                icon: Icons.delete_outline_rounded,
+                label: 'Remove from library',
+                iconColor: scheme.onErrorContainer,
+                iconBg: scheme.errorContainer,
+                labelColor: scheme.error,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showRemoveBookSheet(book);
+                },
+              ),
+            ],
           ),
         ),
       ),
@@ -652,25 +682,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               subtitle: book.author.isEmpty
                   ? null
-                  : Text(book.author,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  : Text(
+                      book.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
             ),
             const Divider(indent: 16, endIndent: 16),
             DetailRow(label: 'Format', value: book.format.name.toUpperCase()),
             DetailRow(label: 'File size', value: fileSize),
-            DetailRow(
-              label: 'Added',
-              value: formatDate(book.addedAt),
-            ),
+            DetailRow(label: 'Added', value: formatDate(book.addedAt)),
             if (book.lastReadAt > 0)
-              DetailRow(
-                label: 'Last read',
-                value: formatDate(book.lastReadAt),
-              ),
-            DetailRow(
-              label: 'Progress',
-              value: book.progressLabel,
-            ),
+              DetailRow(label: 'Last read', value: formatDate(book.lastReadAt)),
+            DetailRow(label: 'Progress', value: book.progressLabel),
             DetailRow(label: 'Path', value: book.path, isFile: true),
             const SizedBox(height: 8),
           ],
@@ -778,19 +802,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 )
               else
-                ...collections.map((c) => CollectionPickerTile(
-                      collection: c,
-                      isInCollection: widget.library.isBookInCollection(c.id, book.id),
-                      onToggle: () async {
-                        final isIn = await widget.library.isBookInCollection(c.id, book.id);
-                        if (isIn) {
-                          await widget.library.removeBookFromCollection(c.id, book.id);
-                        } else {
-                          await widget.library.addBookToCollection(c.id, book.id);
-                        }
-                        setSheetState(() {});
-                      },
-                    )),
+                ...collections.map(
+                  (c) => CollectionPickerTile(
+                    collection: c,
+                    isInCollection: widget.library.isBookInCollection(
+                      c.id,
+                      book.id,
+                    ),
+                    onToggle: () async {
+                      final isIn = await widget.library.isBookInCollection(
+                        c.id,
+                        book.id,
+                      );
+                      if (isIn) {
+                        await widget.library.removeBookFromCollection(
+                          c.id,
+                          book.id,
+                        );
+                      } else {
+                        await widget.library.addBookToCollection(c.id, book.id);
+                      }
+                      setSheetState(() {});
+                    },
+                  ),
+                ),
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -897,11 +932,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final allBooks = widget.library.books;
     final books = _visibleBooks;
     final recent =
-        (_query.isEmpty && _filter == null && _statusFilter == _ReadingStatus.all && _genreFilter == null && _seriesFilter == null)
-            ? widget.library.mostRecent
-            : null;
+        (_query.isEmpty &&
+            _filter == null &&
+            _statusFilter == _ReadingStatus.all &&
+            _genreFilter == null &&
+            _seriesFilter == null)
+        ? widget.library.mostRecent
+        : null;
     final hasLibrary = allBooks.isNotEmpty;
-    final filtered = books.length != allBooks.length || _query.isNotEmpty || _statusFilter != _ReadingStatus.all || _genreFilter != null || _seriesFilter != null;
+    final filtered =
+        books.length != allBooks.length ||
+        _query.isNotEmpty ||
+        _statusFilter != _ReadingStatus.all ||
+        _genreFilter != null ||
+        _seriesFilter != null;
 
     return DefaultTabController(
       length: 3,
@@ -914,43 +958,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
               child: CustomScrollView(
                 slivers: [
                   BurrowHeader(
-                  tab: _tab,
-                  onTabChanged: (tab) => setState(() {
-                    _tab = tab;
-                    _query = '';
-                    _searchController.clear();
-                  }),
-                  onStats: () => StatsScreen.show(
-                    context,
-                    library: widget.library,
+                    tab: _tab,
+                    onTabChanged: (tab) => setState(() {
+                      _tab = tab;
+                      _query = '';
+                      _searchController.clear();
+                    }),
+                    onStats: () =>
+                        StatsScreen.show(context, library: widget.library),
+                    onExport: _exportLibrary,
+                    onImportBackup: _importLibrary,
+                    onSettings: () =>
+                        SettingsScreen.show(context, library: widget.library),
                   ),
-                  onExport: _exportLibrary,
-                  onImportBackup: _importLibrary,
-                  onSettings: () => SettingsScreen.show(
-                    context,
-                    library: widget.library,
-                  ),
-                ),
-                if (hasLibrary && widget.library.isScanning)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                      child: _ScanningBanner(
-                        library: widget.library,
+                  if (hasLibrary && widget.library.isScanning)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                        child: _ScanningBanner(library: widget.library),
                       ),
                     ),
-                  ),
-                if (hasLibrary) ..._tabContent(context, books, recent, filtered),
-                if (!hasLibrary)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _busy || widget.library.isScanning
-                        ? const BusyState()
-                        : EmptyState(
-                            onPickFile: _pickFile,
-                            onScan: _scanDevice,
-                          ),
-                  ),
+                  if (hasLibrary)
+                    ..._tabContent(context, books, recent, filtered),
+                  if (!hasLibrary)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _busy || widget.library.isScanning
+                          ? const BusyState()
+                          : EmptyState(
+                              onPickFile: _pickFile,
+                              onScan: _scanDevice,
+                            ),
+                    ),
                 ],
               ),
             ),
@@ -962,10 +1001,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOut,
                   child: DecoratedBox(
-                    decoration:
-                        BoxDecoration(color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.45)),
-                    child:
-                        GestureDetector(onTap: () => setState(() => _fabOpen = false)),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.scrim.withValues(alpha: 0.45),
+                    ),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _fabOpen = false),
+                    ),
                   ),
                 ),
               ),
@@ -985,7 +1028,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
           ],
         ),
-        floatingActionButton: _tab == LibraryTab.books ? _buildFab(context) : null,
+        floatingActionButton: _tab == LibraryTab.books
+            ? _buildFab(context)
+            : null,
       ),
     );
   }
@@ -1035,10 +1080,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       if (books.isEmpty)
-        const SliverFillRemaining(
-          hasScrollBody: false,
-          child: NoResults(),
-        )
+        const SliverFillRemaining(hasScrollBody: false, child: NoResults())
       else ...[
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
@@ -1049,11 +1091,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: Semantics(
                     header: true,
                     child: Text(
-                      filtered ? '${books.length} found' : 'All books · ${books.length}',
+                      filtered
+                          ? '${books.length} found'
+                          : 'All books · ${books.length}',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                          ),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                      ),
                     ),
                   ),
                 ),
@@ -1061,8 +1105,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   label: _sortLabel,
                   icon: Icons.sort_rounded,
                   onTap: () => setState(() {
-                    _sort =
-                        SortMode.values[(_sort.index + 1) % SortMode.values.length];
+                    _sort = SortMode
+                        .values[(_sort.index + 1) % SortMode.values.length];
                   }),
                 ),
                 const SizedBox(width: 8),
@@ -1092,7 +1136,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
               : _bookList(books),
         ),
       ],
-      const SliverPadding(padding: EdgeInsets.only(bottom: Burrow.fabClearance)),
+      const SliverPadding(
+        padding: EdgeInsets.only(bottom: Burrow.fabClearance),
+      ),
     ];
   }
 
@@ -1117,9 +1163,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: Text(
             'Authors · ${authors.length}',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+            ),
           ),
         ),
       ),
@@ -1138,7 +1184,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           },
         ),
       ),
-      const SliverPadding(padding: EdgeInsets.only(bottom: Burrow.fabClearance)),
+      const SliverPadding(
+        padding: EdgeInsets.only(bottom: Burrow.fabClearance),
+      ),
     ];
   }
 
@@ -1154,9 +1202,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: Text(
                   'Collections',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
               IconButton(
@@ -1175,7 +1223,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             SmartGroupTile(
               icon: Icons.auto_stories_outlined,
               label: 'Reading',
-              count: widget.library.books.where((b) => b.isStarted && !b.isFinished).length,
+              count: widget.library.books
+                  .where((b) => b.isStarted && !b.isFinished)
+                  .length,
               onTap: () => _openSmartGroup('Reading'),
             ),
             SmartGroupTile(
@@ -1223,17 +1273,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
             },
           ),
         ),
-      const SliverPadding(padding: EdgeInsets.only(bottom: Burrow.fabClearance)),
+      const SliverPadding(
+        padding: EdgeInsets.only(bottom: Burrow.fabClearance),
+      ),
     ];
   }
 
   Future<void> _openAuthorScreen(String author) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AuthorScreen(
-          author: author,
-          library: widget.library,
-        ),
+        builder: (_) => AuthorScreen(author: author, library: widget.library),
       ),
     );
     if (mounted) setState(() {});
@@ -1242,10 +1291,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _openCollectionScreen(db.Collection collection) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => CollectionScreen(
-          collection: collection,
-          library: widget.library,
-        ),
+        builder: (_) =>
+            CollectionScreen(collection: collection, library: widget.library),
       ),
     );
     if (mounted) setState(() {});
@@ -1255,7 +1302,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     List<Book> books;
     switch (group) {
       case 'Reading':
-        books = widget.library.books.where((b) => b.isStarted && !b.isFinished).toList();
+        books = widget.library.books
+            .where((b) => b.isStarted && !b.isFinished)
+            .toList();
       case 'Finished':
         books = widget.library.books.where((b) => b.isFinished).toList();
       case 'New':
@@ -1451,7 +1500,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     onPressed: () async {
                       final name = controller.text.trim();
                       if (name.isNotEmpty) {
-                        await widget.library.renameCollection(collection.id, name);
+                        await widget.library.renameCollection(
+                          collection.id,
+                          name,
+                        );
                         if (sheetContext.mounted) Navigator.pop(sheetContext);
                       }
                     },
@@ -1549,9 +1601,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           tooltip: 'Add book',
           backgroundColor: _fabOpen ? scheme.secondaryContainer : null,
           foregroundColor: _fabOpen ? scheme.onSecondaryContainer : null,
-          shape: RoundedRectangleBorder(
-            borderRadius: Burrow.r(Burrow.shapeLg),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: Burrow.r(Burrow.shapeLg)),
           child: AnimatedRotation(
             turns: _fabOpen ? 0.125 : 0,
             duration: const Duration(milliseconds: 260),
