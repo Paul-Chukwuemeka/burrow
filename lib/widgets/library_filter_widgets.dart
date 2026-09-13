@@ -86,10 +86,7 @@ class FilterRow extends StatelessWidget {
           const SizedBox(width: 8),
           chip('PDF', BookFormat.pdf),
           const SizedBox(width: 8),
-          FilterIconButton(
-            activeCount: activeFilterCount,
-            onTap: onFilterTap,
-          ),
+          FilterIconButton(activeCount: activeFilterCount, onTap: onFilterTap),
         ],
       ),
     );
@@ -97,10 +94,7 @@ class FilterRow extends StatelessWidget {
 }
 
 class FilterIconButton extends StatelessWidget {
-  const FilterIconButton({
-    required this.activeCount,
-    required this.onTap,
-  });
+  const FilterIconButton({required this.activeCount, required this.onTap});
 
   final int activeCount;
   final VoidCallback onTap;
@@ -117,7 +111,9 @@ class FilterIconButton extends StatelessWidget {
           color: activeCount > 0 ? scheme.primary : Colors.transparent,
           shape: StadiumBorder(
             side: BorderSide(
-               color: activeCount > 0 ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5),
+              color: activeCount > 0
+                  ? scheme.primary
+                  : scheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -174,20 +170,24 @@ class FilterSheet extends StatefulWidget {
     required this.statusFilter,
     required this.genreFilter,
     required this.seriesFilter,
+    required this.formatFilters,
     required this.books,
     required this.onStatusChanged,
     required this.onGenreChanged,
     required this.onSeriesChanged,
+    required this.onFormatsChanged,
     required this.onClearAll,
   });
 
   final ReadingStatus statusFilter;
   final String? genreFilter;
   final String? seriesFilter;
+  final Set<BookFormat> formatFilters;
   final List<Book> books;
   final ValueChanged<ReadingStatus> onStatusChanged;
   final ValueChanged<String?> onGenreChanged;
   final ValueChanged<String?> onSeriesChanged;
+  final ValueChanged<Set<BookFormat>> onFormatsChanged;
   final VoidCallback onClearAll;
 
   @override
@@ -198,6 +198,7 @@ class FilterSheetState extends State<FilterSheet> {
   late ReadingStatus _status;
   late String? _genre;
   late String? _series;
+  late Set<BookFormat> _formats;
   bool _genresExpanded = false;
 
   @override
@@ -206,6 +207,18 @@ class FilterSheetState extends State<FilterSheet> {
     _status = widget.statusFilter;
     _genre = widget.genreFilter;
     _series = widget.seriesFilter;
+    _formats = Set<BookFormat>.from(widget.formatFilters);
+  }
+
+  void _toggleFormat(BookFormat f) {
+    setState(() {
+      if (_formats.contains(f)) {
+        _formats.remove(f);
+      } else {
+        _formats.add(f);
+      }
+      widget.onFormatsChanged(_formats);
+    });
   }
 
   @override
@@ -231,9 +244,11 @@ class FilterSheetState extends State<FilterSheet> {
     }
     final sortedSeries = seriesSet.toList()..sort();
 
-    final hasActive = _status != ReadingStatus.all ||
+    final hasActive =
+        _status != ReadingStatus.all ||
         _genre != null ||
-        _series != null;
+        _series != null ||
+        _formats.isNotEmpty;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.5,
@@ -317,6 +332,30 @@ class FilterSheetState extends State<FilterSheet> {
                   ),
                 ),
                 const SizedBox(height: 24),
+                FilterSection(
+                  label: 'Format',
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      PillChip(
+                        label: 'All formats',
+                        selected: _formats.isEmpty,
+                        onTap: () => setState(() {
+                          _formats.clear();
+                          widget.onFormatsChanged(_formats);
+                        }),
+                      ),
+                      for (final f in BookFormat.values)
+                        PillChip(
+                          label: f.name.toUpperCase(),
+                          selected: _formats.contains(f),
+                          onTap: () => _toggleFormat(f),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
                 if (sortedGenres.isNotEmpty)
                   FilterSection(
                     label: 'Genre',
@@ -326,7 +365,9 @@ class FilterSheetState extends State<FilterSheet> {
                         ClipRect(
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxHeight: _genresExpanded ? double.infinity : 130,
+                              maxHeight: _genresExpanded
+                                  ? double.infinity
+                                  : 130,
                             ),
                             child: Wrap(
                               spacing: 8,
@@ -343,7 +384,9 @@ class FilterSheetState extends State<FilterSheet> {
                                 for (final g in sortedGenres)
                                   PillChip(
                                     label: g,
-                                    selected: _genre?.toLowerCase() == g.toLowerCase(),
+                                    selected:
+                                        _genre?.toLowerCase() ==
+                                        g.toLowerCase(),
                                     onTap: () => setState(() {
                                       _genre = g;
                                       widget.onGenreChanged(g);
@@ -355,7 +398,9 @@ class FilterSheetState extends State<FilterSheet> {
                         ),
                         if (sortedGenres.length > 6)
                           GestureDetector(
-                            onTap: () => setState(() => _genresExpanded = !_genresExpanded),
+                            onTap: () => setState(
+                              () => _genresExpanded = !_genresExpanded,
+                            ),
                             child: Padding(
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
@@ -409,10 +454,7 @@ class FilterSheetState extends State<FilterSheet> {
 }
 
 class FilterSection extends StatelessWidget {
-  const FilterSection({
-    required this.label,
-    required this.child,
-  });
+  const FilterSection({required this.label, required this.child});
 
   final String label;
   final Widget child;

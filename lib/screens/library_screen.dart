@@ -48,7 +48,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _fabOpen = false;
 
   String _query = '';
-  BookFormat? _filter;
+  Set<BookFormat> _formatFilters = {};
   SortMode _sort = SortMode.recent;
   late LayoutMode _layout;
   LibraryTab _tab = LibraryTab.books;
@@ -127,7 +127,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   };
 
   int get _activeFilterCount {
-    var count = 0;
+    var count = _formatFilters.length;
     if (_statusFilter != _ReadingStatus.all) count++;
     if (_genreFilter != null) count++;
     if (_seriesFilter != null) count++;
@@ -148,6 +148,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             : ReadingStatus.new_,
         genreFilter: _genreFilter,
         seriesFilter: _seriesFilter,
+        formatFilters: _formatFilters,
         books: widget.library.books,
         onStatusChanged: (s) => setState(() {
           _statusFilter = switch (s) {
@@ -159,10 +160,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
         }),
         onGenreChanged: (g) => setState(() => _genreFilter = g),
         onSeriesChanged: (s) => setState(() => _seriesFilter = s),
+        onFormatsChanged: (f) => setState(() => _formatFilters = f),
         onClearAll: () => setState(() {
           _statusFilter = _ReadingStatus.all;
           _genreFilter = null;
           _seriesFilter = null;
+          _formatFilters = {};
         }),
       ),
     );
@@ -170,18 +173,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   List<Book> get _visibleBooks {
     final key =
-        '$_filter:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
+        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
       return _cachedVisibleBooks!;
     }
 
-    final filter = _filter;
     final genreLower = _genreFilter?.toLowerCase();
     final seriesLower = _seriesFilter?.toLowerCase();
     final q = _query.trim().toLowerCase();
 
     var books = widget.library.sorted.where((b) {
-      if (filter != null && b.format != filter) return false;
+      if (_formatFilters.isNotEmpty && !_formatFilters.contains(b.format))
+        return false;
       switch (_statusFilter) {
         case _ReadingStatus.all:
           break;
@@ -933,7 +936,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final books = _visibleBooks;
     final recent =
         (_query.isEmpty &&
-            _filter == null &&
+            _formatFilters.isEmpty &&
             _statusFilter == _ReadingStatus.all &&
             _genreFilter == null &&
             _seriesFilter == null)
@@ -943,6 +946,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final filtered =
         books.length != allBooks.length ||
         _query.isNotEmpty ||
+        _formatFilters.isNotEmpty ||
         _statusFilter != _ReadingStatus.all ||
         _genreFilter != null ||
         _seriesFilter != null;
@@ -964,8 +968,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       _query = '';
                       _searchController.clear();
                     }),
-                    filter: _filter,
-                    onFormatFilterChanged: (f) => setState(() => _filter = f),
+                    activeFilterCount: _activeFilterCount,
+                    onFilterTap: () => _showFilterSheet(context),
                     onStats: () =>
                         StatsScreen.show(context, library: widget.library),
                     onExport: _exportLibrary,
@@ -1115,11 +1119,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     setState(() => _layout = next);
                     widget.library.saveLibraryLayout(next.name);
                   },
-                ),
-                const SizedBox(width: 8),
-                FilterIconButton(
-                  activeCount: _activeFilterCount,
-                  onTap: () => _showFilterSheet(context),
                 ),
               ],
             ),

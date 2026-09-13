@@ -657,10 +657,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Open the format filter popup in the app bar.
-      await tester.tap(find.byIcon(Icons.filter_list_off_rounded));
+      // Tap the filter button in the app bar to open the unified filter sheet.
+      await tester.tap(find.byIcon(Icons.tune_rounded));
       await tester.pumpAndSettle();
 
+      // Format section in the filter sheet.
       for (final label in ['All formats', 'EPUB', 'TXT', 'PDF', 'CBZ', 'CBR']) {
         final chipMaterial = find
             .ancestor(of: find.text(label), matching: find.byType(Material))
