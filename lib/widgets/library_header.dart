@@ -14,6 +14,7 @@ class BurrowHeader extends StatelessWidget {
     this.onExport,
     this.onImportBackup,
     this.onSettings,
+    this.onSearch,
   });
 
   final LibraryTab tab;
@@ -24,6 +25,7 @@ class BurrowHeader extends StatelessWidget {
   final VoidCallback? onExport;
   final VoidCallback? onImportBackup;
   final VoidCallback? onSettings;
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,12 @@ class BurrowHeader extends StatelessWidget {
         ),
       ),
       actions: [
+        if (onSearch != null)
+          IconButton(
+            icon: Icon(Icons.search_rounded, color: scheme.onSurface),
+            onPressed: onSearch,
+            tooltip: 'Search',
+          ),
         if (onFilterTap != null)
           FilterIconButton(activeCount: activeFilterCount, onTap: onFilterTap!),
         if (onStats != null)

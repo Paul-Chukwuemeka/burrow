@@ -46,6 +46,7 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   bool _busy = false;
   bool _fabOpen = false;
+  bool _searchOpen = false;
 
   String _query = '';
   Set<BookFormat> _formatFilters = {};
@@ -946,6 +947,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       _tab = tab;
                       _query = '';
                       _searchController.clear();
+                      _searchOpen = false;
                     }),
                     activeFilterCount: _activeFilterCount,
                     onFilterTap: () => _showFilterSheet(context),
@@ -955,6 +957,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     onImportBackup: _importLibrary,
                     onSettings: () =>
                         SettingsScreen.show(context, library: widget.library),
+                    onSearch: () => setState(() {
+                      _searchOpen = !_searchOpen;
+                      if (!_searchOpen) {
+                        _query = '';
+                        _searchController.clear();
+                      }
+                    }),
                   ),
                   if (hasLibrary && widget.library.isScanning)
                     SliverToBoxAdapter(
@@ -1011,6 +1020,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   result: _statusResult,
                 ),
               ),
+            if (_searchOpen) _buildSearchOverlay(context),
           ],
         ),
         floatingActionButton: _tab == LibraryTab.books
@@ -1040,12 +1050,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     bool filtered,
   ) {
     return [
-      SliverToBoxAdapter(
-        child: SearchField(
-          controller: _searchController,
-          onChanged: (v) => setState(() => _query = v),
-        ),
-      ),
       if (recent != null)
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
@@ -1538,6 +1542,126 @@ class _LibraryScreenState extends State<LibraryScreen> {
           onLongPress: () => _showBookActions(book),
         );
       },
+    );
+  }
+
+  Widget _buildSearchOverlay(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final q = _query.trim().toLowerCase();
+    final searchResults = q.isEmpty
+        ? widget.library.books
+        : widget.library.books.where((b) {
+            return b.displayTitle.toLowerCase().contains(q) ||
+                b.author.toLowerCase().contains(q);
+          }).toList();
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      child: Column(
+        children: [
+          Material(
+            color: scheme.surface,
+            elevation: 2,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      onPressed: () => setState(() {
+                        _searchOpen = false;
+                        _query = '';
+                        _searchController.clear();
+                      }),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        onChanged: (v) => setState(() => _query = v),
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        decoration: InputDecoration(
+                          hintText: 'Search your burrow',
+                          suffixIcon: _query.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.close_rounded, size: 20),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _query = '');
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: scheme.surfaceContainerHighest,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: Burrow.r(Burrow.shapeLg),
+                            borderSide: BorderSide(color: scheme.primary, width: 2),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: searchResults.isEmpty
+                ? Center(
+                    child: Text(
+                      'No results found',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 16,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: searchResults.length,
+                    itemBuilder: (context, i) {
+                      final book = searchResults[i];
+                      return ListTile(
+                        leading: SizedBox(
+                          width: 36,
+                          height: 54,
+                          child: BookCover(book: book, borderRadius: 4, spine: false),
+                        ),
+                        title: Text(
+                          book.displayTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: book.author.isEmpty
+                            ? null
+                            : Text(
+                                book.author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                        onTap: () {
+                          setState(() {
+                            _searchOpen = false;
+                            _query = '';
+                            _searchController.clear();
+                          });
+                          _openBookInfo(book);
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
