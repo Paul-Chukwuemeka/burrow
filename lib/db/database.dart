@@ -174,7 +174,7 @@ class AppDatabase extends _$AppDatabase {
           if (from < 6) {
             try {
               await customStatement(
-                  'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (bookId)');
+                  'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (book_id)');
             } catch (e) {
               debugPrint('Migration step from=$from to=6 failed: $e');
             }

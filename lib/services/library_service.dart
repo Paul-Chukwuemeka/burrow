@@ -690,15 +690,15 @@ class LibraryService extends ChangeNotifier {
     }
     if (_db != null) {
       await _db!.transaction(() async {
-        await _db!.customStatement('DELETE FROM bookmarks WHERE bookId = ?', [
+        await _db!.customStatement('DELETE FROM bookmarks WHERE book_id = ?', [
           id,
         ]);
         await _db!.customStatement(
-          'DELETE FROM reading_sessions WHERE bookId = ?',
+          'DELETE FROM reading_sessions WHERE book_id = ?',
           [id],
         );
         await _db!.customStatement(
-          'DELETE FROM collection_books WHERE bookId = ?',
+          'DELETE FROM collection_books WHERE book_id = ?',
           [id],
         );
         await _db!.deleteBookById(id);
