@@ -1575,7 +1575,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: SafeArea(
                     bottom: false,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                       child: Row(
                         children: [
                           IconButton(
