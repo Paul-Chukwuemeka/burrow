@@ -62,6 +62,11 @@ class LibraryService extends ChangeNotifier {
   bool _metadataWorkerRunning = false;
   bool _disposed = false;
 
+  // PDF cover renders are serialized separately so a batch of PDFs does not
+  // spawn dozens of concurrent renders.
+  final Queue<String> _pdfCoverQueue = Queue<String>();
+  bool _pdfCoverWorkerRunning = false;
+
   /// Stream controller for metadata extraction status events.
   final _metadataStatusController =
       StreamController<MetadataStatus>.broadcast();
@@ -482,6 +487,16 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
+  /// Number of metadata extractions to run concurrently. Each runs in its own
+  /// isolate via [DocumentParser.extractMetadata], so this is bounded to leave
+  /// headroom for the UI and to cap peak memory.
+  static int get _metadataConcurrency {
+    final cores = Platform.numberOfProcessors;
+    if (cores <= 2) return 2;
+    if (cores <= 4) return 3;
+    return 4;
+  }
+
   /// Starts the background metadata extraction worker if not already running.
   void _startMetadataWorker() {
     if (_metadataWorkerRunning || _metadataQueue.isEmpty) return;
@@ -489,131 +504,205 @@ class LibraryService extends ChangeNotifier {
     _processMetadataQueue();
   }
 
-  /// Processes the metadata extraction queue one book at a time.
-  Future<void> _processMetadataQueue() async {
-    // Pre-filter: remove books that are already complete or no longer in the library.
-    _metadataQueue.removeWhere((id) {
-      final book = _books.where((b) => b.id == id).firstOrNull;
-      return book == null || book.metadataComplete;
-    });
-    final totalToProcess = _metadataQueue.length;
-    var completed = 0;
+  /// Queues every book whose metadata is still incomplete and starts the
+  /// worker. Called once after [load] so an interrupted batch import resumes
+  /// instead of leaving books with placeholder metadata forever.
+  void resumeMetadataExtraction() {
+    if (_disposed) return;
+    for (final book in _books) {
+      if (!book.metadataComplete) _metadataQueue.add(book.id);
+    }
+    _startMetadataWorker();
+  }
 
-    if (totalToProcess > 0) {
+  /// Drains the metadata queue in passes. Books queued while a pass is running
+  /// (e.g. by an ongoing scan) are picked up by the next pass.
+  Future<void> _processMetadataQueue() async {
+    while (!_disposed) {
+      final work = _metadataQueue.toList();
+      _metadataQueue.clear();
+      if (work.isEmpty) break;
+      await _runMetadataPass(work);
+    }
+    _metadataWorkerRunning = false;
+    // A queued import may have arrived after the final empty check.
+    if (_metadataQueue.isNotEmpty && !_disposed) _startMetadataWorker();
+  }
+
+  Future<void> _runMetadataPass(List<String> work) async {
+    // Build an id index once so membership lookups stay O(1).
+    final index = {for (final b in _books) b.id: b};
+    final total = work.length;
+    var completed = 0;
+    var next = 0;
+
+    try {
       _metadataStatusController.add(
         MetadataStatus(
           type: MetadataStatusType.started,
-          total: totalToProcess,
+          total: total,
           completed: 0,
         ),
       );
-    }
+    } catch (_) {}
 
-    try {
-      while (_metadataQueue.isNotEmpty && !_disposed) {
-        final bookId = _metadataQueue.removeFirst();
-        final book = _books.where((b) => b.id == bookId).firstOrNull;
-        if (book == null) continue;
+    final pendingWrites = <Book>[];
+    var lastNotify = DateTime.now();
 
-        try {
-          _metadataStatusController.add(
-            MetadataStatus(
-              type: MetadataStatusType.progress,
-              total: totalToProcess,
-              completed: completed,
-              bookTitle: book.title,
-            ),
-          );
-        } catch (_) {
-          break;
+    Future<void> worker() async {
+      while (!_disposed) {
+        final i = next++;
+        if (i >= total) return;
+        final book = index[work[i]];
+        if (book == null || book.metadataComplete) {
+          completed++;
+          continue;
         }
 
+        _emitMetadataProgress(total, completed, book.title);
+
         try {
-          final format = book.format;
-
-          // TXT has no embedded metadata or cover — nothing to extract.
-          if (format == BookFormat.txt) {
-            book.metadataComplete = true;
-            if (_db != null) {
-              await _db!.updateBook(db.bookToCompanionForUpdate(book));
-            }
-            completed++;
-            continue;
-          }
-
-          ParsedMetadata doc;
-          try {
-            doc = await DocumentParser.extractMetadata(book.path);
-          } on FormatException {
-            debugPrint('Metadata parse skip (format): ${book.title}');
-            completed++;
-            continue;
-          } catch (e) {
-            debugPrint('Metadata extraction failed for ${book.title}: $e');
-            completed++;
-            continue;
-          }
-
-          // Update book with extracted metadata.
-          book.title = doc.title.isNotEmpty ? doc.title : book.title;
-          book.author = doc.author;
-          book.description = doc.description;
-          book.annotation = doc.annotation;
-          book.genre = doc.genre;
-          book.seriesName = doc.seriesName;
-          book.seriesIndex = doc.seriesIndex;
-          book.publisher = doc.publisher;
-          book.isbn = doc.isbn;
-          book.language = doc.language;
-          book.publicationDate = doc.publicationDate;
-          book.rights = doc.rights;
-          book.type = doc.type;
-          book.source = doc.source;
-          book.titleSort = doc.titleSort;
-          book.authorSort = doc.authorSort;
-          book.metadataComplete = true;
-
-          // Save cover if extracted.
-          final coverBytes = doc.coverBytes;
-          if (coverBytes != null && coverBytes.isNotEmpty) {
-            book.coverPath = await _saveCover(coverBytes);
-          }
-
-          if (_db != null) {
-            await _db!.updateBook(db.bookToCompanionForUpdate(book));
-          }
-
-          // For PDFs without covers, generate thumbnail in background.
-          if (format == BookFormat.pdf && book.coverPath == null) {
-            _generatePdfCoverInBackground(book);
-          }
+          await _extractMetadataInto(book);
+          pendingWrites.add(book);
         } catch (e) {
           debugPrint('Metadata queue processing failed for ${book.title}: $e');
         }
 
         completed++;
-        // Throttle UI rebuilds: notify at most every 5 books and always
-        // on the final one to avoid 100+ full rebuilds during batch imports.
-        if (completed % 5 == 0 || completed == totalToProcess) {
+        if (pendingWrites.length >= 25)
+          await _flushMetadataWrites(pendingWrites);
+
+        // Throttle UI rebuilds to a few per second during batch imports.
+        final now = DateTime.now();
+        if (now.difference(lastNotify).inMilliseconds >= 250 ||
+            completed == total) {
+          lastNotify = now;
           try {
             notifyListeners();
           } catch (_) {}
         }
       }
-    } finally {
-      _metadataWorkerRunning = false;
     }
 
-    if (totalToProcess > 0) {
-      try {
-        _metadataStatusController.add(
-          MetadataStatus(
-            type: MetadataStatusType.completed,
-            total: totalToProcess,
-            completed: totalToProcess,
-          ),
-        );
-      } catch (_) {}
+    await Future.wait(List.generate(_metadataConcurrency, (_) => worker()));
+    await _flushMetadataWrites(pendingWrites);
+
+    try {
+      _metadataStatusController.add(
+        MetadataStatus(
+          type: MetadataStatusType.completed,
+          total: total,
+          completed: total,
+        ),
+      );
+    } catch (_) {}
+  }
+
+  void _emitMetadataProgress(int total, int completed, String title) {
+    try {
+      _metadataStatusController.add(
+        MetadataStatus(
+          type: MetadataStatusType.progress,
+          total: total,
+          completed: completed,
+          bookTitle: title,
+        ),
+      );
+    } catch (_) {}
+  }
+
+  /// Extracts metadata for [book] and applies it in place.
+  ///
+  /// A definitive [FormatException] marks the book complete (there is nothing
+  /// more to read); transient errors leave it incomplete so
+  /// [resumeMetadataExtraction] retries on the next launch.
+  Future<void> _extractMetadataInto(Book book) async {
+    final format = book.format;
+
+    // TXT has no embedded metadata or cover — nothing to extract.
+    if (format == BookFormat.txt) {
+      book.metadataComplete = true;
+      return;
+    }
+
+    ParsedMetadata doc;
+    try {
+      doc = await DocumentParser.extractMetadata(book.path);
+    } on FormatException {
+      debugPrint('Metadata parse skip (format): ${book.title}');
+      book.metadataComplete = true;
+      return;
+    }
+
+    book.title = doc.title.isNotEmpty ? doc.title : book.title;
+    book.author = doc.author;
+    book.description = doc.description;
+    book.annotation = doc.annotation;
+    book.genre = doc.genre;
+    book.seriesName = doc.seriesName;
+    book.seriesIndex = doc.seriesIndex;
+    book.publisher = doc.publisher;
+    book.isbn = doc.isbn;
+    book.language = doc.language;
+    book.publicationDate = doc.publicationDate;
+    book.rights = doc.rights;
+    book.type = doc.type;
+    book.source = doc.source;
+    book.titleSort = doc.titleSort;
+    book.authorSort = doc.authorSort;
+    book.metadataComplete = true;
+
+    final coverBytes = doc.coverBytes;
+    if (coverBytes != null && coverBytes.isNotEmpty) {
+      book.coverPath = await _saveCover(coverBytes);
+    }
+
+    // For PDFs without covers, generate thumbnail in the background.
+    if (format == BookFormat.pdf && book.coverPath == null) {
+      _enqueuePdfCover(book.id);
+    }
+  }
+
+  /// Persists accumulated metadata updates in a single transaction.
+  Future<void> _flushMetadataWrites(List<Book> books) async {
+    if (books.isEmpty) return;
+    final snapshot = List<Book>.of(books);
+    books.clear();
+    final database = _db;
+    if (database == null) return;
+    try {
+      await database.transaction(() async {
+        for (final book in snapshot) {
+          await database.updateBook(db.bookToCompanionForUpdate(book));
+        }
+      });
+    } catch (e) {
+      debugPrint('Metadata batch write failed: $e');
+    }
+  }
+
+  void _enqueuePdfCover(String bookId) {
+    if (_pdfCoverQueue.contains(bookId)) return;
+    _pdfCoverQueue.add(bookId);
+    _startPdfCoverWorker();
+  }
+
+  void _startPdfCoverWorker() {
+    if (_pdfCoverWorkerRunning || _pdfCoverQueue.isEmpty) return;
+    _pdfCoverWorkerRunning = true;
+    _processPdfCoverQueue();
+  }
+
+  Future<void> _processPdfCoverQueue() async {
+    try {
+      while (_pdfCoverQueue.isNotEmpty && !_disposed) {
+        final bookId = _pdfCoverQueue.removeFirst();
+        final book = _books.where((b) => b.id == bookId).firstOrNull;
+        if (book == null || book.coverPath != null) continue;
+        await _generatePdfCoverInBackground(book);
+      }
+    } finally {
+      _pdfCoverWorkerRunning = false;
     }
   }
 

@@ -106,6 +106,9 @@ class _BurrowAppState extends State<BurrowApp> {
     library.addListener(_onThemeChanged);
     if (injected == null) {
       await library.load();
+      // Finish metadata extraction for books left incomplete by an
+      // interrupted scan/import.
+      library.resumeMetadataExtraction();
     }
 
     if (library.onboardingComplete) {
