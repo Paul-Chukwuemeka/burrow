@@ -2014,7 +2014,7 @@ class ReaderScreenState extends State<ReaderScreen>
                   ],
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 16, 4),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: Row(
                     children: [
                       GestureDetector(
