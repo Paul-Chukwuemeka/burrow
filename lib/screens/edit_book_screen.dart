@@ -7,6 +7,7 @@ import '../services/metadata_api_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/date_format.dart';
 import '../widgets/book_cover.dart';
+import 'metadata_fetch_screen.dart';
 
 class EditBookScreen extends StatefulWidget {
   const EditBookScreen({super.key, required this.book, required this.library});
@@ -37,7 +38,6 @@ class _EditBookScreenState extends State<EditBookScreen> {
   late final TextEditingController _titleSortCtrl;
   late final TextEditingController _authorSortCtrl;
   bool _refetching = false;
-  bool _fetchingOnline = false;
 
   @override
   void initState() {
@@ -188,74 +188,55 @@ class _EditBookScreenState extends State<EditBookScreen> {
   }
 
   Future<void> _fetchOnlineMetadata() async {
-    if (_fetchingOnline) return;
-    setState(() => _fetchingOnline = true);
-    try {
-      final meta = await MetadataApiService.fetchMetadata(
-        isbn: widget.book.isbn,
-        title: widget.book.title,
-        author: widget.book.author,
-      );
-      if (!mounted) return;
-      if (meta == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No metadata found online')),
-        );
-        return;
-      }
+    final result = await Navigator.of(context).push<ApiBookMetadata>(
+      MaterialPageRoute(
+        builder: (_) => MetadataFetchScreen(book: widget.book),
+      ),
+    );
+    if (result == null || !mounted) return;
 
-      // Fill only empty fields in the controllers.
-      if (_titleCtrl.text.isEmpty && meta.title != null) {
-        _titleCtrl.text = meta.title!;
-      }
-      if (_authorCtrl.text.isEmpty && meta.author != null) {
-        _authorCtrl.text = meta.author!;
-      }
-      if (_descCtrl.text.isEmpty && meta.description != null) {
-        _descCtrl.text = meta.description!;
-      }
-      if (_genreCtrl.text.isEmpty && meta.genre != null) {
-        _genreCtrl.text = meta.genre!;
-      }
-      if (_seriesNameCtrl.text.isEmpty && meta.seriesName != null) {
-        _seriesNameCtrl.text = meta.seriesName!;
-      }
-      if (_seriesIndexCtrl.text.isEmpty && meta.seriesIndex != null) {
-        _seriesIndexCtrl.text = meta.seriesIndex.toString();
-      }
-      if (_publisherCtrl.text.isEmpty && meta.publisher != null) {
-        _publisherCtrl.text = meta.publisher!;
-      }
-      if (_isbnCtrl.text.isEmpty && meta.isbn != null) {
-        _isbnCtrl.text = meta.isbn!;
-      }
-      if (_languageCtrl.text.isEmpty && meta.language != null) {
-        _languageCtrl.text = meta.language!;
-      }
-      if (_pubDateCtrl.text.isEmpty && meta.publicationDate != null) {
-        _pubDateCtrl.text = meta.publicationDate!;
-      }
-
-      // Download cover if book has none.
-      if (widget.book.coverPath == null && meta.coverUrl != null) {
-        final bytes = await MetadataApiService.downloadCover(meta.coverUrl!);
-        if (bytes != null && bytes.isNotEmpty && mounted) {
-          await widget.library.setCoverIfMissing(widget.book, bytes);
-        }
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Online metadata fetched')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Fetch failed: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _fetchingOnline = false);
+    if (_titleCtrl.text.isEmpty && result.title != null) {
+      _titleCtrl.text = result.title!;
     }
+    if (_authorCtrl.text.isEmpty && result.author != null) {
+      _authorCtrl.text = result.author!;
+    }
+    if (_descCtrl.text.isEmpty && result.description != null) {
+      _descCtrl.text = result.description!;
+    }
+    if (_genreCtrl.text.isEmpty && result.genre != null) {
+      _genreCtrl.text = result.genre!;
+    }
+    if (_seriesNameCtrl.text.isEmpty && result.seriesName != null) {
+      _seriesNameCtrl.text = result.seriesName!;
+    }
+    if (_seriesIndexCtrl.text.isEmpty && result.seriesIndex != null) {
+      _seriesIndexCtrl.text = result.seriesIndex.toString();
+    }
+    if (_publisherCtrl.text.isEmpty && result.publisher != null) {
+      _publisherCtrl.text = result.publisher!;
+    }
+    if (_isbnCtrl.text.isEmpty && result.isbn != null) {
+      _isbnCtrl.text = result.isbn!;
+    }
+    if (_languageCtrl.text.isEmpty && result.language != null) {
+      _languageCtrl.text = result.language!;
+    }
+    if (_pubDateCtrl.text.isEmpty && result.publicationDate != null) {
+      _pubDateCtrl.text = result.publicationDate!;
+    }
+
+    if (widget.book.coverPath == null && result.coverUrl != null) {
+      final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
+      if (bytes != null && bytes.isNotEmpty && mounted) {
+        await widget.library.setCoverIfMissing(widget.book, bytes);
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Metadata applied')),
+    );
   }
 
   @override
@@ -265,14 +246,8 @@ class _EditBookScreenState extends State<EditBookScreen> {
         title: const Text('Edit book'),
         actions: [
           TextButton.icon(
-            onPressed: _fetchingOnline ? null : _fetchOnlineMetadata,
-            icon: _fetchingOnline
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cloud_download_outlined, size: 20),
+            onPressed: _fetchOnlineMetadata,
+            icon: const Icon(Icons.cloud_download_outlined, size: 20),
             label: const Text('Online'),
           ),
           TextButton.icon(

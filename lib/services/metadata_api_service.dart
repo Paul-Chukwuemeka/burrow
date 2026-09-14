@@ -117,6 +117,36 @@ class MetadataApiService {
   }
 
   // ---------------------------------------------------------------------------
+  // Search (multiple results)
+  // ---------------------------------------------------------------------------
+
+  /// Searches both Google Books and Open Library, returns merged results.
+  static Future<List<ApiBookMetadata>> search({
+    required String query,
+    int maxResults = 10,
+  }) async {
+    final results = <ApiBookMetadata>[];
+
+    try {
+      final gb = await _searchGoogleBooks(query: query, maxResults: maxResults);
+      results.addAll(gb);
+    } catch (_) {}
+
+    try {
+      final ol = await _searchOpenLibraryAll(query: query, limit: maxResults);
+      // Deduplicate by title+author.
+      for (final item in ol) {
+        final isDupe = results.any((r) =>
+            r.title?.toLowerCase() == item.title?.toLowerCase() &&
+            r.author?.toLowerCase() == item.author?.toLowerCase());
+        if (!isDupe) results.add(item);
+      }
+    } catch (_) {}
+
+    return results;
+  }
+
+  // ---------------------------------------------------------------------------
   // Google Books
   // ---------------------------------------------------------------------------
 
@@ -128,25 +158,36 @@ class MetadataApiService {
     final query = _buildGoogleBooksQuery(isbn: isbn, title: title, author: author);
     if (query == null) return null;
 
+    final results = await _searchGoogleBooks(query: query, maxResults: 1);
+    return results.isEmpty ? null : results.first;
+  }
+
+  static Future<List<ApiBookMetadata>> _searchGoogleBooks({
+    required String query,
+    int maxResults = 10,
+  }) async {
     final uri = Uri.parse(_googleBooksBase).replace(queryParameters: {
       'q': query,
-      'maxResults': '1',
+      'maxResults': maxResults.toString(),
     });
 
     final client = HttpClient();
     try {
       final request = await client.getUrl(uri).timeout(_timeout);
       final response = await request.close().timeout(_timeout);
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) return [];
 
       final body = await response.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
       final items = json['items'] as List?;
-      if (items == null || items.isEmpty) return null;
+      if (items == null || items.isEmpty) return [];
 
-      return _parseGoogleBooksVolume(items.first as Map<String, dynamic>);
+      return [
+        for (final item in items)
+          _parseGoogleBooksVolume(item as Map<String, dynamic>),
+      ];
     } catch (_) {
-      return null;
+      return [];
     } finally {
       client.close();
     }
@@ -261,14 +302,19 @@ class MetadataApiService {
     required String title,
     String? author,
   }) async {
+    final results = await _searchOpenLibraryAll(query: title, limit: 1);
+    return results.isEmpty ? null : results.first;
+  }
+
+  static Future<List<ApiBookMetadata>> _searchOpenLibraryAll({
+    required String query,
+    int limit = 10,
+  }) async {
     final params = <String, String>{
-      'title': title,
-      'limit': '1',
+      'title': query,
+      'limit': limit.toString(),
       'fields': 'key,title,author_name,subject,publisher,isbn,published_date,number_of_pages_median,cover_i',
     };
-    if (author != null && author.isNotEmpty) {
-      params['author'] = author;
-    }
 
     final uri = Uri.parse('$_openLibraryBase/search.json').replace(queryParameters: params);
 
@@ -276,17 +322,19 @@ class MetadataApiService {
     try {
       final request = await client.getUrl(uri).timeout(_timeout);
       final response = await request.close().timeout(_timeout);
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) return [];
 
       final body = await response.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
       final docs = json['docs'] as List?;
-      if (docs == null || docs.isEmpty) return null;
+      if (docs == null || docs.isEmpty) return [];
 
-      final doc = docs.first as Map<String, dynamic>;
-      return _parseOpenLibrarySearchResult(doc);
+      return [
+        for (final doc in docs)
+          _parseOpenLibrarySearchResult(doc as Map<String, dynamic>),
+      ];
     } catch (_) {
-      return null;
+      return [];
     } finally {
       client.close();
     }

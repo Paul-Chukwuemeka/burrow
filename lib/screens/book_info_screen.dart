@@ -13,6 +13,7 @@ import '../widgets/book_cover.dart';
 import '../widgets/progress_bar.dart';
 import 'edit_book_screen.dart';
 import 'genre_screen.dart';
+import 'metadata_fetch_screen.dart';
 import 'reader_screen.dart';
 import 'series_screen.dart';
 
@@ -35,7 +36,6 @@ class BookInfoScreen extends StatefulWidget {
 
 class _BookInfoScreenState extends State<BookInfoScreen> {
   List<db.Collection> _collections = [];
-  bool _fetching = false;
 
   @override
   void initState() {
@@ -52,86 +52,67 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   }
 
   Future<void> _fetchOnlineMetadata() async {
-    if (_fetching) return;
-    setState(() => _fetching = true);
-    try {
-      final meta = await MetadataApiService.fetchMetadata(
-        isbn: widget.book.isbn,
-        title: widget.book.title,
-        author: widget.book.author,
-      );
-      if (!mounted) return;
-      if (meta == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No metadata found online')),
-        );
-        return;
-      }
+    final result = await Navigator.of(context).push<ApiBookMetadata>(
+      MaterialPageRoute(
+        builder: (_) => MetadataFetchScreen(book: widget.book),
+      ),
+    );
+    if (result == null || !mounted) return;
 
-      // Fill only empty fields.
-      final book = widget.book;
-      String? title = meta.title;
-      String? author = meta.author;
-      String? description = meta.description;
-      String? genre = meta.genre;
-      String? seriesName = meta.seriesName;
-      double? seriesIndex = meta.seriesIndex;
-      String? publisher = meta.publisher;
-      String? isbn = meta.isbn;
-      String? language = meta.language;
-      String? pubDate = meta.publicationDate;
+    final book = widget.book;
+    String? title = result.title;
+    String? author = result.author;
+    String? description = result.description;
+    String? genre = result.genre;
+    String? seriesName = result.seriesName;
+    double? seriesIndex = result.seriesIndex;
+    String? publisher = result.publisher;
+    String? isbn = result.isbn;
+    String? language = result.language;
+    String? pubDate = result.publicationDate;
 
-      if (book.title.isNotEmpty) title = null;
-      if (book.author.isNotEmpty) author = null;
-      if (book.description != null && book.description!.isNotEmpty) {
-        description = null;
-      }
-      if (book.genre != null && book.genre!.isNotEmpty) genre = null;
-      if (book.seriesName != null && book.seriesName!.isNotEmpty) {
-        seriesName = null;
-      }
-      if (book.publisher != null && book.publisher!.isNotEmpty) publisher = null;
-      if (book.isbn != null && book.isbn!.isNotEmpty) isbn = null;
-      if (book.language != null && book.language!.isNotEmpty) language = null;
-      if (book.publicationDate != null && book.publicationDate!.isNotEmpty) {
-        pubDate = null;
-      }
-
-      await widget.library.updateBook(
-        book.id,
-        title: title,
-        author: author,
-        description: description,
-        genre: genre,
-        seriesName: seriesName,
-        seriesIndex: seriesIndex,
-        publisher: publisher,
-        isbn: isbn,
-        language: language,
-        publicationDate: pubDate,
-      );
-
-      // Download cover if book has none.
-      if (book.coverPath == null && meta.coverUrl != null) {
-        final bytes = await MetadataApiService.downloadCover(meta.coverUrl!);
-        if (bytes != null && bytes.isNotEmpty && mounted) {
-          await widget.library.setCoverIfMissing(book, bytes);
-        }
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Online metadata fetched')),
-      );
-      setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Fetch failed: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _fetching = false);
+    if (book.title.isNotEmpty) title = null;
+    if (book.author.isNotEmpty) author = null;
+    if (book.description != null && book.description!.isNotEmpty) {
+      description = null;
     }
+    if (book.genre != null && book.genre!.isNotEmpty) genre = null;
+    if (book.seriesName != null && book.seriesName!.isNotEmpty) {
+      seriesName = null;
+    }
+    if (book.publisher != null && book.publisher!.isNotEmpty) publisher = null;
+    if (book.isbn != null && book.isbn!.isNotEmpty) isbn = null;
+    if (book.language != null && book.language!.isNotEmpty) language = null;
+    if (book.publicationDate != null && book.publicationDate!.isNotEmpty) {
+      pubDate = null;
+    }
+
+    await widget.library.updateBook(
+      book.id,
+      title: title,
+      author: author,
+      description: description,
+      genre: genre,
+      seriesName: seriesName,
+      seriesIndex: seriesIndex,
+      publisher: publisher,
+      isbn: isbn,
+      language: language,
+      publicationDate: pubDate,
+    );
+
+    if (book.coverPath == null && result.coverUrl != null) {
+      final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
+      if (bytes != null && bytes.isNotEmpty && mounted) {
+        await widget.library.setCoverIfMissing(book, bytes);
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Metadata applied')),
+    );
+    setState(() {});
   }
 
   String _formatFileSize(int bytes) {
@@ -178,14 +159,8 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                   ),
                   actions: [
                     IconButton(
-                      icon: _fetching
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.cloud_download_outlined),
-                      onPressed: _fetching ? null : _fetchOnlineMetadata,
+                      icon: const Icon(Icons.cloud_download_outlined),
+                      onPressed: _fetchOnlineMetadata,
                       tooltip: 'Fetch metadata online',
                     ),
                     IconButton(
