@@ -196,13 +196,16 @@ class _FittedTitle extends StatelessWidget {
         while (size > _minFontSize && !_fits(size, constraints)) {
           size -= 0.5;
         }
-        return ClipRect(
-          child: SizedBox(
-            width: constraints.maxWidth,
-            height: constraints.maxHeight,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+        if (constraints.maxHeight < 20 || constraints.maxWidth < 20) {
+          return const SizedBox.shrink();
+        }
+        return SizedBox(
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -233,7 +236,6 @@ class _FittedTitle extends StatelessWidget {
                   ),
                 ),
             ],
-            ),
           ),
         );
       },
