@@ -243,17 +243,79 @@ class MetadataApiService {
     coverUrl = coverUrl?.replaceFirst('http://', 'https://');
     coverUrl = coverUrl?.replaceFirst('edge=curl', 'edge=curl&fife=w400');
 
+    // Series info: try volumeInfo.series first, then parse from title.
+    String? seriesName;
+    double? seriesIndex;
+    final apiSeries = info['series'] as String?;
+    if (apiSeries != null && apiSeries.isNotEmpty) {
+      seriesName = apiSeries;
+    }
+    final parsed = _parseSeriesFromTitle(fullTitle);
+    if (seriesName == null && parsed != null) {
+      seriesName = parsed.name;
+    }
+    seriesIndex ??= parsed?.index;
+
     return ApiBookMetadata(
       title: fullTitle,
       author: author,
       description: info['description'] as String?,
       genre: genre,
+      seriesName: seriesName,
+      seriesIndex: seriesIndex,
       publisher: info['publisher'] as String?,
       isbn: foundIsbn,
       language: info['language'] as String?,
       publicationDate: info['publishedDate'] as String?,
       coverUrl: coverUrl,
     );
+  }
+
+  /// Tries to extract series name and index from a title string.
+  ///
+  /// Common patterns:
+  ///   "Harry Potter #3"
+  ///   "Harry Potter, Book 3"
+  ///   "Harry Potter: The Prisoner of Azkaban (3)"
+  ///   "The Lord of the Rings - Vol. 2"
+  static _ParsedSeries? _parseSeriesFromTitle(String? title) {
+    if (title == null || title.isEmpty) return null;
+
+    // "#N" at end of title.
+    final hashMatch = RegExp(r'#\s*(\d+(?:\.\d+)?)\s*$').firstMatch(title);
+    if (hashMatch != null) {
+      final name = title.substring(0, hashMatch.start).trim();
+      final index = double.tryParse(hashMatch.group(1)!);
+      if (name.isNotEmpty) return _ParsedSeries(name, index);
+    }
+
+    // "Book N" or "Vol N" or "Volume N" at end.
+    final bookMatch = RegExp(
+      r'(?:Book|Vol(?:\.|ume)?)\s*(\d+(?:\.\d+)?)\s*$',
+    ).firstMatch(title);
+    if (bookMatch != null) {
+      final name = title.substring(0, bookMatch.start).trim();
+      final index = double.tryParse(bookMatch.group(1)!);
+      if (name.isNotEmpty) return _ParsedSeries(name, index);
+    }
+
+    // "(N)" at end.
+    final parenMatch = RegExp(r'\((\d+(?:\.\d+)?)\)\s*$').firstMatch(title);
+    if (parenMatch != null) {
+      final name = title.substring(0, parenMatch.start).trim();
+      final index = double.tryParse(parenMatch.group(1)!);
+      if (name.isNotEmpty) return _ParsedSeries(name, index);
+    }
+
+    // "- N" or ": N" at end.
+    final dashMatch = RegExp(r'[-:]\s*(\d+(?:\.\d+)?)\s*$').firstMatch(title);
+    if (dashMatch != null) {
+      final name = title.substring(0, dashMatch.start).trim();
+      final index = double.tryParse(dashMatch.group(1)!);
+      if (name.isNotEmpty) return _ParsedSeries(name, index);
+    }
+
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -398,4 +460,10 @@ class MetadataApiService {
       coverUrl: coverUrl,
     );
   }
+}
+
+class _ParsedSeries {
+  final String name;
+  final double? index;
+  const _ParsedSeries(this.name, this.index);
 }
