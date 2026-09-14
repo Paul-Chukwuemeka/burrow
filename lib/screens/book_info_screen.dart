@@ -64,48 +64,22 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
 
   Future<void> _applyMetadata(ApiBookMetadata result) async {
     final book = widget.book;
-    String? title = result.title;
-    String? author = result.author;
-    String? description = result.description;
-    String? genre = result.genre;
-    String? seriesName = result.seriesName;
-    double? seriesIndex = result.seriesIndex;
-    String? publisher = result.publisher;
-    String? isbn = result.isbn;
-    String? language = result.language;
-    String? pubDate = result.publicationDate;
-
-    if (book.title.isNotEmpty) title = null;
-    if (book.author.isNotEmpty) author = null;
-    if (book.description != null && book.description!.isNotEmpty) {
-      description = null;
-    }
-    if (book.genre != null && book.genre!.isNotEmpty) genre = null;
-    if (book.seriesName != null && book.seriesName!.isNotEmpty) {
-      seriesName = null;
-    }
-    if (book.publisher != null && book.publisher!.isNotEmpty) publisher = null;
-    if (book.isbn != null && book.isbn!.isNotEmpty) isbn = null;
-    if (book.language != null && book.language!.isNotEmpty) language = null;
-    if (book.publicationDate != null && book.publicationDate!.isNotEmpty) {
-      pubDate = null;
-    }
 
     await widget.library.updateBook(
       book.id,
-      title: title,
-      author: author,
-      description: description,
-      genre: genre,
-      seriesName: seriesName,
-      seriesIndex: seriesIndex,
-      publisher: publisher,
-      isbn: isbn,
-      language: language,
-      publicationDate: pubDate,
+      title: result.title,
+      author: result.author,
+      description: result.description,
+      genre: result.genre,
+      seriesName: result.seriesName,
+      seriesIndex: result.seriesIndex,
+      publisher: result.publisher,
+      isbn: result.isbn,
+      language: result.language,
+      publicationDate: result.publicationDate,
     );
 
-    if (book.coverPath == null && result.coverUrl != null) {
+    if (result.coverUrl != null) {
       final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
       if (bytes != null && bytes.isNotEmpty && mounted) {
         await widget.library.setCoverIfMissing(book, bytes);

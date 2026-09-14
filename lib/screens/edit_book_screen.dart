@@ -199,38 +199,22 @@ class _EditBookScreenState extends State<EditBookScreen> {
   }
 
   Future<void> _applyMetadata(ApiBookMetadata result) async {
-    if (_titleCtrl.text.isEmpty && result.title != null) {
-      _titleCtrl.text = result.title!;
-    }
-    if (_authorCtrl.text.isEmpty && result.author != null) {
-      _authorCtrl.text = result.author!;
-    }
-    if (_descCtrl.text.isEmpty && result.description != null) {
-      _descCtrl.text = result.description!;
-    }
-    if (_genreCtrl.text.isEmpty && result.genre != null) {
-      _genreCtrl.text = result.genre!;
-    }
-    if (_seriesNameCtrl.text.isEmpty && result.seriesName != null) {
-      _seriesNameCtrl.text = result.seriesName!;
-    }
-    if (_seriesIndexCtrl.text.isEmpty && result.seriesIndex != null) {
+    if (result.title != null) _titleCtrl.text = result.title!;
+    if (result.author != null) _authorCtrl.text = result.author!;
+    if (result.description != null) _descCtrl.text = result.description!;
+    if (result.genre != null) _genreCtrl.text = result.genre!;
+    if (result.seriesName != null) _seriesNameCtrl.text = result.seriesName!;
+    if (result.seriesIndex != null) {
       _seriesIndexCtrl.text = result.seriesIndex.toString();
     }
-    if (_publisherCtrl.text.isEmpty && result.publisher != null) {
-      _publisherCtrl.text = result.publisher!;
-    }
-    if (_isbnCtrl.text.isEmpty && result.isbn != null) {
-      _isbnCtrl.text = result.isbn!;
-    }
-    if (_languageCtrl.text.isEmpty && result.language != null) {
-      _languageCtrl.text = result.language!;
-    }
-    if (_pubDateCtrl.text.isEmpty && result.publicationDate != null) {
+    if (result.publisher != null) _publisherCtrl.text = result.publisher!;
+    if (result.isbn != null) _isbnCtrl.text = result.isbn!;
+    if (result.language != null) _languageCtrl.text = result.language!;
+    if (result.publicationDate != null) {
       _pubDateCtrl.text = result.publicationDate!;
     }
 
-    if (widget.book.coverPath == null && result.coverUrl != null) {
+    if (result.coverUrl != null) {
       final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
       if (bytes != null && bytes.isNotEmpty && mounted) {
         await widget.library.setCoverIfMissing(widget.book, bytes);
