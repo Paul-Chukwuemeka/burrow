@@ -131,8 +131,24 @@ class ReaderScreenState extends State<ReaderScreen>
   int? _programmaticTarget;
 
   /// Full-book layouts cached by signature, swapped in on a settings toggle
-  /// back to a previously-used layout.
+  /// back to a previously-used layout. Capped at [_maxCacheSize] entries with
+  /// LRU eviction (oldest = first insertion-order key in the map).
+  static const _maxCacheSize = 5;
   final Map<String, List<Paginator>> _paginationCache = {};
+
+  void _cacheLayout(String sig, List<Paginator> pages) {
+    // Remove first to reset insertion-order position (LRU bump).
+    _paginationCache.remove(sig);
+    // Evict oldest entry that isn't the currently active layout.
+    if (_paginationCache.length >= _maxCacheSize) {
+      final oldest = _paginationCache.keys.firstWhere(
+        (k) => k != _layoutSignature,
+        orElse: () => _paginationCache.keys.first,
+      );
+      _paginationCache.remove(oldest);
+    }
+    _paginationCache[sig] = List.unmodifiable(pages);
+  }
 
   /// Drivers for chapters being laid out incrementally.
   final Map<int, ChapterPaginationDriver> _paginationDrivers = {};
@@ -478,7 +494,8 @@ class ReaderScreenState extends State<ReaderScreen>
     final anchor = _currentAnchor();
 
     // Cache hit: swap the full previous layout in instantly.
-    final cached = _paginationCache[sig];
+    final cached = _paginationCache.remove(sig);
+    if (cached != null) _paginationCache[sig] = cached;
     if (cached != null && cached.length >= _doc!.chapters.length) {
       _applyFullLayout(cached, style, sig, anchor);
       return;
@@ -713,7 +730,7 @@ class ReaderScreenState extends State<ReaderScreen>
       _cancelReflow();
       _setControllerToAnchor(recreate: true);
       if (_allPaginatorsReady && _layoutSignature != null) {
-        _paginationCache[_layoutSignature!] = List.unmodifiable(_paginators);
+        _cacheLayout(_layoutSignature!, _paginators);
       }
       if (mounted) setState(() {});
     });
@@ -1737,7 +1754,8 @@ class ReaderScreenState extends State<ReaderScreen>
     final offset = _book.lastOffset;
     final sig = _signatureFor(viewport, style, scaler);
 
-    final cached = _paginationCache[sig];
+    final cached = _paginationCache.remove(sig);
+    if (cached != null) _paginationCache[sig] = cached;
     if (cached != null && cached.length >= n) {
       _applyFullLayout(cached, style, sig, (target, offset));
       return;
