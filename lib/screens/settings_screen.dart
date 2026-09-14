@@ -154,61 +154,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           // Text scale stepper.
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.text_increase, color: scheme.onSurfaceVariant),
-            title: const Text('Text size'),
-            subtitle: Row(
-              mainAxisSize: MainAxisSize.max,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove_circle_outline),
-                  iconSize: 20,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _s.uiTextScale > ReaderSettings.uiTextScaleRange.$1
-                      ? () => _update(() {
-                          final step =
-                              (ReaderSettings.uiTextScaleRange.$2 -
-                                  ReaderSettings.uiTextScaleRange.$1) /
-                              7;
-                          _s.uiTextScale = (_s.uiTextScale - step).clamp(
-                            ReaderSettings.uiTextScaleRange.$1,
-                            ReaderSettings.uiTextScaleRange.$2,
-                          );
-                        })
-                      : null,
-                ),
-                SizedBox(
-                  width: 36,
-                  child: Text(
-                    '${(_s.uiTextScale * 100).round()}%',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
+          Row(
+            children: [
+              Icon(Icons.text_increase, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 16),
+              const Expanded(child: Text('Text size')),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                iconSize: 20,
+                visualDensity: VisualDensity.compact,
+                onPressed: _s.uiTextScale > ReaderSettings.uiTextScaleRange.$1
+                    ? () => _update(() {
+                        final step =
+                            (ReaderSettings.uiTextScaleRange.$2 -
+                                ReaderSettings.uiTextScaleRange.$1) /
+                            7;
+                        _s.uiTextScale = (_s.uiTextScale - step).clamp(
+                          ReaderSettings.uiTextScaleRange.$1,
+                          ReaderSettings.uiTextScaleRange.$2,
+                        );
+                      })
+                    : null,
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '${(_s.uiTextScale * 100).round()}%',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline),
-                  iconSize: 20,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _s.uiTextScale < ReaderSettings.uiTextScaleRange.$2
-                      ? () => _update(() {
-                          final step =
-                              (ReaderSettings.uiTextScaleRange.$2 -
-                                  ReaderSettings.uiTextScaleRange.$1) /
-                              7;
-                          _s.uiTextScale = (_s.uiTextScale + step).clamp(
-                            ReaderSettings.uiTextScaleRange.$1,
-                            ReaderSettings.uiTextScaleRange.$2,
-                          );
-                        })
-                      : null,
-                ),
-              ],
-            ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                iconSize: 20,
+                visualDensity: VisualDensity.compact,
+                onPressed: _s.uiTextScale < ReaderSettings.uiTextScaleRange.$2
+                    ? () => _update(() {
+                        final step =
+                            (ReaderSettings.uiTextScaleRange.$2 -
+                                ReaderSettings.uiTextScaleRange.$1) /
+                            7;
+                        _s.uiTextScale = (_s.uiTextScale + step).clamp(
+                          ReaderSettings.uiTextScaleRange.$1,
+                          ReaderSettings.uiTextScaleRange.$2,
+                        );
+                      })
+                    : null,
+              ),
+            ],
           ),
           const SizedBox(height: 24),
           _sectionHeader('Dictionary'),
