@@ -188,13 +188,17 @@ class _EditBookScreenState extends State<EditBookScreen> {
   }
 
   Future<void> _fetchOnlineMetadata() async {
-    final result = await Navigator.of(context).push<ApiBookMetadata>(
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MetadataFetchScreen(book: widget.book),
+        builder: (_) => MetadataFetchScreen(
+          book: widget.book,
+          onSelected: (meta) => _applyMetadata(meta),
+        ),
       ),
     );
-    if (result == null || !mounted) return;
+  }
 
+  Future<void> _applyMetadata(ApiBookMetadata result) async {
     if (_titleCtrl.text.isEmpty && result.title != null) {
       _titleCtrl.text = result.title!;
     }

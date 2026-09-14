@@ -52,13 +52,17 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   }
 
   Future<void> _fetchOnlineMetadata() async {
-    final result = await Navigator.of(context).push<ApiBookMetadata>(
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MetadataFetchScreen(book: widget.book),
+        builder: (_) => MetadataFetchScreen(
+          book: widget.book,
+          onSelected: (meta) => _applyMetadata(meta),
+        ),
       ),
     );
-    if (result == null || !mounted) return;
+  }
 
+  Future<void> _applyMetadata(ApiBookMetadata result) async {
     final book = widget.book;
     String? title = result.title;
     String? author = result.author;

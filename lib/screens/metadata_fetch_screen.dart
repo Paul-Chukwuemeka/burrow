@@ -14,9 +14,13 @@ class MetadataFetchScreen extends StatefulWidget {
   const MetadataFetchScreen({
     super.key,
     required this.book,
+    required this.onSelected,
   });
 
   final Book book;
+
+  /// Called when the user picks a metadata result.
+  final ValueChanged<ApiBookMetadata> onSelected;
 
   @override
   State<MetadataFetchScreen> createState() => _MetadataFetchScreenState();
@@ -117,7 +121,8 @@ class _MetadataFetchScreenState extends State<MetadataFetchScreen> {
   }
 
   void _selectResult(ApiBookMetadata meta) {
-    Navigator.of(context).pop(meta);
+    widget.onSelected(meta);
+    Navigator.of(context).pop();
   }
 
   @override
