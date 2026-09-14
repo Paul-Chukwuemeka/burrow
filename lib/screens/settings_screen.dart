@@ -159,7 +159,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: Icon(Icons.text_increase, color: scheme.onSurfaceVariant),
             title: const Text('Text size'),
             subtitle: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: MainAxisSize.max,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline),
