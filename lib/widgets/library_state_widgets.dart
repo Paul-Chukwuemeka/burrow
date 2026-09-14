@@ -329,7 +329,7 @@ class ContinueCard extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(10),
                 child: SizedBox(
-                  height: 150,
+                  height: 180,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
