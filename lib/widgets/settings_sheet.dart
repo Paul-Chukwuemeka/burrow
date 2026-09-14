@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../models/reader_settings.dart';
-import '../services/brightness_controller.dart';
 
 /// Bottom sheet for reading preferences. Mutates the passed [settings] object
 /// and calls [onChanged] when a tweak is *settled* so the reader can
@@ -128,61 +127,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             onTap: () => _update(() => settings.readerTheme = mode),
           ),
         ),
-    ],
-  );
-
-  Widget _buildBrightness(ReaderTheme theme) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      const SizedBox(height: 8),
-      _ToggleRow(
-        icon: Icons.brightness_auto,
-        label: 'System brightness',
-        value: settings.brightness == null,
-        theme: theme,
-        onChanged: (v) {
-          if (v) {
-            _update(() => settings.brightness = null);
-            return;
-          }
-          BrightnessController.instance.current().then((lv) {
-            if (!mounted) return;
-            _update(() => settings.brightness = lv);
-          });
-        },
-      ),
-      Row(
-        children: [
-          Icon(Icons.brightness_low, color: theme.muted, size: 20),
-          Expanded(
-            child: Slider(
-              value: settings.brightness ?? 1.0,
-              min: kMinBrightness,
-              max: 1.0,
-              divisions: 19,
-              activeColor: theme.accent,
-              onChanged: settings.brightness == null
-                  ? null
-                  : (v) => _preview(() => settings.brightness = v),
-              onChangeEnd: settings.brightness == null
-                  ? null
-                  : (_) => _commit(),
-              label: '${((settings.brightness ?? 1.0) * 100).round()}%',
-            ),
-          ),
-          SizedBox(
-            width: 28,
-            child: Text(
-              '${((settings.brightness ?? 1.0) * 100).round()}',
-              style: TextStyle(
-                color: settings.brightness == null
-                    ? theme.muted.withValues(alpha: 0.4)
-                    : theme.muted,
-              ),
-            ),
-          ),
-        ],
-      ),
     ],
   );
 
@@ -441,7 +385,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
       ),
       // ── CSS style overrides ───────────────────────────────────────
       _buildCssOverrides(theme),
-      _buildBrightness(theme),
       _buildMisc(theme),
     ],
   );
@@ -584,7 +527,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
               ),
           ],
         ),
-      _buildBrightness(theme),
       _buildMisc(theme),
     ],
   );
@@ -667,7 +609,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           ),
         ],
       ),
-      _buildBrightness(theme),
       _buildMisc(theme),
     ],
   );

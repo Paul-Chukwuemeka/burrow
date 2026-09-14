@@ -1936,76 +1936,130 @@ class ReaderScreenState extends State<ReaderScreen>
           Container(
             color: theme.background.withValues(alpha: 0.97),
             padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: Icon(Icons.arrow_back, color: theme.text),
-                  onPressed: () => Navigator.of(context).pop(),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back, color: theme.text),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _book.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: theme.text),
+                      ),
+                    ),
+                    if (_showToc)
+                      IconButton(
+                        icon: Icon(Icons.toc, color: theme.text),
+                        onPressed: _showTocSheet,
+                      ),
+                    if (_showSearch)
+                      IconButton(
+                        icon: Icon(Icons.search, color: theme.text),
+                        onPressed: _toggleSearch,
+                      ),
+                    if (_showBookmark)
+                      IconButton(
+                        icon: Icon(
+                          _bookmarkCtrl.isCurrentPageBookmarked
+                              ? Icons.bookmark
+                              : Icons.bookmark_border,
+                          color: _bookmarkCtrl.isCurrentPageBookmarked
+                              ? theme.accent
+                              : theme.text,
+                        ),
+                        onPressed: _bookmarkCtrl.toggleBookmark,
+                      ),
+                    if (_isComic)
+                      IconButton(
+                        icon: Icon(
+                          _comicCtrl.comicPreviewVisible
+                              ? Icons.view_carousel
+                              : Icons.view_carousel_outlined,
+                          color: _comicCtrl.comicPreviewVisible
+                              ? theme.accent
+                              : theme.text,
+                        ),
+                        onPressed: () => setState(
+                          () => _comicCtrl.comicPreviewVisible =
+                              !_comicCtrl.comicPreviewVisible,
+                        ),
+                      ),
+                    IconButton(
+                      icon: Icon(Icons.text_fields, color: theme.text),
+                      onPressed: () => SettingsSheet.show(
+                        context,
+                        settings: _settings,
+                        onChanged: _onSettingsChanged,
+                        format: _book.format,
+                        onPdfFitWidth: _isPdf
+                            ? () => _pdfCtrl.pdfController.goToPage(
+                                pageNumber: _pdfCtrl.pdfPage,
+                                anchor: PdfPageAnchor.left,
+                              )
+                            : null,
+                        onPdfFitPage: _isPdf
+                            ? () => _pdfCtrl.pdfController.goToPage(
+                                pageNumber: _pdfCtrl.pdfPage,
+                                anchor: PdfPageAnchor.center,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: Text(
-                    _book.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.text),
-                  ),
-                ),
-                if (_showToc)
-                  IconButton(
-                    icon: Icon(Icons.toc, color: theme.text),
-                    onPressed: _showTocSheet,
-                  ),
-                if (_showSearch)
-                  IconButton(
-                    icon: Icon(Icons.search, color: theme.text),
-                    onPressed: _toggleSearch,
-                  ),
-                if (_showBookmark)
-                  IconButton(
-                    icon: Icon(
-                      _bookmarkCtrl.isCurrentPageBookmarked
-                          ? Icons.bookmark
-                          : Icons.bookmark_border,
-                      color: _bookmarkCtrl.isCurrentPageBookmarked
-                          ? theme.accent
-                          : theme.text,
-                    ),
-                    onPressed: _bookmarkCtrl.toggleBookmark,
-                  ),
-                if (_isComic)
-                  IconButton(
-                    icon: Icon(
-                      _comicCtrl.comicPreviewVisible
-                          ? Icons.view_carousel
-                          : Icons.view_carousel_outlined,
-                      color: _comicCtrl.comicPreviewVisible
-                          ? theme.accent
-                          : theme.text,
-                    ),
-                    onPressed: () => setState(
-                      () => _comicCtrl.comicPreviewVisible =
-                          !_comicCtrl.comicPreviewVisible,
-                    ),
-                  ),
-                IconButton(
-                  icon: Icon(Icons.text_fields, color: theme.text),
-                  onPressed: () => SettingsSheet.show(
-                    context,
-                    settings: _settings,
-                    onChanged: _onSettingsChanged,
-                    format: _book.format,
-                    onPdfFitWidth: _isPdf
-                        ? () => _pdfCtrl.pdfController.goToPage(
-                            pageNumber: _pdfCtrl.pdfPage,
-                            anchor: PdfPageAnchor.left,
-                          )
-                        : null,
-                    onPdfFitPage: _isPdf
-                        ? () => _pdfCtrl.pdfController.goToPage(
-                            pageNumber: _pdfCtrl.pdfPage,
-                            anchor: PdfPageAnchor.center,
-                          )
-                        : null,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 16, 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _settings.brightness == null
+                            ? Icons.brightness_auto
+                            : Icons.brightness_low,
+                        color: theme.muted,
+                        size: 20,
+                      ),
+                      Expanded(
+                        child: SliderTheme(
+                          data: SliderThemeData(
+                            activeTrackColor: theme.accent,
+                            thumbColor: theme.accent,
+                            inactiveTrackColor: theme.muted.withValues(alpha: 0.3),
+                          ),
+                          child: Slider(
+                            value: _settings.brightness ?? 1.0,
+                            min: kMinBrightness,
+                            max: 1.0,
+                            divisions: 19,
+                            onChanged: _settings.brightness == null
+                                ? null
+                                : (v) => setState(() {
+                                    _settings.brightness = v;
+                                    BrightnessController.instance.apply(v);
+                                  }),
+                            onChangeEnd: (_) => _onSettingsChanged(),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 36,
+                        child: Text(
+                          _settings.brightness == null
+                              ? 'Auto'
+                              : '${((_settings.brightness ?? 1.0) * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.muted,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
