@@ -328,9 +328,11 @@ class ContinueCard extends StatelessWidget {
               onTap: onTap,
               child: Padding(
                 padding: const EdgeInsets.all(10),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final coverWidth = constraints.maxHeight * Burrow.coverAspectRatio;
+                child: SizedBox(
+                  height: 100,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final coverWidth = constraints.maxHeight * Burrow.coverAspectRatio;
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -426,6 +428,7 @@ class ContinueCard extends StatelessWidget {
                       ],
                     );
                   },
+                ),
                 ),
               ),
             ),
