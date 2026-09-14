@@ -593,6 +593,8 @@ class LibraryService extends ChangeNotifier {
     await Future.wait(List.generate(_metadataConcurrency, (_) => worker()));
     await _flushMetadataWrites(pendingWrites);
 
+    await _autoOrganizeComics();
+
     try {
       _metadataStatusController.add(
         MetadataStatus(
@@ -719,6 +721,64 @@ class LibraryService extends ChangeNotifier {
     final name = dot > 0 ? base.substring(0, dot) : base;
     // Clean up common patterns like "OceanofPDF.com_Title_Author"
     return cleanBookTitle(name);
+  }
+
+  /// Automatically organizes comics into collections after metadata extraction.
+  ///
+  /// Creates a "Comics" collection containing all CBZ/CBR books, plus a
+  /// collection for each unique series name among comics that have one.
+  Future<void> _autoOrganizeComics() async {
+    if (_db == null) return;
+
+    final comics = _books.where(
+      (b) => b.format == BookFormat.cbz || b.format == BookFormat.cbr,
+    );
+    if (comics.isEmpty) return;
+
+    // Ensure "Comics" collection exists and add all comics to it.
+    var comicsCollection = _collections.where(
+      (c) => c.name == 'Comics',
+    ).firstOrNull;
+    if (comicsCollection == null) {
+      final id = await createCollection('Comics');
+      if (id.isEmpty) return;
+      comicsCollection = _collections.where((c) => c.id == id).firstOrNull;
+    }
+    if (comicsCollection == null) return;
+    for (final book in comics) {
+      if (!await _db!.isBookInCollection(comicsCollection.id, book.id)) {
+        await _db!.addBookToCollection(comicsCollection.id, book.id);
+      }
+    }
+
+    // Group comics by series name.
+    final seriesGroups = <String, List<Book>>{};
+    for (final book in comics) {
+      final series = book.seriesName;
+      if (series != null && series.isNotEmpty) {
+        seriesGroups.putIfAbsent(series, () => []).add(book);
+      }
+    }
+
+    for (final entry in seriesGroups.entries) {
+      // Find or create collection for this series.
+      var collection = _collections.where(
+        (c) => c.name == entry.key,
+      ).firstOrNull;
+      if (collection == null) {
+        final id = await createCollection(entry.key);
+        if (id.isEmpty) continue;
+        collection = _collections.where((c) => c.id == id).firstOrNull;
+      }
+      if (collection == null) continue;
+      for (final book in entry.value) {
+        if (!await _db!.isBookInCollection(collection.id, book.id)) {
+          await _db!.addBookToCollection(collection.id, book.id);
+        }
+      }
+    }
+
+    notifyListeners();
   }
 
   /// Renders the first page of a PDF as its library thumbnail. The book is
@@ -870,13 +930,14 @@ class LibraryService extends ChangeNotifier {
   /// Used to backfill covers that metadata extraction intentionally defers
   /// (e.g. CBR, whose archive cannot be read entry-by-entry).
   Future<void> setCoverIfMissing(Book book, List<int> bytes) async {
-    if (book.coverPath != null || bytes.isEmpty) return;
+    final target = _books.where((b) => b.id == book.id).firstOrNull ?? book;
+    if (target.coverPath != null || bytes.isEmpty) return;
     final prepared = DocumentParser.prepareCover(bytes) ?? bytes;
     final path = await _saveCover(prepared);
     if (path == null) return;
-    book.coverPath = path;
+    target.coverPath = path;
     if (_db != null) {
-      await _db!.updateBook(db.bookToCompanionForUpdate(book));
+      await _db!.updateBook(db.bookToCompanionForUpdate(target));
     }
     notifyListeners();
   }
