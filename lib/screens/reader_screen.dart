@@ -2063,7 +2063,7 @@ class ReaderScreenState extends State<ReaderScreen>
                         ),
                       ),
                       SizedBox(
-                        width: 36,
+                        width: 44,
                         child: Text(
                           _settings.brightness == null
                               ? 'Auto'
