@@ -199,32 +199,39 @@ class _EditBookScreenState extends State<EditBookScreen> {
   }
 
   Future<void> _applyMetadata(ApiBookMetadata result) async {
-    if (result.title != null) _titleCtrl.text = result.title!;
-    if (result.author != null) _authorCtrl.text = result.author!;
-    if (result.description != null) _descCtrl.text = result.description!;
-    if (result.genre != null) _genreCtrl.text = result.genre!;
-    if (result.seriesName != null) _seriesNameCtrl.text = result.seriesName!;
-    if (result.seriesIndex != null) {
-      _seriesIndexCtrl.text = result.seriesIndex.toString();
-    }
-    if (result.publisher != null) _publisherCtrl.text = result.publisher!;
-    if (result.isbn != null) _isbnCtrl.text = result.isbn!;
-    if (result.language != null) _languageCtrl.text = result.language!;
-    if (result.publicationDate != null) {
-      _pubDateCtrl.text = result.publicationDate!;
-    }
-
-    if (result.coverUrl != null) {
-      final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
-      if (bytes != null && bytes.isNotEmpty && mounted) {
-        await widget.library.setCoverIfMissing(widget.book, bytes);
+    try {
+      if (result.title != null) _titleCtrl.text = result.title!;
+      if (result.author != null) _authorCtrl.text = result.author!;
+      if (result.description != null) _descCtrl.text = result.description!;
+      if (result.genre != null) _genreCtrl.text = result.genre!;
+      if (result.seriesName != null) _seriesNameCtrl.text = result.seriesName!;
+      if (result.seriesIndex != null) {
+        _seriesIndexCtrl.text = result.seriesIndex.toString();
       }
-    }
+      if (result.publisher != null) _publisherCtrl.text = result.publisher!;
+      if (result.isbn != null) _isbnCtrl.text = result.isbn!;
+      if (result.language != null) _languageCtrl.text = result.language!;
+      if (result.publicationDate != null) {
+        _pubDateCtrl.text = result.publicationDate!;
+      }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Metadata applied')),
-    );
+      if (result.coverUrl != null) {
+        final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
+        if (bytes != null && bytes.isNotEmpty && mounted) {
+          await widget.library.setCoverIfMissing(widget.book, bytes);
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Metadata applied')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to apply metadata: $e')),
+      );
+    }
   }
 
   @override

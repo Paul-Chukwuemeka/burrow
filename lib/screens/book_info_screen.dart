@@ -63,34 +63,41 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
   }
 
   Future<void> _applyMetadata(ApiBookMetadata result) async {
-    final book = widget.book;
+    try {
+      final book = widget.book;
 
-    await widget.library.updateBook(
-      book.id,
-      title: result.title,
-      author: result.author,
-      description: result.description,
-      genre: result.genre,
-      seriesName: result.seriesName,
-      seriesIndex: result.seriesIndex,
-      publisher: result.publisher,
-      isbn: result.isbn,
-      language: result.language,
-      publicationDate: result.publicationDate,
-    );
+      await widget.library.updateBook(
+        book.id,
+        title: result.title,
+        author: result.author,
+        description: result.description,
+        genre: result.genre,
+        seriesName: result.seriesName,
+        seriesIndex: result.seriesIndex,
+        publisher: result.publisher,
+        isbn: result.isbn,
+        language: result.language,
+        publicationDate: result.publicationDate,
+      );
 
-    if (result.coverUrl != null) {
-      final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
-      if (bytes != null && bytes.isNotEmpty && mounted) {
-        await widget.library.setCoverIfMissing(book, bytes);
+      if (result.coverUrl != null) {
+        final bytes = await MetadataApiService.downloadCover(result.coverUrl!);
+        if (bytes != null && bytes.isNotEmpty && mounted) {
+          await widget.library.setCoverIfMissing(book, bytes);
+        }
       }
-    }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Metadata applied')),
-    );
-    setState(() {});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Metadata applied')),
+      );
+      setState(() {}      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to apply metadata: $e')),
+      );
+    }
   }
 
   String _formatFileSize(int bytes) {
