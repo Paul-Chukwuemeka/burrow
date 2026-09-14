@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
+import '../services/document_parser.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/date_format.dart';
@@ -34,6 +35,7 @@ class _EditBookScreenState extends State<EditBookScreen> {
   late final TextEditingController _sourceCtrl;
   late final TextEditingController _titleSortCtrl;
   late final TextEditingController _authorSortCtrl;
+  bool _refetching = false;
 
   @override
   void initState() {
@@ -148,12 +150,60 @@ class _EditBookScreenState extends State<EditBookScreen> {
     Navigator.of(context).pop();
   }
 
+  Future<void> _refetchMetadata() async {
+    if (_refetching) return;
+    setState(() => _refetching = true);
+    try {
+      final meta = await DocumentParser.extractMetadata(widget.book.path);
+      if (!mounted) return;
+      _titleCtrl.text = meta.title;
+      _authorCtrl.text = meta.author;
+      _descCtrl.text = meta.description ?? '';
+      _annotationCtrl.text = meta.annotation ?? '';
+      _genreCtrl.text = meta.genre ?? '';
+      _seriesNameCtrl.text = meta.seriesName ?? '';
+      _seriesIndexCtrl.text = meta.seriesIndex?.toString() ?? '';
+      _publisherCtrl.text = meta.publisher ?? '';
+      _isbnCtrl.text = meta.isbn ?? '';
+      _languageCtrl.text = meta.language ?? '';
+      _pubDateCtrl.text = formatPublicationDate(meta.publicationDate ?? '');
+      _rightsCtrl.text = meta.rights ?? '';
+      _typeCtrl.text = meta.type ?? '';
+      _sourceCtrl.text = meta.source ?? '';
+      _titleSortCtrl.text = meta.titleSort ?? '';
+      _authorSortCtrl.text = meta.authorSort ?? '';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Metadata refetched')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Refetch failed: $e')));
+    } finally {
+      if (mounted) setState(() => _refetching = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit book'),
-        actions: [TextButton(onPressed: _save, child: const Text('Save'))],
+        actions: [
+          TextButton.icon(
+            onPressed: _refetching ? null : _refetchMetadata,
+            icon: _refetching
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, size: 20),
+            label: const Text('Refetch'),
+          ),
+          TextButton(onPressed: _save, child: const Text('Save')),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
