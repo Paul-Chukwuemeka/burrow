@@ -327,100 +327,105 @@ class ContinueCard extends StatelessWidget {
             child: InkWell(
               onTap: onTap,
               child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 86,
-                      child: Hero(
-                        tag: 'hero-${book.id}',
-                        child: BookCover(
-                          book: book,
-                          borderRadius: Burrow.shapeMd - 2,
+                padding: const EdgeInsets.all(10),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final coverWidth = constraints.maxHeight * Burrow.coverAspectRatio;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: coverWidth,
+                          child: Hero(
+                            tag: 'hero-${book.id}',
+                            child: BookCover(
+                              book: book,
+                              borderRadius: Burrow.shapeMd - 2,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                Icons.auto_stories_rounded,
-                                size: 15,
-                                color: onCard.withValues(alpha: 0.8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.auto_stories_rounded,
+                                    size: 15,
+                                    color: onCard.withValues(alpha: 0.8),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      'CONTINUE READING',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: onCard.withValues(alpha: 0.8),
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.9,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'CONTINUE READING',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: onCard.withValues(alpha: 0.8),
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.9,
-                                      ),
+                              const SizedBox(height: 6),
+                              Text(
+                                book.displayTitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: onCard,
+                                    ),
+                              ),
+                              if (book.author.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    book.author,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: onCard.withValues(alpha: 0.75),
+                                        ),
+                                  ),
+                                ),
+                              const SizedBox(height: 14),
+                              SegmentedProgressBar(
+                                value: book.progress.clamp(0, 1),
+                                height: 8,
+                                track: onCard.withValues(alpha: 0.22),
+                                fill: onCard,
+                              ),
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: onCard.withValues(alpha: 0.14),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.play_arrow_rounded,
+                                    size: 24,
+                                    color: onCard,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            book.displayTitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: onCard,
-                                ),
-                          ),
-                          if (book.author.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                book.author,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: onCard.withValues(alpha: 0.75),
-                                    ),
-                              ),
-                            ),
-                          const SizedBox(height: 14),
-                          SegmentedProgressBar(
-                            value: book.progress.clamp(0, 1),
-                            height: 8,
-                            track: onCard.withValues(alpha: 0.22),
-                            fill: onCard,
-                          ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: onCard.withValues(alpha: 0.14),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.play_arrow_rounded,
-                                size: 24,
-                                color: onCard,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
