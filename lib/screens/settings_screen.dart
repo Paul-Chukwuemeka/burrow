@@ -177,7 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : null,
               ),
               SizedBox(
-                width: 36,
+                width: 44,
                 child: Text(
                   '${(_s.uiTextScale * 100).round()}%',
                   style: TextStyle(
