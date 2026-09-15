@@ -770,6 +770,21 @@ More text.''';
       }
     });
 
+    test('extractComicCover returns the first page', () async {
+      final cbz = _buildCbz(['10.jpg', '2.jpg']);
+      final dir = Directory.systemTemp.createTempSync('cover_cbz');
+      final file = File('${dir.path}/comic.cbz');
+      await file.writeAsBytes(cbz);
+
+      try {
+        final cover = await DocumentParser.extractComicCover(file.path);
+        expect(cover, isNotNull);
+        expect(cover, isNotEmpty);
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
+
     test('CBZ rejects a file without a zip signature', () async {
       final dir = Directory.systemTemp.createTempSync('meta_cbz_bad');
       final file = File('${dir.path}/comic.cbz');

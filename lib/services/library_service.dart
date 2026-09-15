@@ -17,7 +17,6 @@ import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
-import 'comic_page_provider.dart';
 import 'document_parser.dart';
 
 /// Status event for metadata extraction.
@@ -641,7 +640,6 @@ class LibraryService extends ChangeNotifier {
       }
     }
     _startMetadataWorker();
-    _enqueueMissingComicCovers();
   }
 
   /// Drains the metadata queue in passes. Books queued while a pass is running
@@ -716,7 +714,6 @@ class LibraryService extends ChangeNotifier {
     await Future.wait(List.generate(_metadataConcurrency, (_) => worker()));
     await _flushMetadataWrites(pendingWrites);
 
-    _enqueueMissingComicCovers();
     await _autoOrganizeComics();
 
     try {
@@ -792,6 +789,12 @@ class LibraryService extends ChangeNotifier {
     // For PDFs without covers, generate thumbnail in the background.
     if (format == BookFormat.pdf && book.coverPath == null) {
       _enqueuePdfCover(book.id);
+    }
+
+    // CBZ covers are deferred from metadata extraction; backfill in the
+    // background once the book is known.
+    if (format == BookFormat.cbz && book.coverPath == null) {
+      _enqueueComicCover(book.id);
     }
   }
 
@@ -869,27 +872,16 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Extracts the first page of a CBZ and stores it as the cover, if missing.
+  ///
+  /// The archive read/decode happens in a background isolate so this worker
+  /// never blocks the UI thread.
   Future<void> _generateComicCover(Book book) async {
     try {
-      final provider = await ComicPageProvider.open(book.path);
-      try {
-        if (provider.pageCount == 0) return;
-        final first = await provider.loadPage(0);
-        await setCoverIfMissing(book, first);
-      } finally {
-        provider.dispose();
-      }
+      final bytes = await DocumentParser.extractComicCover(book.path);
+      if (bytes == null || bytes.isEmpty) return;
+      await setCoverIfMissing(book, bytes);
     } catch (e) {
       debugPrint('Comic cover generation failed for ${book.title}: $e');
-    }
-  }
-
-  /// Queues cover extraction for every CBZ that still lacks one.
-  void _enqueueMissingComicCovers() {
-    for (final book in _books) {
-      if (book.format != BookFormat.cbz) continue;
-      if (book.coverPath != null) continue;
-      _enqueueComicCover(book.id);
     }
   }
 

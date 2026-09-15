@@ -367,6 +367,37 @@ class DocumentParser {
     );
   }
 
+  /// Extracts and downscales the first page of a CBZ for use as its cover.
+  ///
+  /// The archive read and image decode run in a background isolate so the UI
+  /// thread is never blocked. Returns null when the archive has no images.
+  static Future<Uint8List?> extractComicCover(String path) =>
+      compute(_extractComicCoverIsolate, path);
+
+  static Uint8List? _extractComicCoverIsolate(String path) {
+    final Uint8List bytes;
+    try {
+      bytes = File(path).readAsBytesSync();
+    } catch (_) {
+      return null;
+    }
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      return null;
+    }
+    final names =
+        archive.files
+            .where((f) => f.isFile && _isImage(f.name))
+            .map((f) => f.name)
+            .toList()
+          ..sort(_naturalCompare);
+    if (names.isEmpty) return null;
+    final entry = archive.files.firstWhere((f) => f.name == names.first);
+    return _downscaleCover(entry.content);
+  }
+
   /// Throws [FormatException] unless [path] begins with the ZIP local-file
   /// signature, reading at most four bytes.
   static Future<void> _verifyZipMagic(String path) async {
