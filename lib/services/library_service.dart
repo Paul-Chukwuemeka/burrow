@@ -17,6 +17,7 @@ import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
+import 'comic_page_provider.dart';
 import 'document_parser.dart';
 
 /// Status event for metadata extraction.
@@ -69,6 +70,12 @@ class LibraryService extends ChangeNotifier {
   // spawn dozens of concurrent renders.
   final Queue<String> _pdfCoverQueue = Queue<String>();
   bool _pdfCoverWorkerRunning = false;
+
+  // Comic covers extracted from CBZ archives are also deferred and processed
+  // by a single low-priority worker so bulk comic imports stay cheap.
+  final Queue<String> _comicCoverQueue = Queue<String>();
+  bool _comicCoverWorkerRunning = false;
+  final Set<String> _comicCoverAttempted = <String>{};
 
   /// Stream controller for metadata extraction status events.
   final _metadataStatusController =
@@ -489,9 +496,10 @@ class LibraryService extends ChangeNotifier {
     // Guard: reject duplicates by path or pending import status.
     if (_pendingImports.contains(path)) return null;
     _pendingImports.add(path);
-    if (containsPath(path)) return null;
 
     try {
+      if (containsPath(path)) return null;
+
       final format = formatFromExtension(path);
       final title = _titleFromFilename(path);
 
@@ -526,14 +534,93 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
+  /// Bulk import: creates minimal (filename-only) books for every new [paths]
+  /// entry, inserting them in a single transaction and notifying once. This
+  /// avoids one DB write and one UI rebuild per file during large imports.
+  ///
+  /// Returns the newly added books and the errors for paths that failed.
+  Future<(List<Book> added, List<Object> errors)> importFilesFast(
+    Iterable<String> paths, {
+    void Function(int completed, int total)? onProgress,
+  }) async {
+    final added = <Book>[];
+    final errors = <Object>[];
+    final batch = <Book>[];
+    final pendingPaths = <String>{};
+    final seen = <String>{};
+
+    final pathList = paths.toList();
+    final total = pathList.length;
+    onProgress?.call(0, total);
+
+    try {
+      for (var i = 0; i < total; i++) {
+        final path = pathList[i];
+        onProgress?.call(i, total);
+        if (!seen.add(path)) continue;
+        if (_pendingImports.contains(path) || containsPath(path)) continue;
+        _pendingImports.add(path);
+        pendingPaths.add(path);
+        try {
+          batch.add(
+            Book(
+              id: _newId(),
+              title: _titleFromFilename(path),
+              author: '',
+              path: path,
+              format: formatFromExtension(path),
+              addedAt: DateTime.now().millisecondsSinceEpoch,
+              metadataComplete: false,
+            ),
+          );
+        } catch (e) {
+          errors.add(e);
+        }
+      }
+
+      if (batch.isEmpty) return (added, errors);
+
+      _books.addAll(batch);
+      _invalidateSortCache();
+
+      final database = _db;
+      if (database != null) {
+        try {
+          await database.transaction(() async {
+            for (final book in batch) {
+              await database.insertBook(db.bookToCompanion(book));
+            }
+          });
+        } catch (e) {
+          final ids = {for (final b in batch) b.id};
+          _books.removeWhere((b) => ids.contains(b.id));
+          _invalidateSortCache();
+          errors.add(e);
+          return (added, errors);
+        }
+      }
+
+      added.addAll(batch);
+      for (final book in batch) {
+        _metadataQueue.add(book.id);
+      }
+      notifyListeners();
+      _startMetadataWorker();
+      onProgress?.call(total, total);
+      return (added, errors);
+    } finally {
+      for (final path in pendingPaths) {
+        _pendingImports.remove(path);
+      }
+    }
+  }
+
   /// Number of metadata extractions to run concurrently. Each runs in its own
-  /// isolate via [DocumentParser.extractMetadata], so this is bounded to leave
-  /// headroom for the UI and to cap peak memory.
+  /// isolate via [DocumentParser.extractMetadata]. Capped low so background
+  /// extraction never starves the UI or spikes memory during bulk imports.
   static int get _metadataConcurrency {
     final cores = Platform.numberOfProcessors;
-    if (cores <= 2) return 2;
-    if (cores <= 4) return 3;
-    return 4;
+    return cores <= 2 ? 1 : 2;
   }
 
   /// Starts the background metadata extraction worker if not already running.
@@ -554,6 +641,7 @@ class LibraryService extends ChangeNotifier {
       }
     }
     _startMetadataWorker();
+    _enqueueMissingComicCovers();
   }
 
   /// Drains the metadata queue in passes. Books queued while a pass is running
@@ -628,6 +716,7 @@ class LibraryService extends ChangeNotifier {
     await Future.wait(List.generate(_metadataConcurrency, (_) => worker()));
     await _flushMetadataWrites(pendingWrites);
 
+    _enqueueMissingComicCovers();
     await _autoOrganizeComics();
 
     try {
@@ -746,6 +835,61 @@ class LibraryService extends ChangeNotifier {
       }
     } finally {
       _pdfCoverWorkerRunning = false;
+    }
+  }
+
+  void _enqueueComicCover(String bookId) {
+    if (_comicCoverAttempted.contains(bookId)) return;
+    if (_comicCoverQueue.contains(bookId)) return;
+    _comicCoverQueue.add(bookId);
+    _startComicCoverWorker();
+  }
+
+  void _startComicCoverWorker() {
+    if (_comicCoverWorkerRunning || _comicCoverQueue.isEmpty) return;
+    _comicCoverWorkerRunning = true;
+    _processComicCoverQueue();
+  }
+
+  /// Backfills covers for comics that were imported without one. Runs one book
+  /// at a time so archive decoding never competes with the UI or metadata pass.
+  Future<void> _processComicCoverQueue() async {
+    try {
+      while (_comicCoverQueue.isNotEmpty && !_disposed) {
+        final bookId = _comicCoverQueue.removeFirst();
+        if (_comicCoverAttempted.contains(bookId)) continue;
+        _comicCoverAttempted.add(bookId);
+        final book = _books.where((b) => b.id == bookId).firstOrNull;
+        if (book == null || book.coverPath != null) continue;
+        await _generateComicCover(book);
+      }
+    } finally {
+      _comicCoverWorkerRunning = false;
+    }
+  }
+
+  /// Extracts the first page of a CBZ and stores it as the cover, if missing.
+  Future<void> _generateComicCover(Book book) async {
+    try {
+      final provider = await ComicPageProvider.open(book.path);
+      try {
+        if (provider.pageCount == 0) return;
+        final first = await provider.loadPage(0);
+        await setCoverIfMissing(book, first);
+      } finally {
+        provider.dispose();
+      }
+    } catch (e) {
+      debugPrint('Comic cover generation failed for ${book.title}: $e');
+    }
+  }
+
+  /// Queues cover extraction for every CBZ that still lacks one.
+  void _enqueueMissingComicCovers() {
+    for (final book in _books) {
+      if (book.format != BookFormat.cbz) continue;
+      if (book.coverPath != null) continue;
+      _enqueueComicCover(book.id);
     }
   }
 

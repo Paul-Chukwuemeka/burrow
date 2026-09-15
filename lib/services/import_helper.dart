@@ -17,25 +17,25 @@ abstract final class BookImporter {
     void Function(Object error)? onError,
     void Function(int completed, int total)? onProgress,
   }) async {
-    final added = <Book>[];
-    var failed = 0;
     final pathList = paths.toList();
     final total = pathList.length;
-    for (var i = 0; i < total; i++) {
-      onProgress?.call(i, total);
-      try {
-        final book = await library.importFile(pathList[i]);
-        if (book != null) added.add(book);
-      } on FormatException catch (e) {
-        onFormatError?.call(e);
-        failed++;
-      } catch (e) {
-        onError?.call(e);
-        failed++;
+
+    // Bulk insert: one transaction and one notification for the whole batch.
+    final (added, errors) = await library.importFilesFast(
+      pathList,
+      onProgress: onProgress,
+    );
+
+    for (final error in errors) {
+      if (error is FormatException) {
+        onFormatError?.call(error);
+      } else {
+        onError?.call(error);
       }
     }
+
     onProgress?.call(total, total);
-    return (added, failed);
+    return (added, errors.length);
   }
 
   /// Runs [scan], imports every result and returns the scan paths alongside

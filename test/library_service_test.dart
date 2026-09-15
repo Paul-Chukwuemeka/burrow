@@ -245,4 +245,38 @@ void main() {
       },
     );
   });
+
+  group('importFilesFast', () {
+    test('adds new books once and skips duplicates within and across calls',
+        () async {
+      final (added, errors) = await library.importFilesFast([
+        '/tmp/a.txt',
+        '/tmp/b.txt',
+        '/tmp/a.txt', // duplicate within the same batch
+      ]);
+
+      expect(added, hasLength(2));
+      expect(errors, isEmpty);
+      expect(library.books, hasLength(2));
+
+      final (again, _) = await library.importFilesFast([
+        '/tmp/a.txt',
+        '/tmp/b.txt',
+      ]);
+      expect(again, isEmpty);
+      expect(library.books, hasLength(2));
+    });
+
+    test('reports progress from zero to total', () async {
+      final progress = <int>[];
+      await library.importFilesFast(
+        ['/tmp/c.txt', '/tmp/d.txt', '/tmp/e.txt'],
+        onProgress: (completed, _) => progress.add(completed),
+      );
+
+      expect(progress.first, 0);
+      expect(progress.last, 3);
+      expect(progress, contains(3));
+    });
+  });
 }

@@ -233,22 +233,31 @@ class DocumentParser {
 
   static Uint8List? _downscaleCover(
     List<int>? bytes, {
-    int maxDimension = 600,
+    int maxDimension = 480,
+    int skipDecodeUnderBytes = 120 * 1024,
   }) {
     if (bytes == null || bytes.isEmpty) return null;
     final original = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
     try {
+      // Cheap header parse first: if the image already fits, skip the full
+      // decode + re-encode entirely.
+      final (w, h) = decodeImageDimensions(original);
+      if (w > 0 && h > 0) {
+        if (w <= maxDimension && h <= maxDimension) return original;
+      } else if (original.length <= skipDecodeUnderBytes) {
+        // Dimensions unknown but the payload is tiny; decoding isn't worth it.
+        return original;
+      }
+
       final decoded = img.decodeImage(original);
       if (decoded == null) return original;
-      if (decoded.width <= maxDimension &&
-          decoded.height <= maxDimension &&
-          original.length <= 300 * 1024) {
+      if (decoded.width <= maxDimension && decoded.height <= maxDimension) {
         return original;
       }
       final resized = decoded.width >= decoded.height
           ? img.copyResize(decoded, width: maxDimension)
           : img.copyResize(decoded, height: maxDimension);
-      return Uint8List.fromList(img.encodeJpg(resized, quality: 82));
+      return Uint8List.fromList(img.encodeJpg(resized, quality: 78));
     } catch (_) {
       return original;
     }
@@ -341,41 +350,45 @@ class DocumentParser {
     );
   }
 
-  /// Reads the zip directory and only the first page image of a CBZ.
+  /// Reads only the filename and series hint for a CBZ.
+  ///
+  /// The archive is not opened here: metadata extraction stays cheap for bulk
+  /// comic imports (no whole-file read, no zip decode, no cover work). The
+  /// cover is backfilled on first open or by the cover worker. A four-byte
+  /// magic check still rejects files that are not ZIP archives.
   static Future<ParsedMetadata> _extractCbzMetadata(String path) async {
-    final Uint8List bytes;
-    try {
-      bytes = await File(path).readAsBytes();
-    } catch (_) {
-      throw const FormatException('Not a valid CBZ file');
-    }
-    final Archive archive;
-    try {
-      archive = ZipDecoder().decodeBytes(bytes);
-    } catch (_) {
-      throw const FormatException('Not a valid CBZ/ZIP archive');
-    }
-    final names =
-        archive.files
-            .where((f) => f.isFile && _isImage(f.name))
-            .map((f) => f.name)
-            .toList()
-          ..sort(_naturalCompare);
-    if (names.isEmpty) {
-      throw const FormatException('No images found in comic archive');
-    }
-    // Accessing `.content` decompresses only this entry.
-    final cover = archive.files
-        .firstWhere((f) => f.name == names.first)
-        .content;
+    await _verifyZipMagic(path);
     final series = parseComicSeries(path);
     return ParsedMetadata(
       title: _titleFromFilename(path),
       author: '',
       seriesName: series.name,
       seriesIndex: series.index,
-      coverBytes: cover,
     );
+  }
+
+  /// Throws [FormatException] unless [path] begins with the ZIP local-file
+  /// signature, reading at most four bytes.
+  static Future<void> _verifyZipMagic(String path) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await File(path).open();
+      final magic = await raf.read(4);
+      if (magic.length < 4 ||
+          magic[0] != 0x50 ||
+          magic[1] != 0x4B ||
+          magic[2] != 0x03 ||
+          magic[3] != 0x04) {
+        throw const FormatException('Not a valid CBZ/ZIP archive');
+      }
+    } catch (e) {
+      if (e is FormatException) rethrow;
+      throw const FormatException('Not a valid CBZ file');
+    } finally {
+      try {
+        await raf?.close();
+      } catch (_) {}
+    }
   }
 
   static Future<ParsedDocument> _parseIsolate((String, String?) args) async {

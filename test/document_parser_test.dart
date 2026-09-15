@@ -752,17 +752,34 @@ More text.''';
       );
     });
 
-    test('CBZ uses the first page as the cover', () async {
+    test('CBZ metadata is filename-only and infers the series', () async {
       final cbz = _buildCbz(['10.jpg', '2.jpg']);
       final dir = Directory.systemTemp.createTempSync('meta_cbz');
-      final file = File('${dir.path}/comic.cbz');
+      final file = File('${dir.path}/Batman 001.cbz');
       await file.writeAsBytes(cbz);
 
       try {
         final meta = await DocumentParser.extractMetadata(file.path);
-        expect(meta.title, 'comic');
-        expect(meta.coverBytes, isNotNull);
-        expect(meta.coverBytes, equals(_tinyJpeg()));
+        expect(meta.title, 'Batman 001');
+        expect(meta.seriesName, 'Batman');
+        expect(meta.seriesIndex, 1);
+        // Covers are deferred to the cover worker / first open.
+        expect(meta.coverBytes, isNull);
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
+
+    test('CBZ rejects a file without a zip signature', () async {
+      final dir = Directory.systemTemp.createTempSync('meta_cbz_bad');
+      final file = File('${dir.path}/comic.cbz');
+      await file.writeAsString('not a zip');
+
+      try {
+        expect(
+          () => DocumentParser.extractMetadata(file.path),
+          throwsA(isA<FormatException>()),
+        );
       } finally {
         dir.deleteSync(recursive: true);
       }
@@ -775,7 +792,7 @@ More text.''';
       expect(out, isNotNull);
       final decoded = img.decodeImage(out!);
       expect(decoded, isNotNull);
-      expect(math.max(decoded!.width, decoded.height), lessThanOrEqualTo(600));
+      expect(math.max(decoded!.width, decoded.height), lessThanOrEqualTo(480));
     });
 
     test('prepareCover leaves a small cover untouched', () {
