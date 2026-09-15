@@ -16,6 +16,7 @@ import 'package:drift/drift.dart' show Value;
 import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
+import '../utils/comic_series.dart';
 import 'document_parser.dart';
 
 /// Status event for metadata extraction.
@@ -46,6 +47,8 @@ class LibraryService extends ChangeNotifier {
   static const _layoutKey = 'burrow.library.layout.v1';
   static const _legacyLibraryKey = 'burrow.library.v1';
   static const _onboardingKey = 'burrow.onboarding.complete.v1';
+  static const _filtersKey = 'burrow.library.filters.v1';
+  static const _comicsOrganizedKey = 'burrow.comics.organized.v1';
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
@@ -252,6 +255,14 @@ class LibraryService extends ChangeNotifier {
     // Sweep stale/orphaned parsed-document cache entries (and earlier cache
     // schema versions) in the background.
     unawaited(DocumentParser.pruneCache([for (final b in _books) b.path]));
+
+    // One-time migration: group existing comics into per-series collections
+    // now that series names can be inferred from filenames.
+    if (!(prefs.getBool(_comicsOrganizedKey) ?? false)) {
+      unawaited(
+        _autoOrganizeComics().then((_) => prefs.setBool(_comicsOrganizedKey, true)),
+      );
+    }
   }
 
   Future<void> saveSettings() async {
@@ -273,6 +284,30 @@ class LibraryService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_layoutKey, layout);
     notifyListeners();
+  }
+
+  Future<void> saveFilters({
+    required String sort,
+    required String status,
+    required String? genre,
+    required String? series,
+    required List<String> formats,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_filtersKey, jsonEncode({
+      'sort': sort,
+      'status': status,
+      'genre': genre,
+      'series': series,
+      'formats': formats,
+    }));
+  }
+
+  Future<Map<String, dynamic>?> loadFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_filtersKey);
+    if (raw == null) return null;
+    return jsonDecode(raw) as Map<String, dynamic>;
   }
 
   bool containsPath(String path) => _books.any((b) => b.path == path);
@@ -751,10 +786,11 @@ class LibraryService extends ChangeNotifier {
       }
     }
 
-    // Group comics by series name.
+    // Group comics by series name, inferred from the filename when the file
+    // carries no embedded series metadata.
     final seriesGroups = <String, List<Book>>{};
     for (final book in comics) {
-      final series = book.seriesName;
+      final series = book.effectiveSeriesName;
       if (series != null && series.isNotEmpty) {
         seriesGroups.putIfAbsent(series, () => []).add(book);
       }

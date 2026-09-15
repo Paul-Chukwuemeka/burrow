@@ -16,6 +16,7 @@ import '../models/book.dart';
 import '../models/css_style.dart';
 import '../models/style_run.dart';
 import '../utils/book_title.dart';
+import '../utils/comic_series.dart';
 import 'epub_css_parser.dart';
 
 class Chapter {
@@ -213,7 +214,13 @@ class DocumentParser {
       case BookFormat.cbr:
         // The rar plugin can only extract whole archives, so a CBR cover is
         // deferred until the comic is opened. Metadata needs only the title.
-        meta = ParsedMetadata(title: _titleFromFilename(path), author: '');
+        final series = parseComicSeries(path);
+        meta = ParsedMetadata(
+          title: _titleFromFilename(path),
+          author: '',
+          seriesName: series.name,
+          seriesIndex: series.index,
+        );
     }
     final cover = _downscaleCover(meta.coverBytes);
     return cover == null ? meta : meta.copyWith(coverBytes: cover);
@@ -361,9 +368,12 @@ class DocumentParser {
     final cover = archive.files
         .firstWhere((f) => f.name == names.first)
         .content;
+    final series = parseComicSeries(path);
     return ParsedMetadata(
       title: _titleFromFilename(path),
       author: '',
+      seriesName: series.name,
+      seriesIndex: series.index,
       coverBytes: cover,
     );
   }

@@ -4,6 +4,7 @@ import '../db/database.dart' as db;
 import '../models/book.dart';
 import '../services/library_service.dart';
 import '../utils/book_title.dart';
+import '../utils/comic_series.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/book_grid.dart';
@@ -13,6 +14,12 @@ import 'book_info_screen.dart';
 enum _SortMode { manual, title, recent }
 
 enum _LayoutMode { grid, list }
+
+class _BookGroup {
+  final String? name;
+  final List<Book> books;
+  const _BookGroup(this.name, this.books);
+}
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({
@@ -225,16 +232,71 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
   }
 
+  List<_BookGroup> get _groupedBooks {
+    final comics = _books.where(
+      (b) => b.format == BookFormat.cbz || b.format == BookFormat.cbr,
+    ).toList();
+    final others = _books.where(
+      (b) => b.format != BookFormat.cbz && b.format != BookFormat.cbr,
+    ).toList();
+
+    if (comics.isEmpty) {
+      return [if (_books.isNotEmpty) _BookGroup(null, _books)];
+    }
+
+    final seriesMap = <String, List<Book>>{};
+    for (final comic in comics) {
+      final series = comic.effectiveSeriesName;
+      if (series != null && series.isNotEmpty) {
+        seriesMap.putIfAbsent(series, () => []).add(comic);
+      } else {
+        seriesMap.putIfAbsent('', () => []).add(comic);
+      }
+    }
+
+    final groups = <_BookGroup>[];
+    final sortedKeys = seriesMap.keys.toList()
+      ..sort((a, b) {
+        if (a.isEmpty) return 1;
+        if (b.isEmpty) return -1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+
+    for (final key in sortedKeys) {
+      final books = seriesMap[key]!;
+      books.sort((a, b) {
+        final ai = a.effectiveSeriesIndex ?? double.infinity;
+        final bi = b.effectiveSeriesIndex ?? double.infinity;
+        return ai.compareTo(bi);
+      });
+      groups.add(_BookGroup(key.isEmpty ? null : key, books));
+    }
+
+    if (others.isNotEmpty) {
+      groups.add(_BookGroup(null, others));
+    }
+
+    return groups;
+  }
+
   Widget _bookGrid(BuildContext context) {
+    final groups = _groupedBooks;
+    if (groups.length == 1 && groups.first.name == null) {
+      return _flatGrid(context, groups.first.books);
+    }
+    return _groupedGrid(context, groups);
+  }
+
+  Widget _flatGrid(BuildContext context, List<Book> books) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth - kBookGridPadding * 2;
         return GridView.builder(
           padding: const EdgeInsets.all(kBookGridPadding),
           gridDelegate: bookGridDelegate(width),
-          itemCount: _books.length,
+          itemCount: books.length,
           itemBuilder: (context, i) {
-            final book = _books[i];
+            final book = books[i];
             return BookCard(
               book: book,
               onTap: () => _openBookInfo(book),
@@ -246,16 +308,100 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
   }
 
+  Widget _groupedGrid(BuildContext context, List<_BookGroup> groups) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth - kBookGridPadding * 2;
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: groups.length,
+          itemBuilder: (context, gi) {
+            final group = groups[gi];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (group.name != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                    child: Text(
+                      group.name!,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: kBookGridPadding),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: bookGridDelegate(width),
+                  itemCount: group.books.length,
+                  itemBuilder: (context, i) {
+                    final book = group.books[i];
+                    return BookCard(
+                      book: book,
+                      onTap: () => _openBookInfo(book),
+                      onLongPress: () => _showRemoveBook(book),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _bookList() {
+    final groups = _groupedBooks;
+    if (groups.length == 1 && groups.first.name == null) {
+      return _flatList(groups.first.books);
+    }
+    return _groupedList(groups);
+  }
+
+  Widget _flatList(List<Book> books) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _books.length,
+      itemCount: books.length,
       itemBuilder: (context, i) {
-        final book = _books[i];
+        final book = books[i];
         return BookListCard(
           book: book,
           onTap: () => _openBookInfo(book),
           onLongPress: () => _showRemoveBook(book),
+        );
+      },
+    );
+  }
+
+  Widget _groupedList(List<_BookGroup> groups) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: groups.length,
+      itemBuilder: (context, gi) {
+        final group = groups[gi];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (group.name != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Text(
+                  group.name!,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            for (final book in group.books)
+              BookListCard(
+                book: book,
+                onTap: () => _openBookInfo(book),
+                onLongPress: () => _showRemoveBook(book),
+              ),
+          ],
         );
       },
     );
