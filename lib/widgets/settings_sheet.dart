@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../models/reader_settings.dart';
-import '../services/brightness_controller.dart';
 
 /// Bottom sheet for reading preferences. Mutates the passed [settings] object
 /// and calls [onChanged] when a tweak is *settled* so the reader can
@@ -65,10 +64,6 @@ class _ThemedSheet extends StatefulWidget {
 
 class _ThemedSheetState extends State<_ThemedSheet> {
   Timer? _debounce;
-
-  // Guards the async brightness seed (same rationale as the reader chrome:
-  // a stale `current()` future must not overwrite a newer toggle).
-  int _brightnessSeedGen = 0;
 
   ReaderSettings get settings => widget.settings;
 
@@ -154,95 +149,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
       ),
     ],
   );
-
-  // ── Brightness (device-level, shared by all formats) ───────────────────────
-
-  Widget _buildBrightness(ReaderTheme theme) {
-    final system = settings.brightness == null;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ToggleRow(
-          icon: Icons.brightness_auto,
-          label: 'System brightness',
-          value: system,
-          theme: theme,
-          onChanged: _setSystemBrightness,
-        ),
-        Row(
-          children: [
-            Icon(Icons.brightness_low, color: theme.muted, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: SliderTheme(
-                data: SliderThemeData(
-                  activeTrackColor: theme.accent,
-                  thumbColor: theme.accent,
-                  inactiveTrackColor: theme.muted.withValues(alpha: 0.3),
-                ),
-                child: Slider(
-                  value: (settings.brightness ?? 1.0).clamp(
-                    kMinBrightness,
-                    1.0,
-                  ),
-                  min: kMinBrightness,
-                  max: 1.0,
-                  divisions: 19,
-                  onChanged: system
-                      ? null
-                      : (v) => _preview(() {
-                          settings.brightness = v;
-                          unawaited(
-                            BrightnessController.instance.apply(v),
-                          );
-                        }),
-                  onChangeEnd: (_) => _commit(),
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 44,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _setSystemBrightness(!system),
-                child: Text(
-                  system
-                      ? 'Auto'
-                      : '${((settings.brightness ?? 1.0) * 100).round()}%',
-                  style: TextStyle(fontSize: 12, color: theme.muted),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Toggles follow-system brightness. Turning system mode off seeds the level
-  /// from the controller and commits exactly once when the seed lands.
-  void _setSystemBrightness(bool system) {
-    if (system) {
-      _brightnessSeedGen++;
-      _update(() {
-        settings.brightness = null;
-        unawaited(BrightnessController.instance.apply(null));
-      });
-      return;
-    }
-    final gen = ++_brightnessSeedGen;
-    BrightnessController.instance.current().then((v) {
-      if (!mounted || gen != _brightnessSeedGen) return;
-      final lv = v.isFinite ? v.clamp(kMinBrightness, 1.0).toDouble() : 1.0;
-      setState(() {
-        settings.brightness = lv;
-        unawaited(BrightnessController.instance.apply(lv));
-      });
-      _commit();
-    });
-  }
 
   // ── Format-specific panels ─────────────────────────────────────────────────
 
@@ -731,8 +637,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           children: [
             _buildHandle(theme),
             const SizedBox(height: 16),
-            _buildBrightness(theme),
-            const SizedBox(height: 8),
             panel,
           ],
         ),
