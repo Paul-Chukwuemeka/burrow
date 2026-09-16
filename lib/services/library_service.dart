@@ -410,16 +410,26 @@ class LibraryService extends ChangeNotifier {
 
     var imported = 0;
 
-    // Pre-build maps keyed by bookId to avoid O(n×m) scanning.
+    // Pre-build maps keyed by bookId to avoid O(n×m) scanning. Each entry is
+    // guarded: a malformed bookmark/session must be skipped here, not abort
+    // the whole restore (mirrors the per-entry guards inside the transaction).
     final bookmarksByBook = <String, List<dynamic>>{};
     for (final bm in bookmarksJson) {
-      final m = bm as Map<String, dynamic>;
-      (bookmarksByBook[m['bookId'] as String] ??= []).add(m);
+      try {
+        final m = bm as Map<String, dynamic>;
+        (bookmarksByBook[m['bookId'] as String] ??= []).add(m);
+      } catch (e) {
+        debugPrint('Skipping malformed bookmark entry in backup: $e');
+      }
     }
     final sessionsByBook = <String, List<dynamic>>{};
     for (final s in sessionsJson) {
-      final m = s as Map<String, dynamic>;
-      (sessionsByBook[m['bookId'] as String] ??= []).add(m);
+      try {
+        final m = s as Map<String, dynamic>;
+        (sessionsByBook[m['bookId'] as String] ??= []).add(m);
+      } catch (e) {
+        debugPrint('Skipping malformed session entry in backup: $e');
+      }
     }
 
     for (final item in booksJson) {

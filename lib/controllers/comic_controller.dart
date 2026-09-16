@@ -32,6 +32,15 @@ class ComicReaderController extends ChangeNotifier {
   bool comicPreviewVisible = false;
   final ScrollController comicPreviewScrollController = ScrollController();
 
+  /// Per-page keys for the vertical list. Comic pages have variable heights,
+  /// so jumps target actual item positions via [Scrollable.ensureVisible]
+  /// instead of assuming every page is exactly one viewport tall.
+  final Map<int, GlobalKey> _verticalPageKeys = {};
+
+  /// Stable key for vertical-list item [index], created on demand.
+  GlobalKey verticalPageKey(int index) =>
+      _verticalPageKeys.putIfAbsent(index, () => GlobalKey());
+
   bool get isLazy => comicPageProvider != null;
 
   int get comicPageCount =>
@@ -57,6 +66,7 @@ class ComicReaderController extends ChangeNotifier {
   bool _mounted = true;
 
   Future<void> loadComicPages({VoidCallback? onLoaded}) async {
+    _verticalPageKeys.clear();
     try {
       if (book.format == BookFormat.cbz) {
         final provider = await ComicPageProvider.open(book.path);
@@ -191,6 +201,22 @@ class ComicReaderController extends ChangeNotifier {
   }
 
   void _scrollVerticalTo(int page, double? viewportHeight) {
+    // Prefer the item's actual position: pages have variable heights, so
+    // `page * viewportHeight` drifts near the end of mixed-height comics.
+    final ctx = _verticalPageKeys[page]?.currentContext;
+    if (ctx != null) {
+      unawaited(
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: 0.0,
+        ),
+      );
+      return;
+    }
+    // Fallback for the first frame (items not built yet): offset math with
+    // hasClients + extent guards so it can never throw.
     final c = comicVerticalScrollController;
     if (c == null ||
         !c.hasClients ||

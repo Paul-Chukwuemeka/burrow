@@ -115,20 +115,28 @@ class MetadataApiService {
       final request = await client.getUrl(uri).timeout(_coverTimeout);
       final response = await request.close().timeout(_coverTimeout);
       if (response.statusCode != 200) return null;
-      // Cap at ~10 MB to prevent downloading a multi-GB payload. The stream
-      // timeout bounds slow-loris stalls; the outer callers bound getUrl/close.
-      const maxBytes = 10 * 1024 * 1024;
-      var total = 0;
-      final chunks = <List<int>>[];
-      await for (final chunk in response.timeout(_coverTimeout)) {
-        total += chunk.length;
-        if (total > maxBytes) {
-          debugPrint('MetadataApiService: cover too large, aborting download');
-          return null;
+      // Cap at ~10 MB to prevent downloading a multi-GB payload. The inner
+      // stream timeout bounds per-event stalls; the outer total timeout
+      // bounds trickle servers that would otherwise pin a metadata slot
+      // forever (mirrors [_readBodyBounded]).
+      Future<List<int>?> read() async {
+        const maxBytes = 10 * 1024 * 1024;
+        var total = 0;
+        final chunks = <List<int>>[];
+        await for (final chunk in response.timeout(_coverTimeout)) {
+          total += chunk.length;
+          if (total > maxBytes) {
+            debugPrint(
+              'MetadataApiService: cover too large, aborting download',
+            );
+            return null;
+          }
+          chunks.add(chunk);
         }
-        chunks.add(chunk);
+        return chunks.expand((c) => c).toList();
       }
-      return chunks.expand((c) => c).toList();
+
+      return read().timeout(_coverTimeout);
     } catch (e) {
       debugPrint('MetadataApiService: cover download failed: $e');
       return null;

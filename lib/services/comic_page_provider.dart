@@ -52,6 +52,13 @@ class ComicPageProvider {
   /// memory upfront. For large CBZ files this is O(archive_size). A proper
   /// fix would use a ZIP library that supports random-access reads of the
   /// central directory, decompressing entries only on demand in [loadPage].
+  ///
+  /// Known limitation (honest note, not a silent bound): the decompressed-sum
+  /// check below necessarily runs *after* full inflation — it bounds what we
+  /// retain, but cannot prevent the transient spike during decode. A header-
+  /// only central-directory pre-scan would need a ZIP reader that doesn't
+  /// inflate on open; `package:archive` offers none, so this stays a TODO
+  /// rather than a half-measure that still OOMs.
   static Future<ComicPageProvider> open(String path) async {
     final file = File(path);
     final length = await file.length();

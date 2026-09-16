@@ -66,6 +66,10 @@ class _ThemedSheet extends StatefulWidget {
 class _ThemedSheetState extends State<_ThemedSheet> {
   Timer? _debounce;
 
+  // Guards the async brightness seed (same rationale as the reader chrome:
+  // a stale `current()` future must not overwrite a newer toggle).
+  int _brightnessSeedGen = 0;
+
   ReaderSettings get settings => widget.settings;
 
   @override
@@ -221,14 +225,17 @@ class _ThemedSheetState extends State<_ThemedSheet> {
   /// from the controller and commits exactly once when the seed lands.
   void _setSystemBrightness(bool system) {
     if (system) {
+      _brightnessSeedGen++;
       _update(() {
         settings.brightness = null;
         unawaited(BrightnessController.instance.apply(null));
       });
       return;
     }
-    BrightnessController.instance.current().then((lv) {
-      if (!mounted) return;
+    final gen = ++_brightnessSeedGen;
+    BrightnessController.instance.current().then((v) {
+      if (!mounted || gen != _brightnessSeedGen) return;
+      final lv = v.isFinite ? v.clamp(kMinBrightness, 1.0).toDouble() : 1.0;
       setState(() {
         settings.brightness = lv;
         unawaited(BrightnessController.instance.apply(lv));

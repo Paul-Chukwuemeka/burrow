@@ -172,6 +172,10 @@ class ReaderScreenState extends State<ReaderScreen>
   bool _chromeVisible = false;
   Timer? _saveDebounce;
 
+  // Guards the async brightness seed: a stale `current()` future must not
+  // overwrite a mode toggle made while it was in flight.
+  int _brightnessSeedGen = 0;
+
   // Reading session state.
   late final ReadingSessionManager _sessionCtrl;
 
@@ -1465,7 +1469,9 @@ class ReaderScreenState extends State<ReaderScreen>
                 ? '-/-'
                 : '${(((_comicCtrl.comicPage + 1) / _comicCtrl.comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              _comicCtrl.comicPageController?.jumpToPage(v - 1);
+              // Routed through the controller for hasClients/range guards
+              // (a bare jumpToPage throws with no PageView attached).
+              _comicCtrl.jumpToPage(v - 1);
             },
           ),
         ),
@@ -1508,6 +1514,7 @@ class ReaderScreenState extends State<ReaderScreen>
           padding: EdgeInsets.zero,
           itemCount: _comicCtrl.comicPageCount,
           itemBuilder: (context, i) => InteractiveViewer(
+            key: _comicCtrl.verticalPageKey(i),
             minScale: 1.0,
             maxScale: 4.0,
             child: Center(
@@ -1540,12 +1547,12 @@ class ReaderScreenState extends State<ReaderScreen>
                 ? '-/-'
                 : '${(((_comicCtrl.comicPage + 1) / _comicCtrl.comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              final viewportHeight = MediaQuery.sizeOf(context).height;
-              final targetOffset = (v - 1) * viewportHeight;
-              controller.animateTo(
-                targetOffset,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
+              // Routed through the controller: guards hasClients/clamps to
+              // the extent and targets the item's actual position instead of
+              // assuming fixed page heights.
+              _comicCtrl.jumpToPage(
+                v - 1,
+                verticalViewportHeight: MediaQuery.sizeOf(context).height,
               );
             },
           ),
@@ -1942,13 +1949,21 @@ class ReaderScreenState extends State<ReaderScreen>
   /// and the Auto/percentage label so both switch modes.
   void _toggleBrightnessMode() {
     if (_settings.brightness == null) {
-      BrightnessController.instance.current().then((lv) {
-        if (!mounted) return;
+      final gen = ++_brightnessSeedGen;
+      BrightnessController.instance.current().then((v) {
+        if (!mounted || gen != _brightnessSeedGen) return;
+        // Clamp the raw plugin seed: values below the slider minimum (or
+        // non-finite) would trip the Slider assertion on the next build.
+        final lv = v.isFinite
+            ? v.clamp(kMinBrightness, 1.0).toDouble()
+            : 1.0;
         setState(() => _settings.brightness = lv);
         BrightnessController.instance.apply(lv);
         _onSettingsChanged();
       });
     } else {
+      // Invalidate any in-flight seed so it can't resurrect manual mode.
+      _brightnessSeedGen++;
       setState(() => _settings.brightness = null);
       BrightnessController.instance.apply(null);
       _onSettingsChanged();
@@ -2071,7 +2086,10 @@ class ReaderScreenState extends State<ReaderScreen>
                             inactiveTrackColor: theme.muted.withValues(alpha: 0.3),
                           ),
                           child: Slider(
-                            value: _settings.brightness ?? 1.0,
+                            value: (_settings.brightness ?? 1.0).clamp(
+                              kMinBrightness,
+                              1.0,
+                            ),
                             min: kMinBrightness,
                             max: 1.0,
                             divisions: 19,

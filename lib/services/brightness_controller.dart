@@ -39,10 +39,13 @@ class BrightnessController {
   Future<void> reset() => apply(null);
 
   /// Read the current application brightness for seeding the slider.
-  /// Falls back to system brightness, then 1.0.
+  /// Falls back to system brightness, then 1.0. The result is clamped to
+  /// [kMinBrightness]..1.0 (non-finite → 1.0) so callers can store it and
+  /// feed it to a `Slider` without tripping its range assertion.
   Future<double> current() async {
     try {
-      return await _getCurrent();
+      final v = await _getCurrent();
+      return v.isFinite ? v.clamp(kMinBrightness, 1.0).toDouble() : 1.0;
     } catch (_) {
       return 1.0;
     }

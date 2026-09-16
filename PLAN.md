@@ -1693,4 +1693,106 @@ After both agents finish, run:
 flutter analyze
 flutter test
 ```
+### Merge point (Round 14)
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
 Review combined diff together before committing. Agent A merges first (Blockers are load-bearing), Agent B rebases onto it. Agent B must add: (1) CBR test exercising the main-isolate path on a fixture `.rar`, (2) ContinueCard overflow test at `textScaler` 1.5–2.0 with long title + author.
+
+---
+
+## Review Round 15 — On-Call Review (2026-09-16, post-Round-14 commits `7f92529`, `05986b9`, `04d3625`)
+
+Overall: the Round 12–14 blockers are verified fixed. What remains is second-order bugs mostly in the new code itself — unverified seeds reaching asserting widgets, guards placed after the allocation they claim to bound, and a CSS pipeline that still maps styles by substring search. No Blockers; six Majors. Verdict: Request changes.
+
+Feedback loops: `flutter analyze lib test` clean for app code (316-issue count is `vendor/lexicor` third-party noise); `flutter test` 266/266 green. No `CONTEXT.md`/ADRs exist; no secrets displayed; review read-only so no cleanup needed.
+
+### Majors
+
+- [x] **145. Brightness seed unclamped — `Slider` assertion on system-minimum devices** (Agent A, round15-agentA)
+  - **File:** `lib/screens/reader_screen.dart:1943-1950` (`_toggleBrightnessMode`) + `:2074-2075` (chrome `Slider`)
+  - **What:** `BrightnessController.current()` returns the unvalidated plugin value (catch handles throws only, so `0.0`/NaN pass through) and it is stored raw into `_settings.brightness`, while the chrome slider declares `min: kMinBrightness (0.05)` with no clamp (unlike `settings_sheet.dart:181`). Next build hits the `Slider` assertion in debug; persists bad value for the session (self-heals on relaunch via `_parseBrightness`, which does clamp).
+  - **Fix:** `final lv = v.isFinite ? v.clamp(kMinBrightness, 1.0) : 1.0;` before storing, and clamp the chrome slider value like the sheet does. Also add a generation guard so a stale `current()` future can't overwrite a mode toggle made while it was in flight.
+  - **Verify:** seed `current()` → `0.0`/NaN, tap brightness icon, confirm no assertion + persisted value in range.
+
+- [x] **146. `importLibrary` grouping casts abort the whole restore** (Agent A, round15-agentA)
+  - **File:** `lib/services/library_service.dart:415-423`
+  - **What:** `bm as Map<String, dynamic>` + `m['bookId'] as String` run outside any try/catch, upstream of the guarded per-entry inserts (lines 450-471). One malformed bookmark/session entry throws here → zero books imported.
+  - **Fix:** wrap each grouping iteration in try/catch, skip with `debugPrint`, mirroring the per-entry pattern below.
+  - **Verify:** backup with one `{"bookId": 123}` entry restores all valid books.
+
+- [ ] **147. `_sliceRuns`/`_sliceImages` drop `css` — anchor-split EPUBs lose styling**
+  - **File:** `lib/services/document_parser.dart:1020-1064`
+  - **What:** both slice functions omit the `css` field (`StyleRun.css` / `ImageRun.css` exist per `style_run.dart:22,60`); `_sliceImages` additionally drops `onTap`/`elementId`/`htmlWidth`. Any single-file EPUB split at anchors renders all chapters unstyled and collapses `fullWidth` covers to the 150px inline cap.
+  - **Fix:** propagate `css: r.css` in `_sliceRuns`; propagate `css`/`onTap`/`elementId`/`htmlWidth`/`htmlHeight` in `_sliceImages`.
+  - **Verify:** single-file EPUB with cover + 2 TOC fragments and a `.title` rule — all chapters styled after split.
+
+- [ ] **148. `_normalizeKey` throws on bare `%` — whole book fails to open**
+  - **File:** `lib/services/document_parser.dart:1066-1067` + `lib/services/epub_css_parser.dart:283-284`
+  - **What:** bare `Uri.decodeComponent(path)` with no guard (only `_splitHref` has the fallback). Spine path with a literal `%` throws `FormatException` out of `parse` — regression vs. pre-normalize code that never decoded.
+  - **Fix:** `try { return Uri.decodeComponent(p).toLowerCase(); } catch (_) { return p.toLowerCase(); }` on both sides.
+  - **Verify:** EPUB with `Text/100%_cover.xhtml` spine entry opens.
+
+- [x] **149. Comic sliders bypass the #142 guard + vertical math desyncs** (Agent A, round15-agentA)
+  - **File:** `lib/screens/reader_screen.dart:1468,1542-1550` + `lib/controllers/comic_controller.dart` (`_scrollVerticalTo`)
+  - **What:** both sliders drive `jumpToPage`/`animateTo` directly with no `hasClients` check and no `maxScrollExtent` clamp — slider drag on the first frame or past the end throws `StateError`/`RangeError`. Separately, vertical targets assume fixed `page * viewportHeight` while comic images have variable heights, so jumps land on the wrong page near the end.
+  - **Fix:** route both sliders through `_comicCtrl.jumpToPage(v - 1, verticalViewportHeight: …)`; fix vertical targeting by item position (`Scrollable.ensureVisible` with per-page keys) instead of `page * vh`.
+  - **Verify:** drag slider on first frame of a vertical comic; jump to page 15 of 20 mixed-height pages.
+
+- [ ] **150. `_resolveRules` — one bad selector kills the whole chapter**
+  - **File:** `lib/services/epub_css_parser.dart:112-150` (line 134 `cas.queryAll`)
+  - **What:** no per-selector try/catch (assumption, stated: cascadia throws on unsupported selectors like `p::first-letter`, `::-webkit-*`, common in commercial EPUBs). Exception propagates out of `parse` — zero rules for the chapter or failed import despite 99% valid CSS.
+  - **Fix:** wrap `queryAll` + per-element loop per selector in try/catch, `continue` on failure.
+  - **Verify:** stylesheet with one `p::first-letter` rule + valid rules — valid rules still resolve.
+
+### Minors (grouped)
+
+- [~] **151. Round-15 minors** (Agent A services slice DONE: CBZ post-inflation note added to TODO(#38), `downloadCover` total deadline added. Rest is Agent B.)
+  - `lib/services/comic_page_provider.dart:61-72` + `lib/services/document_parser.dart:1314-1368`: decompressed-sum guard runs after full inflation (CBZ) / CBR never sums extracted size — checks throw only after the OOM/disk-fill. Fix: header-only pre-scan pre-decode; walk CBR extract dir, abort + delete over cap. (Judgment call: honest fix is random-access reads per existing TODO.) [Agent A: honest-note added to provider TODO; random-access/CBR-walk deferred per judgment call]
+  - `lib/services/metadata_api_service.dart:123` (`downloadCover`): per-event timeout only, no total deadline (unlike `_readBodyBounded:214`). Trickle server pins a metadata slot forever. Fix: wrap whole read in `.timeout(_coverTimeout)`. [Agent A: DONE]
+  - `lib/services/metadata_api_service.dart:123` (`downloadCover`): per-event timeout only, no total deadline (unlike `_readBodyBounded:214`). Trickle server pins a metadata slot forever. Fix: wrap whole read in `.timeout(_coverTimeout)`.
+  - `lib/services/document_parser.dart:2052-2100` (`_mergeCssIntoImages`): matches by non-empty `elementId` only — class/tag image rules (`.fullpage{width:100%}`) never apply. Fix: carry `dom.Element`/src/class on `ImageRun`, match by identity with id fallback.
+  - `lib/services/document_parser.dart:1942-1964` (drift retry): re-search from 0 can double-claim the first of two identical paragraphs. Fix: resolve in document order, skip claimed ranges (or drop the wrap-around retry).
+  - `lib/services/document_parser.dart:1966-2048` (`_applyCssToRange`): rebuilds the run list per rule — O(rules × runs). Fix: group rules by element, merge once, single sweep.
+  - `lib/screens/stats_screen.dart:51-56`: `books` snapshot taken before the 8-way `Future.wait` — header counts can disagree with fresh stats. Fix: move snapshot after the await + `mounted` guard before first `setState`.
+
+---
+
+## Coordination — Round 15 Agent Split
+
+File-disjoint split. Agent A owns reader shell + services; Agent B owns parser/CSS + stats. No shared files.
+
+### Agent A — Reader shell + services
+
+Issues: #145 → #149 → #146 → #151-services slice
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 145 | `lib/screens/reader_screen.dart`, `lib/widgets/settings_sheet.dart` | Major | small (clamp seed + slider + generation guard) |
+| 149 | `lib/screens/reader_screen.dart`, `lib/controllers/comic_controller.dart` | Major | small (route sliders via controller + item-position scroll) |
+| 146 | `lib/services/library_service.dart` | Major | trivial (guard grouping loop) |
+| 151-svc | `lib/services/comic_page_provider.dart`, `lib/services/metadata_api_service.dart` | Minor | small (pre-scan note + total timeout) |
+
+### Agent B — Parser + CSS + stats
+
+Issues: #147 → #148 → #150 → #151-parser slice
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 147 | `lib/services/document_parser.dart` (`_sliceRuns`/`_sliceImages`) | Major | small (propagate fields) |
+| 148 | `lib/services/document_parser.dart`, `lib/services/epub_css_parser.dart` | Major | trivial (safe-decode wrapper) |
+| 150 | `lib/services/epub_css_parser.dart` (`_resolveRules`) | Major | trivial (per-selector try/catch) |
+| 151-css | `lib/services/document_parser.dart` (images match, drift retry, apply sweep) | Minor | medium (identity match + ordering) |
+| 151-ui | `lib/screens/stats_screen.dart` | Minor | trivial (snapshot after await) |
+
+### Merge point (Round 15)
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing. Agent A merges first (reader crash + restore abort are user-facing), Agent B rebases onto it. Agent A must add: brightness-seed regression test (`current()` → `0.0`/NaN, assert slider value in range + persisted value clamped). Agent B must add: slice-roundtrip test (CSS survives `_sliceRuns`/`_sliceImages`) + bare-`%` path test.
