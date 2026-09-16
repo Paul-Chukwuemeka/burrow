@@ -170,6 +170,7 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                 isExpanded: true,
                 isDense: true,
                 borderRadius: BorderRadius.circular(12),
+                dropdownColor: theme.background,
                 selectedItemBuilder: (context) {
                   return [
                     for (final font in kReaderFonts)
@@ -324,15 +325,21 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             segments: [
               ButtonSegment(
                 value: TextJustification.left,
-                label: Text('Left', style: TextStyle(color: theme.text)),
+                label: const Text('Left'),
               ),
               ButtonSegment(
                 value: TextJustification.justify,
-                label: Text('Justify', style: TextStyle(color: theme.text)),
+                label: const Text('Justify'),
               ),
             ],
             selected: {settings.textJustification},
             showSelectedIcon: false,
+            style: ButtonStyle(
+              foregroundColor: WidgetStateProperty.resolveWith((states) =>
+                  states.contains(WidgetState.selected)
+                      ? Colors.white
+                      : theme.text),
+            ),
             onSelectionChanged: (s) =>
                 _update(() => settings.textJustification = s.first),
           ),
