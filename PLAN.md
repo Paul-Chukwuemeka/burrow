@@ -1796,3 +1796,31 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing. Agent A merges first (reader crash + restore abort are user-facing), Agent B rebases onto it. Agent A must add: brightness-seed regression test (`current()` → `0.0`/NaN, assert slider value in range + persisted value clamped). Agent B must add: slice-roundtrip test (CSS survives `_sliceRuns`/`_sliceImages`) + bare-`%` path test.
+
+---
+
+## EPUB rendering fix — CSS units dropped by csslib span (user-reported, 2026-09-16)
+
+Symptoms (screenshots): body words rendered as hairline rules, small-caps headings
+giant with dropped first letters, 280%-scale drop cap overlapping the page.
+Only some books; "Respect EPUB styles" OFF fixed it; regression from Round 15.
+
+Root cause: `_extractProperties` read `decl.expression?.span?.text`, but
+csslib's expression span covers only the leading term — `70%` -> `70`,
+`1em` -> `1`, `1.3em` -> `1.3`. So `font-size:1em` resolved to 1px (body as
+hairlines), `font-size:70%` to 70px, `span.big{font-size:280%}` to 280px.
+Introduced in `57a595a`, which replaced `Expression.toString()` ("Instance of
+'Expressions'" — declaration dropped, book readable) with the truncated span.
+
+Fix (hypothesis stated for the record: unit truncation in the extractor):
+- `_extractProperties` takes the value from the *declaration* span
+  (`name: value`, split at first colon, `!important`/trailing `;` stripped),
+  keeping units and multi-term values intact.
+- `_parseLineHeight` handles `em`/`rem` as multipliers (`1.3em` = 1.3x, which
+  truncation got right by accident) and `px`/`pt` against the 16px reference
+  the parser already uses (`24px` = 1.5x, previously 24x).
+- Regression tests: `test/css_units_test.dart` (fails before: 70.0/24.0,
+  passes after: 11.2/1.3/1.5). Real-book check: 144-chapter fixture parses
+  with zero out-of-range runs (NOTICE small-caps 11.2, drop cap 44.8).
+- Fixture hygiene: shared book stays out of git (`assets/*.epub|pdf|cbz|cbr|txt`
+  added to `.gitignore`); committed tests use synthetic mini-EPUBs only.

@@ -279,14 +279,34 @@ class EpubCssParser {
       if (decl is! css_visitor.Declaration) continue;
       final name = decl.property;
       if (name.isEmpty) continue;
-      // NOTE: Expression.toString() is NOT the source text — for values like
-      // `100%` it yields "Instance of 'Expressions'", silently dropping every
-      // non-trivial declaration. The source span holds the real text.
-      final value = decl.expression?.span?.text.trim();
+      // NOTE: Neither Expression.toString() nor the expression source span
+      // is the value text. toString() yields "Instance of 'Expressions'"
+      // for values like `100%`, while the expression span covers only the
+      // leading term (`70%` -> `70`, `1em` -> `1`), silently dropping the
+      // unit and resolving e.g. `font-size:1em` to 1px. The declaration
+      // span covers `name: value`, so cut at the first colon instead.
+      final value = _declarationValue(decl) ??
+          decl.expression?.span?.text.trim();
       if (value == null || value.isEmpty) continue;
       props[name.toLowerCase()] = value;
     }
     return props;
+  }
+
+  /// Value text of [decl] from its own source span (`name: value`), keeping
+  /// units (`70%`, `1.3em`) and multi-term values (`10px 0px`) intact.
+  /// Splits at the first colon (property names never contain one) and strips
+  /// a trailing `!important`. Null when the span holds no value.
+  static String? _declarationValue(css_visitor.Declaration decl) {
+    final span = decl.span.text;
+    final colon = span.indexOf(':');
+    if (colon < 0) return null;
+    var value = span.substring(colon + 1).trim();
+    value = value
+        .replaceAll(RegExp(r'\s*!important\s*$', caseSensitive: false), '')
+        .trim();
+    if (value.endsWith(';')) value = value.substring(0, value.length - 1).trim();
+    return value.isEmpty ? null : value;
   }
 
   /// Lowercase + percent-decode [path] for map keys. Falls back to the raw
@@ -549,6 +569,22 @@ class EpubCssParser {
       // unitless `height` already models.
       final num = double.tryParse(v.substring(0, v.length - 1).trim());
       return num == null ? null : num / 100;
+    }
+    if (v.endsWith('em') || v.endsWith('rem')) {
+      // `1.3em` line-height MEANS 1.3x by definition — keep the multiplier.
+      // (Resolving against px here would newly break what unit truncation
+      // previously got right by accident.)
+      return double.tryParse(v.substring(0, v.length - 2).trim());
+    }
+    if (v.endsWith('px')) {
+      // No font context here; resolve against the 16px reference the rest of
+      // the parser uses (see _parseFontSize).
+      final num = double.tryParse(v.substring(0, v.length - 2).trim());
+      return num == null ? null : num / 16;
+    }
+    if (v.endsWith('pt')) {
+      final num = double.tryParse(v.substring(0, v.length - 2).trim());
+      return num == null ? null : num * 1.333 / 16;
     }
     final num = double.tryParse(v);
     if (num != null) return num;
