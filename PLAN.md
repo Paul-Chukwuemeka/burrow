@@ -1824,3 +1824,25 @@ Fix (hypothesis stated for the record: unit truncation in the extractor):
   with zero out-of-range runs (NOTICE small-caps 11.2, drop cap 44.8).
 - Fixture hygiene: shared book stays out of git (`assets/*.epub|pdf|cbz|cbr|txt`
   added to `.gitignore`); committed tests use synthetic mini-EPUBs only.
+
+---
+
+## Double chapter headings (user-reported, 2026-09-16)
+
+Symptom: every chapter opened with its title twice — reader-rendered "Chapter
+One" over in-body "CHAPTER ONE". Root cause: `splitByAnchors` titles chapters
+from the TOC/nav while leaving the same heading as the body's first line
+(TXT had the same shape: title derived from the heading line, body kept it).
+
+Fix: `_stripDuplicateHeading` drops a leading body line that equals the title
+after collapsing whitespace+case (strict full-line equality, so "Chapter One:
+The Beginning" and title-only chapters survive), rebasing runs/images via the
+existing `_sliceRuns`/`_sliceImages`. Applied in `splitByAnchors` (both return
+paths) and `chapterizeTxt`.
+- Tests: `test/chapter_headings_test.dart` (unit + EPUB end-to-end; red
+  pre-fix); real-book check went from every chapter duplicated to zero.
+- One existing assertion updated: the "lossless tiling" join in
+  `splitByAnchors splits one document into a chapter per anchor` now expects
+  headings-consumed-as-titles as the only allowed loss.
+- Note: saved reading offsets inside stripped chapters shift by the removed
+  line; positions clamp on load, worst case a line off.
