@@ -350,42 +350,22 @@ class DocumentParser {
     );
   }
 
-  /// Reads only the filename and series hint for a CBZ.
+  /// Reads the zip directory and only the first page image of a CBZ.
   ///
-  /// The archive is not opened here: metadata extraction stays cheap for bulk
-  /// comic imports (no whole-file read, no zip decode, no cover work). The
-  /// cover is backfilled on first open or by the cover worker. A four-byte
-  /// magic check still rejects files that are not ZIP archives.
+  /// Runs entirely inside the metadata isolate, so the archive read/decode and
+  /// cover extraction never touch the UI thread.
   static Future<ParsedMetadata> _extractCbzMetadata(String path) async {
-    await _verifyZipMagic(path);
-    final series = parseComicSeries(path);
-    return ParsedMetadata(
-      title: _titleFromFilename(path),
-      author: '',
-      seriesName: series.name,
-      seriesIndex: series.index,
-    );
-  }
-
-  /// Extracts and downscales the first page of a CBZ for use as its cover.
-  ///
-  /// The archive read and image decode run in a background isolate so the UI
-  /// thread is never blocked. Returns null when the archive has no images.
-  static Future<Uint8List?> extractComicCover(String path) =>
-      compute(_extractComicCoverIsolate, path);
-
-  static Uint8List? _extractComicCoverIsolate(String path) {
     final Uint8List bytes;
     try {
-      bytes = File(path).readAsBytesSync();
+      bytes = await File(path).readAsBytes();
     } catch (_) {
-      return null;
+      throw const FormatException('Not a valid CBZ file');
     }
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes);
     } catch (_) {
-      return null;
+      throw const FormatException('Not a valid CBZ/ZIP archive');
     }
     final names =
         archive.files
@@ -393,33 +373,21 @@ class DocumentParser {
             .map((f) => f.name)
             .toList()
           ..sort(_naturalCompare);
-    if (names.isEmpty) return null;
-    final entry = archive.files.firstWhere((f) => f.name == names.first);
-    return _downscaleCover(entry.content);
-  }
-
-  /// Throws [FormatException] unless [path] begins with the ZIP local-file
-  /// signature, reading at most four bytes.
-  static Future<void> _verifyZipMagic(String path) async {
-    RandomAccessFile? raf;
-    try {
-      raf = await File(path).open();
-      final magic = await raf.read(4);
-      if (magic.length < 4 ||
-          magic[0] != 0x50 ||
-          magic[1] != 0x4B ||
-          magic[2] != 0x03 ||
-          magic[3] != 0x04) {
-        throw const FormatException('Not a valid CBZ/ZIP archive');
-      }
-    } catch (e) {
-      if (e is FormatException) rethrow;
-      throw const FormatException('Not a valid CBZ file');
-    } finally {
-      try {
-        await raf?.close();
-      } catch (_) {}
+    if (names.isEmpty) {
+      throw const FormatException('No images found in comic archive');
     }
+    // Accessing `.content` decompresses only this entry.
+    final cover = archive.files
+        .firstWhere((f) => f.name == names.first)
+        .content;
+    final series = parseComicSeries(path);
+    return ParsedMetadata(
+      title: _titleFromFilename(path),
+      author: '',
+      seriesName: series.name,
+      seriesIndex: series.index,
+      coverBytes: cover,
+    );
   }
 
   static Future<ParsedDocument> _parseIsolate((String, String?) args) async {

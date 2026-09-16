@@ -752,7 +752,8 @@ More text.''';
       );
     });
 
-    test('CBZ metadata is filename-only and infers the series', () async {
+    test('CBZ metadata extracts the first page as the cover and series',
+        () async {
       final cbz = _buildCbz(['10.jpg', '2.jpg']);
       final dir = Directory.systemTemp.createTempSync('meta_cbz');
       final file = File('${dir.path}/Batman 001.cbz');
@@ -763,23 +764,8 @@ More text.''';
         expect(meta.title, 'Batman 001');
         expect(meta.seriesName, 'Batman');
         expect(meta.seriesIndex, 1);
-        // Covers are deferred to the cover worker / first open.
-        expect(meta.coverBytes, isNull);
-      } finally {
-        dir.deleteSync(recursive: true);
-      }
-    });
-
-    test('extractComicCover returns the first page', () async {
-      final cbz = _buildCbz(['10.jpg', '2.jpg']);
-      final dir = Directory.systemTemp.createTempSync('cover_cbz');
-      final file = File('${dir.path}/comic.cbz');
-      await file.writeAsBytes(cbz);
-
-      try {
-        final cover = await DocumentParser.extractComicCover(file.path);
-        expect(cover, isNotNull);
-        expect(cover, isNotEmpty);
+        expect(meta.coverBytes, isNotNull);
+        expect(meta.coverBytes, equals(_tinyJpeg()));
       } finally {
         dir.deleteSync(recursive: true);
       }

@@ -70,12 +70,6 @@ class LibraryService extends ChangeNotifier {
   final Queue<String> _pdfCoverQueue = Queue<String>();
   bool _pdfCoverWorkerRunning = false;
 
-  // Comic covers extracted from CBZ archives are also deferred and processed
-  // by a single low-priority worker so bulk comic imports stay cheap.
-  final Queue<String> _comicCoverQueue = Queue<String>();
-  bool _comicCoverWorkerRunning = false;
-  final Set<String> _comicCoverAttempted = <String>{};
-
   /// Stream controller for metadata extraction status events.
   final _metadataStatusController =
       StreamController<MetadataStatus>.broadcast();
@@ -584,22 +578,36 @@ class LibraryService extends ChangeNotifier {
 
       final database = _db;
       if (database != null) {
-        try {
-          await database.transaction(() async {
-            for (final book in batch) {
-              await database.insertBook(db.bookToCompanion(book));
-            }
-          });
-        } catch (e) {
-          final ids = {for (final b in batch) b.id};
-          _books.removeWhere((b) => ids.contains(b.id));
-          _invalidateSortCache();
-          errors.add(e);
-          return (added, errors);
+        // Insert in small chunks and yield between them. The production
+        // database runs on the UI isolate, so one huge transaction would
+        // freeze the interface; chunking keeps the event loop responsive.
+        const chunkSize = 100;
+        for (var i = 0; i < batch.length; i += chunkSize) {
+          final end = (i + chunkSize < batch.length)
+              ? i + chunkSize
+              : batch.length;
+          final chunk = batch.sublist(i, end);
+          try {
+            await database.transaction(() async {
+              for (final book in chunk) {
+                await database.insertBook(db.bookToCompanion(book));
+              }
+            });
+          } catch (e) {
+            final ids = {for (final b in chunk) b.id};
+            _books.removeWhere((b) => ids.contains(b.id));
+            _invalidateSortCache();
+            errors.add(e);
+            return (added, errors);
+          }
+          added.addAll(chunk);
+          notifyListeners();
+          await Future<void>.delayed(Duration.zero);
         }
+      } else {
+        added.addAll(batch);
       }
 
-      added.addAll(batch);
       for (final book in batch) {
         _metadataQueue.add(book.id);
       }
@@ -790,12 +798,6 @@ class LibraryService extends ChangeNotifier {
     if (format == BookFormat.pdf && book.coverPath == null) {
       _enqueuePdfCover(book.id);
     }
-
-    // CBZ covers are deferred from metadata extraction; backfill in the
-    // background once the book is known.
-    if (format == BookFormat.cbz && book.coverPath == null) {
-      _enqueueComicCover(book.id);
-    }
   }
 
   /// Persists accumulated metadata updates in a single transaction.
@@ -838,50 +840,6 @@ class LibraryService extends ChangeNotifier {
       }
     } finally {
       _pdfCoverWorkerRunning = false;
-    }
-  }
-
-  void _enqueueComicCover(String bookId) {
-    if (_comicCoverAttempted.contains(bookId)) return;
-    if (_comicCoverQueue.contains(bookId)) return;
-    _comicCoverQueue.add(bookId);
-    _startComicCoverWorker();
-  }
-
-  void _startComicCoverWorker() {
-    if (_comicCoverWorkerRunning || _comicCoverQueue.isEmpty) return;
-    _comicCoverWorkerRunning = true;
-    _processComicCoverQueue();
-  }
-
-  /// Backfills covers for comics that were imported without one. Runs one book
-  /// at a time so archive decoding never competes with the UI or metadata pass.
-  Future<void> _processComicCoverQueue() async {
-    try {
-      while (_comicCoverQueue.isNotEmpty && !_disposed) {
-        final bookId = _comicCoverQueue.removeFirst();
-        if (_comicCoverAttempted.contains(bookId)) continue;
-        _comicCoverAttempted.add(bookId);
-        final book = _books.where((b) => b.id == bookId).firstOrNull;
-        if (book == null || book.coverPath != null) continue;
-        await _generateComicCover(book);
-      }
-    } finally {
-      _comicCoverWorkerRunning = false;
-    }
-  }
-
-  /// Extracts the first page of a CBZ and stores it as the cover, if missing.
-  ///
-  /// The archive read/decode happens in a background isolate so this worker
-  /// never blocks the UI thread.
-  Future<void> _generateComicCover(Book book) async {
-    try {
-      final bytes = await DocumentParser.extractComicCover(book.path);
-      if (bytes == null || bytes.isEmpty) return;
-      await setCoverIfMissing(book, bytes);
-    } catch (e) {
-      debugPrint('Comic cover generation failed for ${book.title}: $e');
     }
   }
 
