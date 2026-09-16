@@ -994,7 +994,14 @@ class DocumentParser {
     if (cuts.isEmpty) {
       // No usable anchors: keep the document whole, titled by its first entry.
       return [
-        Chapter(entries.isEmpty ? '' : entries.first.title, body, runs, images),
+        _stripDuplicateHeading(
+          Chapter(
+            entries.isEmpty ? '' : entries.first.title,
+            body,
+            runs,
+            images,
+          ),
+        ),
       ];
     }
 
@@ -1019,8 +1026,37 @@ class DocumentParser {
     }
     return out.isEmpty
         ? [Chapter(entries.first.title, body, runs, images)]
-        : out;
+        : out.map(_stripDuplicateHeading).toList();
   }
+
+  /// Drops a leading body line that merely repeats the chapter title.
+  ///
+  /// Books commonly open a chapter file with the same heading the TOC/nav
+  /// already supplies (`<h2>CHAPTER ONE</h2>` under nav title "Chapter One").
+  /// The reader renders [Chapter.title] as a page heading, so keeping both
+  /// shows the heading twice. Matching is deliberately strict — the whole
+  /// first line must equal the title after collapsing whitespace and case —
+  /// so a distinct heading ("Prologue", "Chapter One: The Beginning") is
+  /// never eaten. A chapter holding nothing but its title is left alone.
+  static Chapter _stripDuplicateHeading(Chapter ch) {
+    final title = _normalizeHeading(ch.title);
+    if (title.isEmpty) return ch;
+    final nl = ch.body.indexOf('\n');
+    if (nl < 0) return ch;
+    if (_normalizeHeading(ch.body.substring(0, nl)) != title) return ch;
+    final rest = ch.body.substring(nl + 1).replaceFirst(RegExp(r'^\s+'), '');
+    if (rest.isEmpty) return ch;
+    final start = ch.body.length - rest.length;
+    return Chapter(
+      ch.title,
+      rest,
+      _sliceRuns(ch.runs, start, ch.body.length),
+      _sliceImages(ch.images, start, ch.body.length),
+    );
+  }
+
+  static String _normalizeHeading(String s) =>
+      s.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
 
   /// Clips [runs] to `[start, end)` and shifts them to slice-local offsets.
   static List<StyleRun> _sliceRuns(List<StyleRun> runs, int start, int end) {
@@ -1688,7 +1724,9 @@ class DocumentParser {
       }
     }
 
-    return chapters.isEmpty ? [Chapter('', text)] : chapters;
+    return chapters.isEmpty
+        ? [Chapter('', text)]
+        : chapters.map(_stripDuplicateHeading).toList();
   }
 
   // --------------------------------------------------------------------------

@@ -421,8 +421,10 @@ More text.''';
       expect(chapters[0].body, isNot(contains('beta')));
       expect(chapters[1].body, contains('beta'));
       expect(chapters[2].body, contains('gamma'));
-      // Splitting must not lose or duplicate a single character.
-      expect(chapters.map((c) => c.body).join(), body);
+      // Splitting must not lose or duplicate a single character, apart from
+      // in-body headings consumed as titles (stripped to avoid double
+      // headings in the reader).
+      expect(chapters.map((c) => c.body).join(), 'alpha\n\nbeta\n\ngamma');
     });
 
     test('rebases style runs into the slice they belong to', () {
