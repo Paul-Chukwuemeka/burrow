@@ -2236,6 +2236,15 @@ class DocumentParser {
     }
   }
 
+  /// Schema tag for the on-disk parsed-document cache. Bump whenever the
+  /// cached *meaning* changes, not just its shape: v4 invalidates entries
+  /// written before CSS declaration values kept their units (pre-fix caches
+  /// store e.g. `font-size:1em` as 1px and `70%` as 70px).
+  static const _cacheSchemaTag = 'v4';
+
+  @visibleForTesting
+  static String cacheKeyForTest(String path) => _cacheKey(path);
+
   static String _cacheKey(String path) {
     final file = File(path);
     final mtime = file.lastModifiedSync().millisecondsSinceEpoch;
@@ -2243,7 +2252,8 @@ class DocumentParser {
     // Bump the schema tag when the cached shape changes so stale entries from
     // an older format are ignored instead of deserialized with missing fields.
     // v3: images/fonts store archive entry names instead of base64 bytes.
-    final id = 'v3_${path}_${mtime}_$size';
+    // v4: CSS values keep their units (see _cacheSchemaTag).
+    final id = '${_cacheSchemaTag}_${path}_${mtime}_$size';
     // 32-bit hashCode is sufficient for cache keys; collisions fall through
     // to a full parse and the stale entry is harmless.
     return id.hashCode.toRadixString(16);

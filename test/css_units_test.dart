@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -61,6 +62,33 @@ void main() {
       );
       // 24px at the 16px reference = 1.5x, not 24x.
       expect(run.css?.lineHeight, closeTo(1.5, 0.001));
+    });
+  });
+
+  group('parsed-document cache invalidation', () {
+    // A pre-fix cache entry stores broken semantics (1em -> 1px, 70% -> 70px)
+    // under a key derived from path+mtime+size only. If the key scheme does
+    // not change, the fixed build keeps serving those poisoned entries and
+    // the user sees the old breakage forever.
+    test('cache key differs from the legacy v3 scheme', () async {
+      final dir = await Directory.systemTemp.createTemp('burrow_cache_key');
+      try {
+        final file = File('${dir.path}/book.epub');
+        await file.writeAsBytes([1, 2, 3, 4]);
+        final path = file.path;
+        final mtime = file.lastModifiedSync().millisecondsSinceEpoch;
+        final size = file.lengthSync();
+        final legacy =
+            'v3_${path}_${mtime}_$size'.hashCode.toRadixString(16);
+        expect(DocumentParser.cacheKeyForTest(path), isNot(legacy));
+        // ...but stays stable for the same file.
+        expect(
+          DocumentParser.cacheKeyForTest(path),
+          DocumentParser.cacheKeyForTest(path),
+        );
+      } finally {
+        await dir.delete(recursive: true);
+      }
     });
   });
 }
