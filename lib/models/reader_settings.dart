@@ -24,6 +24,10 @@ enum TextJustification { left, justify }
 /// Image fit mode for comic pages.
 enum ComicFitMode { contain, fitWidth, fitHeight }
 
+/// Which scan runs when the user taps "Scan": a full device walk, a single
+/// chosen folder, or a quick refresh of folders already in the library.
+enum ScanMode { device, folder, quick }
+
 /// App-level Material 3 brightness mapping.
 class AppTheme {
   const AppTheme._({required this.brightness});
@@ -195,6 +199,7 @@ class ReaderSettings {
     this.overrideCssColor = false,
     this.overrideCssTextAlign = false,
     this.overrideCssMargin = false,
+    this.scanMode = ScanMode.device,
   });
 
   double fontSize;
@@ -231,6 +236,9 @@ class ReaderSettings {
   bool overrideCssTextAlign;
   bool overrideCssMargin;
 
+  /// Preferred scan type for the library's scan actions.
+  ScanMode scanMode;
+
   ReaderTheme get colors => ReaderTheme.byMode(readerTheme);
 
   TextStyle textStyle(BuildContext context) {
@@ -266,6 +274,7 @@ class ReaderSettings {
     'overrideCssColor': overrideCssColor,
     'overrideCssTextAlign': overrideCssTextAlign,
     'overrideCssMargin': overrideCssMargin,
+    'scanMode': scanMode.name,
   };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
@@ -340,6 +349,10 @@ class ReaderSettings {
     overrideCssColor: json['overrideCssColor'] as bool? ?? false,
     overrideCssTextAlign: json['overrideCssTextAlign'] as bool? ?? false,
     overrideCssMargin: json['overrideCssMargin'] as bool? ?? false,
+    scanMode: ScanMode.values.firstWhere(
+      (m) => m.name == json['scanMode'],
+      orElse: () => ScanMode.device,
+    ),
   );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.

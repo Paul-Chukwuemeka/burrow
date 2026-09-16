@@ -207,6 +207,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 24),
+          _sectionHeader('Library'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              Icons.travel_explore_outlined,
+              color: scheme.onSurfaceVariant,
+            ),
+            title: const Text('Scan type', softWrap: false),
+            subtitle: Text(
+              switch (_s.scanMode) {
+                ScanMode.device => 'Walk the whole device for new books',
+                ScanMode.folder => 'Scan a single folder you pick',
+                ScanMode.quick => 'Only re-check your library folders',
+              },
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            trailing: DropdownButton<ScanMode>(
+              value: _s.scanMode,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final m in ScanMode.values)
+                  DropdownMenuItem(
+                    value: m,
+                    child: Text(
+                      switch (m) {
+                        ScanMode.device => 'Full device',
+                        ScanMode.folder => 'Single folder',
+                        ScanMode.quick => 'Quick refresh',
+                      },
+                    ),
+                  ),
+              ],
+              onChanged: (v) {
+                if (v != null) _update(() => _s.scanMode = v);
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
           _sectionHeader('Dictionary'),
           ListTile(
             contentPadding: EdgeInsets.zero,

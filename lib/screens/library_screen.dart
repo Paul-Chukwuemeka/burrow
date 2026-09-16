@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../db/database.dart' as db;
 import '../models/book.dart';
 import '../models/library_enums.dart';
+import '../models/reader_settings.dart';
 import '../services/import_helper.dart';
 import '../services/library_service.dart';
 import '../services/scan_service.dart';
@@ -76,6 +77,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _layout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     widget.library.addListener(_onLibraryChanged);
 
+    _loadFilters();
+
     _metadataSubscription = widget.library.metadataStatus.listen((status) {
       if (!mounted) return;
       setState(() {
@@ -117,6 +120,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() => _layout = newLayout);
   }
 
+  Future<void> _loadFilters() async {
+    final data = await widget.library.loadFilters();
+    if (data == null || !mounted) return;
+    setState(() {
+      final sortName = data['sort'] as String?;
+      if (sortName != null) {
+        _sort = SortMode.values.firstWhere(
+          (e) => e.name == sortName,
+          orElse: () => SortMode.recent,
+        );
+      }
+      final statusName = data['status'] as String?;
+      if (statusName != null) {
+        _statusFilter = _ReadingStatus.values.firstWhere(
+          (e) => e.name == statusName,
+          orElse: () => _ReadingStatus.all,
+        );
+      }
+      _genreFilter = data['genre'] as String?;
+      _seriesFilter = data['series'] as String?;
+      final formatNames = data['formats'] as List<dynamic>?;
+      if (formatNames != null) {
+        _formatFilters = {
+          for (final f in formatNames)
+            BookFormat.values.firstWhere(
+              (e) => e.name == f,
+              orElse: () => BookFormat.epub,
+            ),
+        };
+      }
+    });
+  }
+
+  void _saveFilters() {
+    widget.library.saveFilters(
+      sort: _sort.name,
+      status: _statusFilter.name,
+      genre: _genreFilter,
+      series: _seriesFilter,
+      formats: [for (final f in _formatFilters) f.name],
+    );
+  }
+
   String get _sortLabel => switch (_sort) {
     SortMode.recent => 'Recent',
     SortMode.added => 'Added',
@@ -148,23 +194,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
         seriesFilter: _seriesFilter,
         formatFilters: _formatFilters,
         books: widget.library.books,
-        onStatusChanged: (s) => setState(() {
-          _statusFilter = switch (s) {
-            ReadingStatus.all => _ReadingStatus.all,
-            ReadingStatus.reading => _ReadingStatus.reading,
-            ReadingStatus.finished => _ReadingStatus.finished,
-            ReadingStatus.new_ => _ReadingStatus.new_,
-          };
-        }),
-        onGenreChanged: (g) => setState(() => _genreFilter = g),
-        onSeriesChanged: (s) => setState(() => _seriesFilter = s),
-        onFormatsChanged: (f) => setState(() => _formatFilters = Set.of(f)),
-        onClearAll: () => setState(() {
-          _statusFilter = _ReadingStatus.all;
-          _genreFilter = null;
-          _seriesFilter = null;
-          _formatFilters = {};
-        }),
+        onStatusChanged: (s) {
+          setState(() {
+            _statusFilter = switch (s) {
+              ReadingStatus.all => _ReadingStatus.all,
+              ReadingStatus.reading => _ReadingStatus.reading,
+              ReadingStatus.finished => _ReadingStatus.finished,
+              ReadingStatus.new_ => _ReadingStatus.new_,
+            };
+          });
+          _saveFilters();
+        },
+        onGenreChanged: (g) {
+          setState(() => _genreFilter = g);
+          _saveFilters();
+        },
+        onSeriesChanged: (s) {
+          setState(() => _seriesFilter = s);
+          _saveFilters();
+        },
+        onFormatsChanged: (f) {
+          setState(() => _formatFilters = Set.of(f));
+          _saveFilters();
+        },
+        onClearAll: () {
+          setState(() {
+            _statusFilter = _ReadingStatus.all;
+            _genreFilter = null;
+            _seriesFilter = null;
+            _formatFilters = {};
+          });
+          _saveFilters();
+        },
       ),
     );
   }
@@ -299,6 +360,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
     await _runScan(ScanService.scanDevice(knownPaths: _knownPaths()));
+  }
+
+  /// Runs the scan type chosen in Settings.
+  Future<void> _scanPreferred() async {
+    switch (widget.library.settings.scanMode) {
+      case ScanMode.device:
+        await _scanDevice();
+      case ScanMode.folder:
+        await _pickFolderAndScan();
+      case ScanMode.quick:
+        await _quickRefresh();
+    }
   }
 
   Future<void> _onRefresh() async {
@@ -982,7 +1055,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           ? const BusyState()
                           : EmptyState(
                               onPickFile: _pickFile,
-                              onScan: _scanDevice,
+                              onScan: _scanPreferred,
                             ),
                     ),
                 ],
@@ -1053,7 +1126,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return [
       if (recent != null)
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
           sliver: SliverToBoxAdapter(
             child: ContinueCard(
               book: recent,
@@ -1694,19 +1767,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           const SizedBox(height: 12),
           FabMenuItem(
-            icon: Icons.folder_open_outlined,
-            label: 'Scan folder…',
+            icon: switch (widget.library.settings.scanMode) {
+              ScanMode.device => Icons.travel_explore_outlined,
+              ScanMode.folder => Icons.folder_open_outlined,
+              ScanMode.quick => Icons.refresh_rounded,
+            },
+            label: switch (widget.library.settings.scanMode) {
+              ScanMode.device => 'Scan device',
+              ScanMode.folder => 'Scan folder…',
+              ScanMode.quick => 'Quick refresh',
+            },
             scheme: scheme,
             delay: 0.12,
-            onTap: () => _runFromFab(_pickFolderAndScan),
-          ),
-          const SizedBox(height: 12),
-          FabMenuItem(
-            icon: Icons.travel_explore_outlined,
-            label: 'Scan device',
-            scheme: scheme,
-            delay: 0.24,
-            onTap: () => _runFromFab(_scanDevice),
+            onTap: () => _runFromFab(_scanPreferred),
           ),
           const SizedBox(height: 18),
         ],

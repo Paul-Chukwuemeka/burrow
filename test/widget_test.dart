@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:burrow/models/book.dart';
+import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/screens/library_screen.dart';
 import 'package:burrow/services/library_service.dart';
@@ -514,8 +515,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Import file'), findsOneWidget);
-      expect(find.text('Scan folder…'), findsOneWidget);
+      // Default scan type is a full device scan.
       expect(find.text('Scan device'), findsOneWidget);
+      expect(find.text('Scan folder…'), findsNothing);
+    });
+
+    testWidgets('FAB scan action follows the scan type setting', (
+      tester,
+    ) async {
+      final service = LibraryService()..debugAddAll([fakeBook('a')]);
+      service.settings.scanMode = ScanMode.folder;
+      await pumpLibrary(tester, service);
+
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Import file'), findsOneWidget);
+      expect(find.text('Scan folder…'), findsOneWidget);
+      expect(find.text('Scan device'), findsNothing);
     });
 
     testWidgets('grid follows the single progress convention', (tester) async {

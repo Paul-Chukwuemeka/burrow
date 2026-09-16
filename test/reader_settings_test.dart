@@ -110,5 +110,20 @@ void main() {
       expect(j.containsKey('dimmer'), isFalse);
       expect(j.containsKey('brightness'), isTrue);
     });
+
+    test('scanMode defaults to device and round-trips', () {
+      expect(ReaderSettings().scanMode, ScanMode.device);
+      final s = ReaderSettings()..scanMode = ScanMode.quick;
+      final r = ReaderSettings.fromJson(s.toJson());
+      expect(r.scanMode, ScanMode.quick);
+    });
+
+    test('scanMode falls back to device on unknown name', () {
+      expect(
+        ReaderSettings.fromJson({'scanMode': 'telepathy'}).scanMode,
+        ScanMode.device,
+      );
+      expect(ReaderSettings.fromJson({}).scanMode, ScanMode.device);
+    });
   });
 }
