@@ -171,14 +171,13 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                 isDense: true,
                 borderRadius: BorderRadius.circular(12),
                 selectedItemBuilder: (context) {
-                  final cs = Theme.of(context).colorScheme;
                   return [
                     for (final font in kReaderFonts)
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
                           font.label,
-                          style: TextStyle(fontSize: 14, color: cs.onSurface),
+                          style: TextStyle(fontSize: 14, color: theme.text),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -189,7 +188,7 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                   for (final font in kReaderFonts)
                     DropdownMenuItem(
                       value: font.family ?? '',
-                      child: _HoverableDropdownItem(font: font),
+                      child: _HoverableDropdownItem(font: font, theme: theme),
                     ),
                 ],
                 onChanged: (v) => _update(
@@ -736,9 +735,10 @@ class _ToggleRow extends StatelessWidget {
 }
 
 class _HoverableDropdownItem extends StatefulWidget {
-  const _HoverableDropdownItem({required this.font});
+  const _HoverableDropdownItem({required this.font, required this.theme});
 
   final ReaderFont font;
+  final ReaderTheme theme;
 
   @override
   State<_HoverableDropdownItem> createState() => _HoverableDropdownItemState();
@@ -749,7 +749,6 @@ class _HoverableDropdownItemState extends State<_HoverableDropdownItem> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final label = widget.font.subtitle != null
         ? '${widget.font.label}  \u00b7  ${widget.font.subtitle}'
         : widget.font.label;
@@ -760,12 +759,12 @@ class _HoverableDropdownItemState extends State<_HoverableDropdownItem> {
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: _hovered ? scheme.surfaceContainerHigh : Colors.transparent,
+          color: _hovered ? widget.theme.muted.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
           label,
-          style: TextStyle(fontSize: 14, color: scheme.onSurface),
+          style: TextStyle(fontSize: 14, color: widget.theme.text),
         ),
       ),
     );
