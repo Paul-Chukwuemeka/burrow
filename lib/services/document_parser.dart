@@ -215,7 +215,14 @@ class DocumentParser {
   /// `compute` isolate.
   static Future<ParsedDocument> parse(String path) async {
     final cacheDir = await _safeCacheDirPath();
-    return compute(_parseIsolate, (path, cacheDir));
+    // Resolve CBR temp dir on the main isolate so the background isolate does
+    // not call path_provider (which uses a platform channel unavailable inside
+    // compute).
+    String? cbrTempParent;
+    if (formatFromExtension(path) == BookFormat.cbr) {
+      cbrTempParent = await _safeCbrTempParentPath();
+    }
+    return compute(_parseIsolate, (path, cacheDir, cbrTempParent));
   }
 
   /// Extracts only metadata and cover bytes from a document.
@@ -425,8 +432,10 @@ class DocumentParser {
     );
   }
 
-  static Future<ParsedDocument> _parseIsolate((String, String?) args) async {
-    final (path, cacheDirPath) = args;
+  static Future<ParsedDocument> _parseIsolate(
+    (String, String?, String?) args,
+  ) async {
+    final (path, cacheDirPath, cbrTempParent) = args;
     // Check disk cache for EPUB/TXT (formats where parsing is expensive).
     final fmt = formatFromExtension(path);
     if ((fmt == BookFormat.epub || fmt == BookFormat.txt) &&
@@ -460,7 +469,7 @@ class DocumentParser {
         doc = await _parseTxt(path);
       case BookFormat.cbz:
       case BookFormat.cbr:
-        doc = await _parseComicBook(path);
+        doc = await _parseComicBook(path, cbrTempParent: cbrTempParent);
     }
 
     // Save to disk cache for expensive formats.
@@ -1264,7 +1273,10 @@ class DocumentParser {
     '.bmp',
   };
 
-  static Future<ParsedDocument> _parseComicBook(String path) async {
+  static Future<ParsedDocument> _parseComicBook(
+    String path, {
+    String? cbrTempParent,
+  }) async {
     final format = formatFromExtension(path);
     List<String> entryNames;
     Uint8List Function(String entryName) readEntry;
@@ -1336,13 +1348,14 @@ class DocumentParser {
             .where((f) => _isImage(f))
             .toList();
 
-        // Extract all to a deterministic subdirectory of the app cache so a
-        // killed isolate doesn't leak temp files in systemTemp.  If the dir
-        // already exists (from a previous interrupted run), reuse it.
+        // Extract all to a subdirectory under the main-isolate-resolved temp
+        // parent.  The directory name includes a hash of the source path to
+        // avoid collisions when two CBR files share the same basename.
         try {
-          final cacheDir = await getTemporaryDirectory();
+          final parent = cbrTempParent ?? Directory.systemTemp.path;
           final safeBaseName = _safeTempName(path);
-          final tempPath = '${cacheDir.path}/cbr_$safeBaseName';
+          final pathHash = path.hashCode.toRadixString(36);
+          final tempPath = '$parent/cbr_${safeBaseName}_$pathHash';
           final existingDir = Directory(tempPath);
           if (existingDir.existsSync()) {
             existingDir.deleteSync(recursive: true);
@@ -1978,6 +1991,18 @@ class DocumentParser {
   static Future<String?> _safeCacheDirPath() async {
     try {
       return await _resolveCacheDirPath();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Main-isolate-safe resolver for the CBR temp parent directory.
+  static Future<String?> _safeCbrTempParentPath() async {
+    try {
+      final tmp = await getTemporaryDirectory();
+      final dir = Directory('${tmp.path}/burrow_cbr_temp');
+      if (!dir.existsSync()) await dir.create(recursive: true);
+      return dir.path;
     } catch (_) {
       return null;
     }

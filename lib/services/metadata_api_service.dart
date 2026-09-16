@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -185,6 +186,36 @@ class MetadataApiService {
     return results.isEmpty ? null : results.first;
   }
 
+  /// Reads an HTTP response body with a hard byte-cap and timeout.
+  ///
+  /// `.take(n)` on a stream counts *events* (chunks), not bytes, so it is
+  /// useless as a size guard.  This helper counts actual bytes and aborts
+  /// once [maxBytes] is exceeded.
+  static Future<String> _readBodyBounded(
+    HttpClientResponse response, {
+    int maxBytes = 10 * 1024 * 1024,
+  }) async {
+    final chunks = <List<int>>[];
+    var total = 0;
+    final sub = response.listen(
+      (chunk) {
+        total += chunk.length;
+        chunks.add(chunk);
+      },
+      onDone: () {},
+      onError: (e) {},
+    );
+    final timer = Timer(_timeout, () {
+      sub.cancel();
+    });
+    await sub.asFuture<void>();
+    timer.cancel();
+    if (total > maxBytes) {
+      throw FormatException('Response body exceeds $maxBytes bytes');
+    }
+    return utf8.decode(chunks.expand((c) => c).toList(), allowMalformed: true);
+  }
+
   static Future<List<ApiBookMetadata>> _searchGoogleBooks({
     required String query,
     int maxResults = 10,
@@ -200,7 +231,7 @@ class MetadataApiService {
       final response = await request.close().timeout(_timeout);
       if (response.statusCode != 200) return [];
 
-      final body = await response.transform(utf8.decoder).join();
+      final body = await _readBodyBounded(response);
       final json = jsonDecode(body) as Map<String, dynamic>;
       final items = json['items'] as List?;
       if (items == null || items.isEmpty) return [];
@@ -377,12 +408,7 @@ class MetadataApiService {
       final response = await request.close().timeout(_timeout);
       if (response.statusCode != 200) return null;
 
-      // Cap response body at ~10 MB to guard against a misbehaving server.
-      final chunks = await response.take(10 * 1024 * 1024).toList();
-      final body = utf8.decode(
-        chunks.expand((c) => c).toList(),
-        allowMalformed: true,
-      );
+      final body = await _readBodyBounded(response);
       final json = jsonDecode(body) as Map<String, dynamic>;
       return _parseOpenLibraryBook(json, isbn: isbn);
     } catch (e) {
@@ -419,11 +445,7 @@ class MetadataApiService {
       final response = await request.close().timeout(_timeout);
       if (response.statusCode != 200) return [];
 
-      final chunks = await response.take(10 * 1024 * 1024).toList();
-      final body = utf8.decode(
-        chunks.expand((c) => c).toList(),
-        allowMalformed: true,
-      );
+      final body = await _readBodyBounded(response);
       final json = jsonDecode(body) as Map<String, dynamic>;
       final docs = json['docs'] as List?;
       if (docs == null || docs.isEmpty) return [];
