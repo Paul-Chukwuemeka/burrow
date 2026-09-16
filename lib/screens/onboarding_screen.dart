@@ -395,7 +395,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ScanStatus.running => [
           buildCta(context, 'Browse library', () {
             _ctrl.handOffScanToLibrary();
-            _finish();
+            // Scan callbacks can concurrently fire _finishOnce(); guard the
+            // CTA the same way so onDone navigation never runs twice.
+            _finishOnce();
           }),
           const SizedBox(height: 6),
           buildCta(context, 'Scanning…', null, variant: CtaVariant.text),

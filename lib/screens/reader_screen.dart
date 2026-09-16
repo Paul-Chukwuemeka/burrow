@@ -1778,15 +1778,11 @@ class ReaderScreenState extends State<ReaderScreen>
       return;
     }
     if (_isComic) {
-      if (_comicCtrl.comicPageCount == 0) return;
-      // In RTL mode the PageView is reversed, so negate the direction.
-      final rtl = _settings.comicReadingDirection == ComicReadingDirection.rtl;
-      final target = _comicCtrl.comicPage + (rtl ? -direction : direction);
-      if (target < 0 || target >= _comicCtrl.comicPageCount) return;
-      _comicCtrl.comicPageController?.animateToPage(
-        target,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+      // Delegates to the controller, which branches vertical mode through
+      // the vertical scroll controller (no PageView clients there).
+      _comicCtrl.flip(
+        direction,
+        verticalViewportHeight: MediaQuery.sizeOf(context).height,
       );
       return;
     }
@@ -1879,10 +1875,9 @@ class ReaderScreenState extends State<ReaderScreen>
         if (_isPdf) {
           _jumpToPdfPage(page);
         } else if (_isComic) {
-          _comicCtrl.comicPageController?.animateToPage(
+          _comicCtrl.jumpToPage(
             page - 1,
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
+            verticalViewportHeight: MediaQuery.sizeOf(context).height,
           );
         } else {
           _pageController?.jumpToPage(page - 1);
@@ -2014,7 +2009,8 @@ class ReaderScreenState extends State<ReaderScreen>
                         ),
                       ),
                     IconButton(
-                      icon: Icon(Icons.text_fields, color: theme.text),
+                      icon: Icon(Icons.tune, color: theme.text),
+                      tooltip: 'Display settings',
                       onPressed: () => SettingsSheet.show(
                         context,
                         settings: _settings,
@@ -2178,19 +2174,12 @@ class ReaderScreenState extends State<ReaderScreen>
           final isCurrent = i == _comicCtrl.comicPage;
           return GestureDetector(
             onTap: () {
-              if (_comicCtrl.isLazy) {
-                _comicCtrl.comicPageController?.jumpToPage(i);
-              } else if (_settings.comicReadingMode ==
-                  ComicReadingMode.vertical) {
-                final vh = MediaQuery.sizeOf(context).height;
-                _comicCtrl.comicVerticalScrollController?.animateTo(
-                  i * vh,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutCubic,
-                );
-              } else {
-                _comicCtrl.comicPageController?.jumpToPage(i);
-              }
+              // jumpToPage branches vertical mode (no PageView clients)
+              // through the vertical scroll controller internally.
+              _comicCtrl.jumpToPage(
+                i,
+                verticalViewportHeight: MediaQuery.sizeOf(context).height,
+              );
             },
             child: Container(
               width: 52,

@@ -1627,7 +1627,7 @@ Scope: full-tree review via 4 parallel agents (DB/library, reader/controllers, p
 
 ### Minors (grouped)
 
-- [~] **143. Round-14 minors** (Agent B UI slice DONE: stats Future.wait+retry, _loadFilters skip, brightness non-finite, by-tail, onboarding _finishOnce, style_run min-scale, comic empty-clamp. Agent A slice DONE: importFilesFast per-chunk add, metadata-queue dedupe)
+- [x] **143. Round-14 minors** (Agent B UI slice: stats Future.wait+retry, _loadFilters skip, brightness non-finite, by-tail, onboarding _finishOnce, style_run min-scale, comic empty-clamp. Agent A slice: importFilesFast per-chunk add, metadata-queue dedupe — committed 7f92529)
   - `lib/screens/stats_screen.dart` `_loadStats` (~49-89): 8 sequential DB awaits, zero error handling — one corrupt-stats throw leaves a permanent spinner. Fix: `Future.wait` in try/catch with error state + retry.
   - `lib/screens/library_screen.dart` `_loadFilters` (~143-152): unknown persisted format falls back to `BookFormat.epub`, forcing an epub-only filter that hides the library. Fix: skip unparseable entries.
   - `lib/models/reader_settings.dart` `_parseBrightness` (~373-387): NaN/Infinity not rejected (unlike `fontSize`/`lineHeight` via `_clampTo`) — can reach the platform brightness channel. Fix: return `null` (follow system) for non-finite.
@@ -1641,7 +1641,7 @@ Scope: full-tree review via 4 parallel agents (DB/library, reader/controllers, p
 
 ### Nits
 
-- [~] **144. Round-14 nits** (Agent B: search_controller short-circuit comments added, ReaderChrome zero-callsite verified. RarFfi doc already covered by Agent A parse() comment)
+- [x] **144. Round-14 nits** (Agent B: search_controller short-circuit comments added, ReaderChrome zero-callsite verified. RarFfi doc covered by Agent A parse() comment — committed 7f92529)
   - `RarFfi` vs `RarMethodChannel` split is Android-only FFI — document in `_parseComicBook` why main-isolate listing is required (link `rar_platform_interface.dart`).
   - `ReaderChrome` widget file has zero call sites (only the private `_chrome()` in `reader_screen.dart` renders) — the uncommitted `tune` icon change was applied to both, which is correct for consistency, but future chrome fixes must target the private `_chrome()`.
   - `search_controller.dart:115,154`: add a comment that `?.` short-circuits argument evaluation, so the `listener!` force-unwrap is safe only while both fields are set/cleared together.

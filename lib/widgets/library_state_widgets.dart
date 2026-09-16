@@ -328,12 +328,15 @@ class ContinueCard extends StatelessWidget {
               onTap: onTap,
               child: Padding(
                 padding: const EdgeInsets.all(10),
-                child: SizedBox(
-                  height: 165,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AspectRatio(
+                // Adaptive height: the cover pins the minimum at 165 logical
+                // px, but the text column sizes itself so 1.3–2.0x system text
+                // scales grow the card instead of overflowing the Row.
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: 165,
+                      child: AspectRatio(
                         aspectRatio: Burrow.coverAspectRatio,
                         child: Hero(
                           tag: 'hero-${book.id}',
@@ -343,87 +346,88 @@ class ContinueCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.auto_stories_rounded,
-                                  size: 15,
-                                  color: onCard.withValues(alpha: 0.8),
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    'CONTINUE READING',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.labelSmall
-                                        ?.copyWith(
-                                          color: onCard.withValues(alpha: 0.8),
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.9,
-                                        ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              book.displayTitle,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: onCard,
-                                  ),
-                            ),
-                            if (book.author.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.auto_stories_rounded,
+                                size: 15,
+                                color: onCard.withValues(alpha: 0.8),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
                                 child: Text(
-                                  book.author,
+                                  'CONTINUE READING',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
+                                  style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
-                                        color: onCard.withValues(alpha: 0.75),
+                                        color: onCard.withValues(alpha: 0.8),
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.9,
                                       ),
                                 ),
                               ),
-                            const SizedBox(height: 14),
-                            SegmentedProgressBar(
-                              value: book.progress.clamp(0, 1),
-                              height: 8,
-                              track: onCard.withValues(alpha: 0.22),
-                              fill: onCard,
-                            ),
-                            const SizedBox(height: 10),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: onCard.withValues(alpha: 0.14),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.play_arrow_rounded,
-                                  size: 24,
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            book.displayTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
                                   color: onCard,
                                 ),
+                          ),
+                          if (book.author.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                book.author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: onCard.withValues(alpha: 0.75),
+                                    ),
                               ),
                             ),
-                          ],
-                        ),
+                          const SizedBox(height: 10),
+                          SegmentedProgressBar(
+                            value: book.progress.clamp(0, 1),
+                            height: 8,
+                            track: onCard.withValues(alpha: 0.22),
+                            fill: onCard,
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: onCard.withValues(alpha: 0.14),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.play_arrow_rounded,
+                                size: 22,
+                                color: onCard,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -75,10 +75,24 @@ String cleanBookTitle(String raw) {
   s = s.replaceAll(_formatTagRe, ' ');
   s = s.replaceAll(_underscoreRe, ' ');
 
-  // Drop "by John A. Doe" author tails only when enough title remains.
+  // Drop "by John A. Doe" author tails only when enough title remains, and
+  // only when the tail looks like a real author credit: either ≥2 name tokens
+  // ("by John Doe") or filename-cruft signals that this came from a scraped
+  // filename ("The_Hero_by_John"). A bare "Stand by Me" keeps its tail.
   final byMatch = _bySuffixRe.firstMatch(s);
   if (byMatch != null && byMatch.start >= 6) {
-    s = s.substring(0, byMatch.start);
+    final tail = s
+        .substring(byMatch.start)
+        .replaceFirst(RegExp(r'^\s+by\s+', caseSensitive: false), '')
+        .trim();
+    final tokenCount = tail.isEmpty ? 0 : tail.split(RegExp(r'\s+')).length;
+    final hadCruft =
+        _underscoreRe.hasMatch(raw) ||
+        _siteNoiseRe.hasMatch(raw) ||
+        _formatTagRe.hasMatch(raw);
+    if (tokenCount >= 2 || hadCruft) {
+      s = s.substring(0, byMatch.start);
+    }
   }
 
   s = s

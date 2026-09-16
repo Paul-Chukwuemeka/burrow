@@ -137,7 +137,8 @@ class _ReaderChromeState extends State<ReaderChrome> {
                     onPressed: widget.onToggleComicPreview,
                   ),
                 IconButton(
-                  icon: Icon(Icons.text_fields, color: theme.text),
+                  icon: Icon(Icons.tune, color: theme.text),
+                  tooltip: 'Display settings',
                   onPressed: widget.onShowSettings,
                 ),
               ],

@@ -142,12 +142,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _seriesFilter = data['series'] as String?;
       final formatNames = data['formats'] as List<dynamic>?;
       if (formatNames != null) {
+        // Skip persisted names that no longer parse instead of falling back
+        // to epub (which would force an epub-only filter hiding the library).
         _formatFilters = {
           for (final f in formatNames)
-            BookFormat.values.firstWhere(
-              (e) => e.name == f,
-              orElse: () => BookFormat.epub,
-            ),
+            for (final match in BookFormat.values.where((e) => e.name == f))
+              match,
         };
       }
     });

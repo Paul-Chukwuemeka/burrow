@@ -68,16 +68,20 @@ class EpubCssParser {
 
     for (final chapterPath in spinePaths) {
       final rules = <ResolvedCssRule>[];
+      // Normalize so uppercase / percent-encoded spine paths match the
+      // `_normalizeKey`-keyed maps on the document_parser side.
+      final key = _normalizeKey(chapterPath);
 
       // Reuse pre-built DOM if available, otherwise parse from archive.
-      dom.Document? doc = chapterDom?[chapterPath];
+      // Accept both raw and normalized keys for backward compatibility.
+      dom.Document? doc = chapterDom?[chapterPath] ?? chapterDom?[key];
       if (doc == null) {
         try {
           final xhtmlBytes = readEntry(chapterPath);
           final xhtml = utf8.decode(xhtmlBytes, allowMalformed: true);
           doc = html_parser.parse(xhtml);
         } catch (_) {
-          allRules[chapterPath] = rules;
+          allRules[key] = rules;
           continue;
         }
       }
@@ -99,7 +103,7 @@ class EpubCssParser {
 
       _resolveInlineStyles(doc, rules);
 
-      allRules[chapterPath] = rules;
+      allRules[key] = rules;
     }
 
     return EpubCssParser._(chapterStyles: allRules, fontFaces: fontFaces);
@@ -276,9 +280,13 @@ class EpubCssParser {
     return props;
   }
 
+  static String _normalizeKey(String path) =>
+      Uri.decodeComponent(path).toLowerCase();
+
   /// Returns the resolved [CssStyle] for a DOM element in a given chapter.
   CssStyle resolveStyle(String chapterPath, dom.Element element) {
-    final rules = chapterStyles[chapterPath];
+    final rules =
+        chapterStyles[chapterPath] ?? chapterStyles[_normalizeKey(chapterPath)];
     if (rules == null) return const CssStyle();
 
     final matchingProps = <String, String>{};

@@ -46,16 +46,49 @@ class _StatsScreenState extends State<StatsScreen> {
     _loadStats();
   }
 
+  String? _error;
+
   Future<void> _loadStats() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final books = widget.library.books;
-    final dailyTime = await widget.library.getDailyReadingTime();
-    final streak = await widget.library.getReadingStreak();
-    final todayTime = await widget.library.getTodayReadingTimeMs();
-    final avgSession = await widget.library.getAverageSessionMs();
-    final longestSession = await widget.library.getLongestSessionMs();
-    final hourlyTime = await widget.library.getHourlyReadingTime();
-    final monthlyTime = await widget.library.getMonthlyReadingTime();
-    final perBookStats = await widget.library.getPerBookStats();
+    late final Map<int, int> dailyTime;
+    late final int streak;
+    late final int todayTime;
+    late final int avgSession;
+    late final int longestSession;
+    late final Map<int, int> hourlyTime;
+    late final Map<String, int> monthlyTime;
+    late final List<BookStats> perBookStats;
+    try {
+      final results = await Future.wait([
+        widget.library.getDailyReadingTime(),
+        widget.library.getReadingStreak(),
+        widget.library.getTodayReadingTimeMs(),
+        widget.library.getAverageSessionMs(),
+        widget.library.getLongestSessionMs(),
+        widget.library.getHourlyReadingTime(),
+        widget.library.getMonthlyReadingTime(),
+        widget.library.getPerBookStats(),
+      ]);
+      dailyTime = results[0] as Map<int, int>;
+      streak = results[1] as int;
+      todayTime = results[2] as int;
+      avgSession = results[3] as int;
+      longestSession = results[4] as int;
+      hourlyTime = results[5] as Map<int, int>;
+      monthlyTime = results[6] as Map<String, int>;
+      perBookStats = results[7] as List<BookStats>;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Could not load reading stats: $e';
+      });
+      return;
+    }
 
     var totalTime = 0;
     var totalPages = 0;
@@ -97,7 +130,36 @@ class _StatsScreenState extends State<StatsScreen> {
       appBar: AppBar(title: const Text('Reading Stats')),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
-          : _buildContent(theme, scheme),
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: 56,
+                          color: scheme.error,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: _loadStats,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _buildContent(theme, scheme),
     );
   }
 

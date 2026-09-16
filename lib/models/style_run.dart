@@ -216,14 +216,18 @@ class ImageRun {
       w ??= intrinsicWidth.toDouble();
       h ??= intrinsicHeight.toDouble();
 
+      // Compose both caps as the minimum of the independently required
+      // scales against the ORIGINAL size: overwriting (instead of min-ing)
+      // lets the second cap violate the first (1000x1000 capped at 500x250
+      // yielded 500x500).
       var cssScale = 1.0;
       final maxW = style.maxWidth?.resolve(renderWidth);
-      if (maxW != null && maxW > 0 && w * cssScale > maxW) {
-        cssScale = maxW / (w * cssScale);
+      if (maxW != null && maxW > 0 && w > 0 && w * cssScale > maxW) {
+        cssScale = math.min(cssScale, maxW / w);
       }
       final maxH = style.maxHeight?.resolve(heightBasis);
-      if (maxH != null && maxH > 0 && h * cssScale > maxH) {
-        cssScale = maxH / (h * cssScale);
+      if (maxH != null && maxH > 0 && h > 0 && h * cssScale > maxH) {
+        cssScale = math.min(cssScale, maxH / h);
       }
       return (w * cssScale, h * cssScale);
     }

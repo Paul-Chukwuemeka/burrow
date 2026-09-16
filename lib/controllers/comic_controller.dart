@@ -62,6 +62,12 @@ class ComicReaderController extends ChangeNotifier {
         final provider = await ComicPageProvider.open(book.path);
         if (!_mounted) return;
         comicPageProvider = provider;
+        if (provider.pageCount == 0) {
+          comicPages = [];
+          comicLoading = false;
+          notifyListeners();
+          return;
+        }
         comicPage = book.lastChapter.clamp(0, provider.pageCount - 1);
         final firstBytes = await provider.loadPage(comicPage);
         if (!_mounted) return;
@@ -86,6 +92,11 @@ class ComicReaderController extends ChangeNotifier {
       }
       if (!_mounted) return;
       comicPages = pages;
+      if (pages.isEmpty) {
+        comicLoading = false;
+        notifyListeners();
+        return;
+      }
       comicPage = book.lastChapter.clamp(0, pages.length - 1);
       comicLoading = false;
       notifyListeners();
@@ -141,20 +152,54 @@ class ComicReaderController extends ChangeNotifier {
     );
   }
 
-  void flip(int direction) {
+  /// Flips one page in [direction] (+1 forward, -1 back).
+  ///
+  /// In vertical mode there is no [PageView], so the flip scrolls the vertical
+  /// list (which approximates one viewport per page, matching the slider and
+  /// the position listener). [verticalViewportHeight] must be supplied by the
+  /// caller (it owns the [BuildContext]) when in vertical mode.
+  void flip(int direction, {double? verticalViewportHeight}) {
     if (comicPageCount == 0) return;
     final target = comicPage + (_isRtl ? -direction : direction);
     if (target < 0 || target >= comicPageCount) return;
-    comicPageController?.animateToPage(
+    if (_isVertical) {
+      _scrollVerticalTo(target, verticalViewportHeight);
+      return;
+    }
+    final pc = comicPageController;
+    if (pc == null || !pc.hasClients) return;
+    pc.animateToPage(
       target,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );
   }
 
-  void jumpToPage(int page) {
-    comicPageController?.animateToPage(
+  void jumpToPage(int page, {double? verticalViewportHeight}) {
+    if (page < 0 || page >= comicPageCount) return;
+    if (_isVertical) {
+      _scrollVerticalTo(page, verticalViewportHeight);
+      return;
+    }
+    final pc = comicPageController;
+    if (pc == null || !pc.hasClients) return;
+    pc.animateToPage(
       page,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _scrollVerticalTo(int page, double? viewportHeight) {
+    final c = comicVerticalScrollController;
+    if (c == null ||
+        !c.hasClients ||
+        viewportHeight == null ||
+        viewportHeight <= 0) {
+      return;
+    }
+    c.animateTo(
+      (page * viewportHeight).clamp(0.0, c.position.maxScrollExtent),
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );

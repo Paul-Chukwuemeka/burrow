@@ -112,6 +112,9 @@ class ReaderSearchController extends ChangeNotifier {
       _searchResults = [];
       _currentResultIndex = -1;
       _searchDone = false;
+      // Safe: `?.` short-circuits without evaluating the argument when the
+      // receiver is null, so `_pdfSearcherListener!` never throws here — but
+      // only while both fields are always set/cleared together (see below).
       _pdfSearcher?.removeListener(_pdfSearcherListener!);
       _pdfSearcher?.resetTextSearch();
       _pdfSearcher?.dispose();
@@ -151,6 +154,8 @@ class ReaderSearchController extends ChangeNotifier {
   @override
   void dispose() {
     _search?.dispose();
+    // Same `?.` short-circuit guarantee as in toggleSearch: both fields are
+    // set together in initPdfSearch and nulled together above/below.
     _pdfSearcher?.removeListener(_pdfSearcherListener!);
     _pdfSearcher?.resetTextSearch();
     _pdfSearcher?.dispose();

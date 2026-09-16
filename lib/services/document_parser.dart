@@ -1918,80 +1918,133 @@ class DocumentParser {
   static (int, int) decodeImageDimensions(Uint8List bytes) =>
       _RichTextBuilder._decodeImageDimensions(bytes);
 
+  /// Merges CSS-derived typography into [runs].
+  ///
+  /// The regex parser that builds [body]/[runs] records no DOM offsets, so an
+  /// element is located by its whitespace-collapsed text. Two fixes over the
+  /// old `body.indexOf(element.text)` approach:
+  /// - each distinct element maps to successive occurrences of identical text
+  ///   (repeated paragraphs no longer all restyle the first one), while repeat
+  ///   rules for the *same* element reuse its cached range;
+  /// - ranges with no existing run get a new [StyleRun] instead of being
+  ///   dropped, so pure-CSS typography (e.g. `.title{font-size:24px}` on a
+  ///   plain `<p>`) survives.
   static void _mergeCssStyles(
     String body,
     List<StyleRun> runs,
     List<ResolvedCssRule> rules,
   ) {
-    if (rules.isEmpty || runs.isEmpty) return;
+    if (rules.isEmpty || body.isEmpty) return;
+    runs.sort((a, b) => a.start.compareTo(b.start));
+
+    // Resolved range per element identity; repeat rules for the same element
+    // (one per matching selector) must reuse the same range.
+    final rangeByElement = <dom.Element, (int, int)>{};
+    // Next search offset per collapsed text, so identical sibling paragraphs
+    // claim successive occurrences.
+    final nextSearchFrom = <String, int>{};
+
+    (int, int)? rangeFor(dom.Element element) {
+      final cached = rangeByElement[element];
+      if (cached != null) return cached;
+      final needle = _collapseForMatch(element.text);
+      if (needle.isEmpty) return null;
+      var from = nextSearchFrom[needle] ?? 0;
+      var idx = from <= body.length ? body.indexOf(needle, from) : -1;
+      if (idx < 0 && from > 0) {
+        // Whitespace drift may have shifted offsets; retry from the start
+        // rather than dropping the rule entirely.
+        idx = body.indexOf(needle);
+      }
+      if (idx < 0) return null;
+      final range = (idx, idx + needle.length);
+      rangeByElement[element] = range;
+      nextSearchFrom[needle] = idx + needle.length;
+      return range;
+    }
 
     for (final rule in rules) {
-      final element = rule.element;
-      final properties = rule.properties;
+      // Build a CssStyle from the matched rule's properties.
+      final css = EpubCssParser.propsToCssStyle(rule.properties);
+      if (css.isEmpty) continue;
+      final range = rangeFor(rule.element);
+      if (range == null) continue;
+      _applyCssToRange(runs, range.$1, range.$2, css);
+    }
+  }
 
-      // Find the element's text range in the body by matching its plain text.
-      final elementText = element.text;
-      if (elementText.isEmpty) continue;
+  /// Collapses whitespace the same way the body builder does (runs of
+  /// whitespace become a single space) so DOM text matches body text.
+  static String _collapseForMatch(String s) =>
+      s.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-      final bodyStart = body.indexOf(elementText);
-      if (bodyStart < 0) continue;
-      final bodyEnd = bodyStart + elementText.length;
-
-      // Find all runs that overlap this element's text range.
-      for (var i = 0; i < runs.length; i++) {
-        final run = runs[i];
-        final overlapStart = math.max(run.start, bodyStart);
-        final overlapEnd = math.min(run.end, bodyEnd);
-        if (overlapStart >= overlapEnd) continue;
-
-        // Build a CssStyle from the matched rule's properties.
-        final css = EpubCssParser.propsToCssStyle(properties);
-        if (css.isEmpty) continue;
-
-        // If the run exactly matches the element range, apply directly.
-        if (run.start == bodyStart && run.end == bodyEnd) {
-          runs[i] = StyleRun(
-            run.start,
-            run.end,
-            bold: run.bold,
-            italic: run.italic,
-            quote: run.quote,
-            css: run.css?.merge(css) ?? css,
-          );
-        } else {
-          // Split: before / during / after the element range.
-          final before = StyleRun(
-            run.start,
-            overlapStart,
-            bold: run.bold,
-            italic: run.italic,
-            quote: run.quote,
-            css: run.css,
-          );
-          final during = StyleRun(
-            overlapStart,
-            overlapEnd,
-            bold: run.bold,
-            italic: run.italic,
-            quote: run.quote,
-            css: run.css?.merge(css) ?? css,
-          );
-          final after = StyleRun(
-            overlapEnd,
-            run.end,
-            bold: run.bold,
-            italic: run.italic,
-            quote: run.quote,
-            css: run.css,
-          );
-
-          runs.removeAt(i);
-          if (before.start < before.end) runs.insert(i++, before);
-          runs.insert(i, during);
-          if (after.start < after.end) runs.insert(i + 1, after);
+  /// Applies [css] to [runs] over `[start, end)`, splitting overlapping runs
+  /// and creating new runs for gaps with no existing run. Keeps [runs] sorted.
+  static void _applyCssToRange(
+    List<StyleRun> runs,
+    int start,
+    int end,
+    CssStyle css,
+  ) {
+    final out = <StyleRun>[];
+    var cursor = start;
+    var trailingFlushed = false;
+    for (final run in runs) {
+      if (run.end <= start || run.start >= end) {
+        if (!trailingFlushed && run.start >= end) {
+          if (cursor < end) out.add(StyleRun(cursor, end, css: css));
+          trailingFlushed = true;
         }
+        out.add(run);
+        continue;
+      }
+      if (run.start < start) {
+        out.add(
+          StyleRun(
+            run.start,
+            start,
+            bold: run.bold,
+            italic: run.italic,
+            quote: run.quote,
+            css: run.css,
+          ),
+        );
+      }
+      final os = math.max(run.start, start);
+      final oe = math.min(run.end, end);
+      // Gap between the previous coverage and this overlap: pure-CSS region
+      // with no emphasis run — create a run instead of dropping the style.
+      if (os > cursor) out.add(StyleRun(cursor, os, css: css));
+      out.add(
+        StyleRun(
+          os,
+          oe,
+          bold: run.bold,
+          italic: run.italic,
+          quote: run.quote,
+          css: run.css?.merge(css) ?? css,
+        ),
+      );
+      cursor = oe;
+      if (run.end > end) {
+        out.add(
+          StyleRun(
+            end,
+            run.end,
+            bold: run.bold,
+            italic: run.italic,
+            quote: run.quote,
+            css: run.css,
+          ),
+        );
       }
     }
+    if (!trailingFlushed && cursor < end) {
+      out.add(StyleRun(cursor, end, css: css));
+    }
+    runs
+      ..clear()
+      ..addAll(out);
   }
 
   /// Merges CSS-derived image-sizing rules into [images] by matching

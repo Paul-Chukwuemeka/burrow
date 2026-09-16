@@ -374,13 +374,15 @@ class ReaderSettings {
     final raw = json['brightness'] as num?;
     if (raw != null) {
       final v = raw.toDouble();
+      // Non-finite values must never reach the platform brightness channel.
+      if (!v.isFinite) return null; // follow system
       return v.clamp(kMinBrightness, 1.0);
     }
     // Legacy dimmer migration.
     final dimmer = json['dimmer'] as num?;
     if (dimmer != null) {
       final v = dimmer.toDouble();
-      if (v >= 1.0) return null; // 100% → follow system
+      if (!v.isFinite || v >= 1.0) return null; // 100% → follow system
       return v.clamp(kMinBrightness, 1.0);
     }
     return null; // no value saved → follow system
