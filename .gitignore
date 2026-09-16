@@ -51,6 +51,13 @@ app.*.map.json
 devtools_options.yaml
 
 
+# Local book fixtures shared for debugging (never commit book files).
+assets/*.epub
+assets/*.pdf
+assets/*.cbz
+assets/*.cbr
+assets/*.txt
+
 .opencode
 # Local package overrides
 vendor/
