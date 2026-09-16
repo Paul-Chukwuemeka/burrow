@@ -1938,6 +1938,23 @@ class ReaderScreenState extends State<ReaderScreen>
     };
   }
 
+  /// Toggles follow-system brightness. Shared by the chrome brightness icon
+  /// and the Auto/percentage label so both switch modes.
+  void _toggleBrightnessMode() {
+    if (_settings.brightness == null) {
+      BrightnessController.instance.current().then((lv) {
+        if (!mounted) return;
+        setState(() => _settings.brightness = lv);
+        BrightnessController.instance.apply(lv);
+        _onSettingsChanged();
+      });
+    } else {
+      setState(() => _settings.brightness = null);
+      BrightnessController.instance.apply(null);
+      _onSettingsChanged();
+    }
+  }
+
   Widget _chrome({
     required String centerLabel,
     required int sliderMax,
@@ -2037,20 +2054,7 @@ class ReaderScreenState extends State<ReaderScreen>
                   child: Row(
                     children: [
                       GestureDetector(
-                        onTap: () {
-                          if (_settings.brightness == null) {
-                            BrightnessController.instance.current().then((lv) {
-                              if (!mounted) return;
-                              setState(() => _settings.brightness = lv);
-                              BrightnessController.instance.apply(lv);
-                              _onSettingsChanged();
-                            });
-                          } else {
-                            setState(() => _settings.brightness = null);
-                            BrightnessController.instance.apply(null);
-                            _onSettingsChanged();
-                          }
-                        },
+                        onTap: _toggleBrightnessMode,
                         child: Icon(
                           _settings.brightness == null
                               ? Icons.brightness_auto
@@ -2083,15 +2087,19 @@ class ReaderScreenState extends State<ReaderScreen>
                       ),
                       SizedBox(
                         width: 44,
-                        child: Text(
-                          _settings.brightness == null
-                              ? 'Auto'
-                              : '${((_settings.brightness ?? 1.0) * 100).round()}%',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.muted,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleBrightnessMode,
+                          child: Text(
+                            _settings.brightness == null
+                                ? 'Auto'
+                                : '${((_settings.brightness ?? 1.0) * 100).round()}%',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.muted,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
                       ),
                     ],
