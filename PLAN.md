@@ -1332,7 +1332,7 @@ Overall: fresh-install Stats crash, migration swallow bricking schema, splash br
   - **Fix:** try/catch in `_buildHome` → return error screen with Retry / Reset-DB; add try/catch in `_navigateToHome` as belt-and-braces.
   - **Verify:** Throw from `library.load()` in test, confirm error screen not infinite spinner.
 
-- [ ] **115. CBZ has no size guard + EPUB/CBZ no decompressed cap — OOM kill**
+- [x] **115. CBZ has no size guard + EPUB/CBZ no decompressed cap — OOM kill**
   - **File:** `lib/services/document_parser.dart:444-457,589-592` (EPUB), `1226-1253` (CBZ `_parseComicBook`)
   - **What:** EPUB guards compressed size only (100 MB); CBZ does `readAsBytes()` unconditional. `ZipDecoder().decodeBytes` inflates everything + `archiveContentMap` touches every entry while chapter strings + DOMs duplicate text. 90 MB compressible EPUB / 500 MB CBZ → multi-GB transient → OOM on low-end Android.
   - **Fix:** Add `file.length()` guard to CBZ; cap total decompressed bytes (abort >512 MB); build `archiveContentMap` lazily for referenced images only.
@@ -1340,19 +1340,19 @@ Overall: fresh-install Stats crash, migration swallow bricking schema, splash br
 
 ### Majors
 
-- [ ] **116. External CSS never loads — manifest ID used as archive path**
+- [x] **116. External CSS never loads — manifest ID used as archive path**
   - **File:** `lib/services/epub_css_parser.dart:43-48` (`EpubCssParser.parse`) caller `lib/services/document_parser.dart:629-634`
   - **What:** `manifest` is `id -> href`, but loader does `readEntry(entry.key)` (ID) where `readEntry` only resolves archive paths. Returns `Uint8List(0)` for every stylesheet. All `.css`-file styling silently dropped; inline `<style>` masks it in tests.
   - **Fix:** `final bytes = readEntry(href); // not entry.key` + `String.fromCharCodes` → `utf8.decode(allowMalformed:true)`; resolve font hrefs against CSS file dir.
   - **Verify:** EPUB with external `.css`, confirm rules match before/after.
 
-- [ ] **117. Pending session leaks + `notifyListeners` after dispose**
+- [x] **117. Pending session leaks + `notifyListeners` after dispose**
   - **File:** `lib/controllers/reading_session.dart:33-75` (`startSession`/`endSession`/`dispose`)
   - **What:** `startSession` sets `-2` sentinel then async-inserts. `endSession` early-returns on `-2`, orphaning the row; `dispose` also early-returns, then pending `.then` fires and calls `notifyListeners()` on disposed object → `StateError`. Extends #104 (generation counter exists but `-2` + dispose path not handled).
   - **Fix:** `_startGeneration++` in `endSession`/`dispose` to cancel pending; handle `-2` explicitly (await-then-end or reset to `-1`).
   - **Verify:** Open book, background/close during insert, no crash + no orphan row.
 
-- [ ] **118. Comics can never hit `isFinished`**
+- [x] **118. Comics can never hit `isFinished`**
   - **File:** `lib/screens/reader_screen.dart:1492` (+ paginated comic branch) + `lib/models/book.dart:95`
   - **What:** `progress: newIndex / count`, last page `(N-1)/N` (0.95 for N=20). `isFinished => progress >= 0.999` unreachable for N<1000. Finished counts / smart groups systematically undercount.
   - **Fix:** `progress: (newIndex + 1) / count`; for reflowable force `1.0` on last page.
@@ -1370,13 +1370,13 @@ Overall: fresh-install Stats crash, migration swallow bricking schema, splash br
   - **Fix:** Throw `TimeoutException` so UI shows "timed out — try a folder", or return partials with `truncated` flag.
   - **Verify:** Timeout path shows warning, not silent empty.
 
-- [ ] **121. `PdfTextSearcher` never disposed — subscription leak**
+- [x] **121. `PdfTextSearcher` never disposed — subscription leak**
   - **File:** `lib/controllers/search_controller.dart:115-117,151-156` (`toggleSearch`/`dispose`)
   - **What:** Both do `removeListener + resetTextSearch + null`, never `dispose()`. Assumption: `pdfrx` `dispose()` cancels document subscription (per pdfrx-2.4.5 source). Repeated open/close accumulates subscriptions holding old searchers + viewer controller.
   - **Fix:** `_pdfSearcher?.dispose(); _pdfSearcher = null;`
   - **Verify:** Open/close PDF search 10x, confirm no subscription growth.
 
-- [ ] **122. Dictionary toolbar clamp + double-remove crash**
+- [x] **122. Dictionary toolbar clamp + double-remove crash**
   - **File:** `lib/controllers/dictionary_overlay.dart:46-54,144-148`
   - **What:** `(dx-140).clamp(8.0, width-296.0)` throws when `width<304` (split-screen/foldable). `remove()` on unmounted entry throws on double-dismiss (route pop + settings change + dispose).
   - **Fix:** `clamp(8.0, math.max(8.0, width-296.0))`; wrap `remove()` in try/catch + null in `finally`.

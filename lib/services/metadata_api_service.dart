@@ -107,13 +107,25 @@ class MetadataApiService {
 
   /// Downloads cover image bytes from [url].
   static Future<List<int>?> downloadCover(String url) async {
+    final uri = Uri.parse(url);
+    if (uri.scheme != 'https') return null;
     final client = HttpClient();
     try {
-      final uri = Uri.parse(url);
       final request = await client.getUrl(uri).timeout(_coverTimeout);
       final response = await request.close().timeout(_coverTimeout);
       if (response.statusCode != 200) return null;
-      final chunks = await response.toList();
+      // Cap at ~10 MB to prevent downloading a multi-GB payload.
+      const maxBytes = 10 * 1024 * 1024;
+      var total = 0;
+      final chunks = <List<int>>[];
+      await for (final chunk in response) {
+        total += chunk.length;
+        if (total > maxBytes) {
+          debugPrint('MetadataApiService: cover too large, aborting download');
+          return null;
+        }
+        chunks.add(chunk);
+      }
       return chunks.expand((c) => c).toList();
     } catch (e) {
       debugPrint('MetadataApiService: cover download failed: $e');
@@ -193,10 +205,13 @@ class MetadataApiService {
       final items = json['items'] as List?;
       if (items == null || items.isEmpty) return [];
 
-      return [
-        for (final item in items)
-          _parseGoogleBooksVolume(item as Map<String, dynamic>),
-      ];
+      final parsed = <ApiBookMetadata>[];
+      for (final item in items) {
+        try {
+          parsed.add(_parseGoogleBooksVolume(item as Map<String, dynamic>));
+        } catch (_) {}
+      }
+      return parsed;
     } catch (e) {
       debugPrint('MetadataApiService: Google Books API error: $e');
       return [];
@@ -362,7 +377,12 @@ class MetadataApiService {
       final response = await request.close().timeout(_timeout);
       if (response.statusCode != 200) return null;
 
-      final body = await response.transform(utf8.decoder).join();
+      // Cap response body at ~10 MB to guard against a misbehaving server.
+      final chunks = await response.take(10 * 1024 * 1024).toList();
+      final body = utf8.decode(
+        chunks.expand((c) => c).toList(),
+        allowMalformed: true,
+      );
       final json = jsonDecode(body) as Map<String, dynamic>;
       return _parseOpenLibraryBook(json, isbn: isbn);
     } catch (e) {
@@ -399,15 +419,22 @@ class MetadataApiService {
       final response = await request.close().timeout(_timeout);
       if (response.statusCode != 200) return [];
 
-      final body = await response.transform(utf8.decoder).join();
+      final chunks = await response.take(10 * 1024 * 1024).toList();
+      final body = utf8.decode(
+        chunks.expand((c) => c).toList(),
+        allowMalformed: true,
+      );
       final json = jsonDecode(body) as Map<String, dynamic>;
       final docs = json['docs'] as List?;
       if (docs == null || docs.isEmpty) return [];
 
-      return [
-        for (final doc in docs)
-          _parseOpenLibrarySearchResult(doc as Map<String, dynamic>),
-      ];
+      final parsed = <ApiBookMetadata>[];
+      for (final doc in docs) {
+        try {
+          parsed.add(_parseOpenLibrarySearchResult(doc as Map<String, dynamic>));
+        } catch (_) {}
+      }
+      return parsed;
     } catch (e) {
       debugPrint('MetadataApiService: Open Library search failed: $e');
       return [];

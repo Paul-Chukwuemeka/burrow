@@ -384,14 +384,15 @@ class DocumentParser {
   /// cover extraction never touch the UI thread.
   static Future<ParsedMetadata> _extractCbzMetadata(String path) async {
     final file = File(path);
-    final length = await file.length();
-    if (length > maxComicCompressedBytes) {
-      throw const FormatException('CBZ file too large (limit 500 MB)');
-    }
     final Uint8List bytes;
     try {
+      final length = await file.length();
+      if (length > maxComicCompressedBytes) {
+        throw const FormatException('CBZ file too large (limit 500 MB)');
+      }
       bytes = await file.readAsBytes();
-    } catch (_) {
+    } catch (e) {
+      if (e is FormatException) rethrow;
       throw const FormatException('Not a valid CBZ file');
     }
     final Archive archive;
@@ -1272,14 +1273,15 @@ class DocumentParser {
     try {
       if (format == BookFormat.cbz) {
         final file = File(path);
-        final length = await file.length();
-        if (length > maxComicCompressedBytes) {
-          throw const FormatException('CBZ file too large (limit 500 MB)');
-        }
         final Uint8List bytes;
         try {
+          final length = await file.length();
+          if (length > maxComicCompressedBytes) {
+            throw const FormatException('CBZ file too large (limit 500 MB)');
+          }
           bytes = await file.readAsBytes();
-        } catch (_) {
+        } catch (e) {
+          if (e is FormatException) rethrow;
           throw const FormatException('Not a valid CBZ file');
         }
         final Archive archive;
@@ -1334,11 +1336,18 @@ class DocumentParser {
             .where((f) => _isImage(f))
             .toList();
 
-        // Extract all to temp dir, then read images from disk.
-        // TODO: Consider lazy per-entry extraction if Rar library supports it,
-        // to avoid holding all decompressed images on disk simultaneously.
+        // Extract all to a deterministic subdirectory of the app cache so a
+        // killed isolate doesn't leak temp files in systemTemp.  If the dir
+        // already exists (from a previous interrupted run), reuse it.
         try {
-          cbrTempDir = await Directory.systemTemp.createTemp('cbr_');
+          final cacheDir = await getTemporaryDirectory();
+          final safeBaseName = _safeTempName(path);
+          final tempPath = '${cacheDir.path}/cbr_$safeBaseName';
+          final existingDir = Directory(tempPath);
+          if (existingDir.existsSync()) {
+            existingDir.deleteSync(recursive: true);
+          }
+          cbrTempDir = await existingDir.create();
           final extractResult = await Rar.extractRarFile(
             rarFilePath: path,
             destinationPath: cbrTempDir.path,
@@ -1349,6 +1358,10 @@ class DocumentParser {
 
           final tempDir = cbrTempDir;
           readEntry = (name) {
+            // Reject path traversal and absolute paths in member names.
+            if (name.contains('..') || name.startsWith('/')) {
+              throw FormatException('Invalid entry path: $name');
+            }
             final file = _findExtractedFile(tempDir, name);
             if (file == null) {
               throw FormatException('Entry not found: $name');
@@ -1424,6 +1437,15 @@ class DocumentParser {
     final name = path.split('/').last;
     final dotIndex = name.lastIndexOf('.');
     return dotIndex > 0 ? name.substring(0, dotIndex) : name;
+  }
+
+  /// Generates a filesystem-safe name from [path] for use in temp directory
+  /// names, stripping path separators and replacing non-alphanumeric characters.
+  static String _safeTempName(String path) {
+    final base = path.split(Platform.pathSeparator).last;
+    final cleaned = base.replaceAll(RegExp(r'[^a-zA-Z0-9.]'), '_');
+    // Limit length to avoid filesystem path-length limits.
+    return cleaned.length <= 64 ? cleaned : cleaned.substring(0, 64);
   }
 
   /// Recursively finds a file by name inside [dir], tolerating subdirectory
@@ -1788,10 +1810,16 @@ class DocumentParser {
     return input.replaceAllMapped(_entityRe, (m) {
       final e = m.group(1)!;
       if (e.startsWith('#x')) {
-        return String.fromCharCode(int.parse(e.substring(2), radix: 16));
+        final cp = int.parse(e.substring(2), radix: 16);
+        return (cp >= 0 && cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF))
+            ? String.fromCharCode(cp)
+            : m.group(0)!;
       }
       if (e.startsWith('#')) {
-        return String.fromCharCode(int.parse(e.substring(1)));
+        final cp = int.parse(e.substring(1));
+        return (cp >= 0 && cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF))
+            ? String.fromCharCode(cp)
+            : m.group(0)!;
       }
       return named[e] ?? m.group(0)!;
     });
@@ -1963,6 +1991,8 @@ class DocumentParser {
     // an older format are ignored instead of deserialized with missing fields.
     // v3: images/fonts store archive entry names instead of base64 bytes.
     final id = 'v3_${path}_${mtime}_$size';
+    // 32-bit hashCode is sufficient for cache keys; collisions fall through
+    // to a full parse and the stale entry is harmless.
     return id.hashCode.toRadixString(16);
   }
 

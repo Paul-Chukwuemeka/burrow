@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -46,7 +48,7 @@ class DictionaryOverlay {
             Positioned(
               left: (globalPosition.dx - 140).clamp(
                 8.0,
-                MediaQuery.sizeOf(context).width - 296.0,
+                math.max(8.0, MediaQuery.sizeOf(context).width - 296.0),
               ),
               top: (globalPosition.dy - 56).clamp(
                 0.0,
@@ -142,7 +144,9 @@ class DictionaryOverlay {
   }
 
   void dismissDictionaryButton() {
-    _dictionaryButtonEntry?.remove();
+    try {
+      _dictionaryButtonEntry?.remove();
+    } catch (_) {}
     _dictionaryButtonEntry = null;
     _selectedWordRange = null;
   }
