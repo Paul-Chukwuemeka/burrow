@@ -212,17 +212,39 @@ class DocumentParser {
   ///
   /// The cache directory is resolved here, on the main isolate, because
   /// `path_provider` uses a platform channel that is unavailable inside a
-  /// `compute` isolate.
+  /// `compute` isolate. CBR archives are likewise listed + extracted here:
+  /// the `rar` plugin resolves to `RarFfi` only on Android and to a
+  /// `MethodChannel` elsewhere (see `rar_platform_interface.dart`), so any
+  /// `Rar` call inside `compute` throws `MissingPluginException` on
+  /// iOS/macOS. The isolate then reads the extracted files with plain I/O.
   static Future<ParsedDocument> parse(String path) async {
     final cacheDir = await _safeCacheDirPath();
-    // Resolve CBR temp dir on the main isolate so the background isolate does
-    // not call path_provider (which uses a platform channel unavailable inside
-    // compute).
-    String? cbrTempParent;
+    // CBR pre-staged on the main isolate (list + extract); the isolate only
+    // reads the extracted files.
+    List<String>? cbrEntryNames;
+    String? cbrExtractedDir;
     if (formatFromExtension(path) == BookFormat.cbr) {
-      cbrTempParent = await _safeCbrTempParentPath();
+      final prepared = await _prepareCbrOnMainIsolate(path);
+      cbrEntryNames = prepared.entryNames;
+      cbrExtractedDir = prepared.extractedDir;
     }
-    return compute(_parseIsolate, (path, cacheDir, cbrTempParent));
+    try {
+      return await compute(
+        _parseIsolate,
+        (path, cacheDir, cbrEntryNames, cbrExtractedDir),
+      );
+    } finally {
+      // Best-effort cleanup if the isolate didn't run (spawn failure). In the
+      // normal path the isolate deletes the dir in its own `finally`, so this
+      // is a no-op.
+      final dir = cbrExtractedDir;
+      if (dir != null) {
+        try {
+          final d = Directory(dir);
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
   }
 
   /// Extracts only metadata and cover bytes from a document.
@@ -433,9 +455,9 @@ class DocumentParser {
   }
 
   static Future<ParsedDocument> _parseIsolate(
-    (String, String?, String?) args,
+    (String, String?, List<String>?, String?) args,
   ) async {
-    final (path, cacheDirPath, cbrTempParent) = args;
+    final (path, cacheDirPath, cbrEntryNames, cbrExtractedDir) = args;
     // Check disk cache for EPUB/TXT (formats where parsing is expensive).
     final fmt = formatFromExtension(path);
     if ((fmt == BookFormat.epub || fmt == BookFormat.txt) &&
@@ -469,7 +491,11 @@ class DocumentParser {
         doc = await _parseTxt(path);
       case BookFormat.cbz:
       case BookFormat.cbr:
-        doc = await _parseComicBook(path, cbrTempParent: cbrTempParent);
+        doc = await _parseComicBook(
+          path,
+          cbrEntryNames: cbrEntryNames,
+          cbrExtractedDir: cbrExtractedDir,
+        );
     }
 
     // Save to disk cache for expensive formats.
@@ -1273,9 +1299,99 @@ class DocumentParser {
     '.bmp',
   };
 
+  /// Lists and extracts a CBR archive on the MAIN isolate.
+  ///
+  /// Must run on the main isolate because the `rar` plugin resolves to
+  /// `RarFfi` only on Android and to a `MethodChannel` elsewhere (see
+  /// `rar-0.3.0/lib/rar_platform_interface.dart` `_createDefaultInstance`);
+  /// background isolates have no plugin channels, so calling `Rar` inside
+  /// `compute` throws `MissingPluginException` on iOS/macOS. Returns the
+  /// image entry names with the extraction directory, which the isolate reads
+  /// with plain file I/O.
+  static Future<
+    ({List<String> entryNames, String extractedDir})
+  >
+  _prepareCbrOnMainIsolate(String path) async {
+    final cbrFile = File(path);
+    try {
+      final cbrLength = await cbrFile.length();
+      if (cbrLength > maxComicCompressedBytes) {
+        throw const FormatException('CBR file too large (limit 500 MB)');
+      }
+    } catch (e) {
+      if (e is FormatException) rethrow;
+      // If length can't be read, listRarContents below will fail anyway.
+    }
+    final List<dynamic> allFiles;
+    try {
+      final listResult = await Rar.listRarContents(rarFilePath: path);
+      if (listResult['success'] != true) {
+        throw const FormatException('Not a valid CBR/RAR archive');
+      }
+      allFiles = listResult['files'] as List<dynamic>;
+    } catch (e) {
+      if (e is FormatException) rethrow;
+      throw const FormatException('Not a valid CBR/RAR archive');
+    }
+    final entryNames = allFiles
+        .map((f) => f.toString())
+        .where((f) => _isImage(f))
+        .toList();
+    if (entryNames.isEmpty) {
+      throw const FormatException('No images found in comic archive');
+    }
+    entryNames.sort(_naturalCompare);
+
+    // Unique temp dir per parse (createTemp random suffix) so concurrent
+    // parses of same-named files never share a directory (#130).
+    final parent = await _safeCbrTempParentPath() ?? Directory.systemTemp.path;
+    // Best-effort sweep of orphaned dirs from killed parses.
+    unawaited(_sweepStaleCbrTempDirs(parent));
+    final safeBaseName = _safeTempName(path);
+    final dir = await Directory('$parent/cbr_${safeBaseName}_').createTemp();
+    try {
+      final extractResult = await Rar.extractRarFile(
+        rarFilePath: path,
+        destinationPath: dir.path,
+      );
+      if (extractResult['success'] != true) {
+        throw const FormatException('Failed to extract CBR archive');
+      }
+    } catch (e) {
+      try {
+        dir.deleteSync(recursive: true);
+      } catch (_) {}
+      if (e is FormatException) rethrow;
+      throw const FormatException('Not a valid CBR/RAR archive');
+    }
+    return (entryNames: entryNames, extractedDir: dir.path);
+  }
+
+  /// Best-effort sweep of orphaned CBR extraction dirs left by killed parses.
+  /// Only removes `cbr_*` dirs older than an hour so concurrent parses are
+  /// never disturbed.
+  static Future<void> _sweepStaleCbrTempDirs(String parent) async {
+    try {
+      final dir = Directory(parent);
+      if (!dir.existsSync()) return;
+      final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+      for (final e in dir.listSync()) {
+        if (e is! Directory) continue;
+        final name = e.path.split(Platform.pathSeparator).last;
+        if (!name.startsWith('cbr_')) continue;
+        try {
+          if (e.statSync().modified.isBefore(cutoff)) {
+            e.deleteSync(recursive: true);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   static Future<ParsedDocument> _parseComicBook(
     String path, {
-    String? cbrTempParent,
+    List<String>? cbrEntryNames,
+    String? cbrExtractedDir,
   }) async {
     final format = formatFromExtension(path);
     List<String> entryNames;
@@ -1321,72 +1437,29 @@ class DocumentParser {
           return Uint8List.fromList(found.content as List<int>);
         };
       } else {
-        // CBR: use rar package (libarchive) to list and extract entries.
-        final cbrFile = File(path);
-        try {
-          final cbrLength = await cbrFile.length();
-          if (cbrLength > maxComicCompressedBytes) {
-            throw const FormatException('CBR file too large (limit 500 MB)');
-          }
-        } catch (e) {
-          if (e is FormatException) rethrow;
-          // If length can't be read, listRarContents below will fail anyway.
-        }
-        final List<dynamic> allFiles;
-        try {
-          final listResult = await Rar.listRarContents(rarFilePath: path);
-          if (listResult['success'] != true) {
-            throw const FormatException('Not a valid CBR/RAR archive');
-          }
-          allFiles = listResult['files'] as List<dynamic>;
-        } catch (e) {
-          if (e is FormatException) rethrow;
+        // CBR: entries were listed + extracted on the main isolate (see
+        // _prepareCbrOnMainIsolate) because `Rar` needs a platform channel
+        // outside Android. The isolate only reads the extracted files.
+        if (cbrEntryNames == null || cbrExtractedDir == null) {
           throw const FormatException('Not a valid CBR/RAR archive');
         }
-        entryNames = allFiles
-            .map((f) => f.toString())
-            .where((f) => _isImage(f))
-            .toList();
-
-        // Extract all to a subdirectory under the main-isolate-resolved temp
-        // parent.  The directory name includes a hash of the source path to
-        // avoid collisions when two CBR files share the same basename.
-        try {
-          final parent = cbrTempParent ?? Directory.systemTemp.path;
-          final safeBaseName = _safeTempName(path);
-          final pathHash = path.hashCode.toRadixString(36);
-          final tempPath = '$parent/cbr_${safeBaseName}_$pathHash';
-          final existingDir = Directory(tempPath);
-          if (existingDir.existsSync()) {
-            existingDir.deleteSync(recursive: true);
-          }
-          cbrTempDir = await existingDir.create();
-          final extractResult = await Rar.extractRarFile(
-            rarFilePath: path,
-            destinationPath: cbrTempDir.path,
-          );
-          if (extractResult['success'] != true) {
-            throw const FormatException('Failed to extract CBR archive');
-          }
-
-          final tempDir = cbrTempDir;
-          readEntry = (name) {
-            // Reject path traversal and absolute paths in member names.
-            if (name.contains('..') || name.startsWith('/')) {
-              throw FormatException('Invalid entry path: $name');
-            }
-            final file = _findExtractedFile(tempDir, name);
-            if (file == null) {
-              throw FormatException('Entry not found: $name');
-            }
-            return Uint8List.fromList(file.readAsBytesSync());
-          };
-        } catch (e) {
-          cbrTempDir?.deleteSync(recursive: true);
-          cbrTempDir = null;
-          if (e is FormatException) rethrow;
+        entryNames = [...cbrEntryNames];
+        final extracted = Directory(cbrExtractedDir);
+        if (!extracted.existsSync()) {
           throw const FormatException('Not a valid CBR/RAR archive');
         }
+        cbrTempDir = extracted;
+        readEntry = (name) {
+          // Reject path traversal and absolute paths in member names.
+          if (name.contains('..') || name.startsWith('/')) {
+            throw FormatException('Invalid entry path: $name');
+          }
+          final file = _findExtractedFile(extracted, name);
+          if (file == null) {
+            throw FormatException('Entry not found: $name');
+          }
+          return Uint8List.fromList(file.readAsBytesSync());
+        };
       }
 
       // Natural sort: "2.jpg" before "10.jpg".

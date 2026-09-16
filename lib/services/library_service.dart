@@ -60,8 +60,12 @@ class LibraryService extends ChangeNotifier {
 
   void _invalidateSortCache() => _sortedCache = null;
 
-  // Background metadata extraction queue.
+  // Background metadata extraction queue. [_metadataQueuedIds] mirrors the
+  // queue so enqueue sites can dedupe: without it, a bulk import followed by
+  // resumeMetadataExtraction queues the same id twice and two passes mutate
+  // the same Book (double cover writes).
   final Queue<String> _metadataQueue = Queue<String>();
+  final Set<String> _metadataQueuedIds = {};
   bool _metadataWorkerRunning = false;
   bool _disposed = false;
 
@@ -152,6 +156,25 @@ class LibraryService extends ChangeNotifier {
     _db?.close();
     _db = null;
     super.dispose();
+  }
+
+  /// Clears reset-scoped storage: the legacy SharedPreferences library
+  /// snapshot and the covers directory.
+  ///
+  /// Called by the startup Reset action before the database file is deleted.
+  /// Without this, [load] re-imports the legacy snapshot whenever the DB is
+  /// empty, so a Reset immediately resurrects the old library. Stale covers
+  /// are removed too (the DB rows referencing them are gone).
+  static Future<void> clearResetState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_legacyLibraryKey);
+    } catch (_) {}
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final covers = Directory('${docs.path}/burrow_covers');
+      if (await covers.exists()) await covers.delete(recursive: true);
+    } catch (_) {}
   }
 
   Directory? _coversDir;
@@ -421,15 +444,29 @@ class LibraryService extends ChangeNotifier {
           await _db!.transaction(() async {
             await _db!.insertBook(db.bookToCompanion(book));
             // Annotations are restored only for newly imported books so
-            // repeated imports never duplicate them.
+            // repeated imports never duplicate them. Each entry is isolated:
+            // a single malformed bookmark/session (bad cast in fromJson)
+            // must not abort the whole book transaction.
             for (final m in bookmarksByBook[book.id] ?? const []) {
-              if (!await _db!.bookmarkExists(m['id'] as String)) {
-                await _db!.insertBookmark(db.bookmarkFromJson(m));
+              try {
+                if (!await _db!.bookmarkExists(m['id'] as String)) {
+                  await _db!.insertBookmark(db.bookmarkFromJson(m));
+                }
+              } catch (e) {
+                debugPrint(
+                  'Skipping malformed bookmark ${m['id']}: $e',
+                );
               }
             }
             for (final m in sessionsByBook[book.id] ?? const []) {
-              if (!await _db!.sessionExists(book.id, m['startedAt'] as int)) {
-                await _db!.insertSession(db.sessionFromJson(m));
+              try {
+                if (!await _db!.sessionExists(book.id, m['startedAt'] as int)) {
+                  await _db!.insertSession(db.sessionFromJson(m));
+                }
+              } catch (e) {
+                debugPrint(
+                  'Skipping malformed session for book ${book.id}: $e',
+                );
               }
             }
           });
@@ -526,7 +563,7 @@ class LibraryService extends ChangeNotifier {
       notifyListeners();
 
       // Queue metadata extraction for background processing.
-      _metadataQueue.add(book.id);
+      _enqueueMetadata(book.id);
       _startMetadataWorker();
 
       return book;
@@ -581,14 +618,14 @@ class LibraryService extends ChangeNotifier {
 
       if (batch.isEmpty) return (added, errors);
 
-      _books.addAll(batch);
-      _invalidateSortCache();
-
       final database = _db;
       if (database != null) {
         // Insert in small chunks and yield between them. The production
         // database runs on the UI isolate, so one huge transaction would
         // freeze the interface; chunking keeps the event loop responsive.
+        // Each chunk joins the in-memory library only after its transaction
+        // commits, so a failed chunk never leaves ghosts that block re-import
+        // via containsPath.
         const chunkSize = 100;
         for (var i = 0; i < batch.length; i += chunkSize) {
           final end = (i + chunkSize < batch.length)
@@ -602,22 +639,23 @@ class LibraryService extends ChangeNotifier {
               }
             });
           } catch (e) {
-            final ids = {for (final b in chunk) b.id};
-            _books.removeWhere((b) => ids.contains(b.id));
-            _invalidateSortCache();
             errors.add(e);
             return (added, errors);
           }
+          _books.addAll(chunk);
+          _invalidateSortCache();
           added.addAll(chunk);
           notifyListeners();
           await Future<void>.delayed(Duration.zero);
         }
       } else {
+        _books.addAll(batch);
+        _invalidateSortCache();
         added.addAll(batch);
       }
 
-      for (final book in batch) {
-        _metadataQueue.add(book.id);
+      for (final book in added) {
+        _enqueueMetadata(book.id);
       }
       notifyListeners();
       _startMetadataWorker();
@@ -638,6 +676,13 @@ class LibraryService extends ChangeNotifier {
     return cores <= 2 ? 1 : 2;
   }
 
+  /// Enqueues [bookId] for metadata extraction unless already queued.
+  void _enqueueMetadata(String bookId) {
+    if (_metadataQueuedIds.add(bookId)) {
+      _metadataQueue.add(bookId);
+    }
+  }
+
   /// Starts the background metadata extraction worker if not already running.
   void _startMetadataWorker() {
     if (_metadataWorkerRunning || _metadataQueue.isEmpty) return;
@@ -652,7 +697,7 @@ class LibraryService extends ChangeNotifier {
     if (_disposed) return;
     for (final book in _books) {
       if (!book.metadataComplete) {
-        _metadataQueue.add(book.id);
+        _enqueueMetadata(book.id);
       }
     }
     _startMetadataWorker();
@@ -664,6 +709,7 @@ class LibraryService extends ChangeNotifier {
     while (!_disposed) {
       final work = _metadataQueue.toList();
       _metadataQueue.clear();
+      _metadataQueuedIds.clear();
       if (work.isEmpty) break;
       await _runMetadataPass(work);
     }
@@ -942,11 +988,35 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Deletes a book and optionally its file from disk.
+  ///
+  /// The database transaction commits first; user files (cover, parsed-document
+  /// cache, source book) are deleted only after the commit succeeds. A
+  /// kill/crash in between leaves orphan DB rows (recoverable, swept on next
+  /// load) instead of a DB row pointing at a deleted file (unrecoverable data
+  /// loss). If the transaction throws, no file is touched and the book stays
+  /// in the library.
   Future<void> deleteBookWithFile(String id, {bool deleteFile = false}) async {
     final book = _books.where((b) => b.id == id).firstOrNull;
     if (book == null) return;
-    // Drop the parsed-document cache while the source file still exists, so
-    // the key (path + mtime + size) can be computed.
+    if (_db != null) {
+      await _db!.transaction(() async {
+        await _db!.customStatement('DELETE FROM bookmarks WHERE book_id = ?', [
+          id,
+        ]);
+        await _db!.customStatement(
+          'DELETE FROM reading_sessions WHERE book_id = ?',
+          [id],
+        );
+        await _db!.customStatement(
+          'DELETE FROM collection_books WHERE book_id = ?',
+          [id],
+        );
+        await _db!.deleteBookById(id);
+      });
+    }
+    // DB commit succeeded — now it is safe to delete user files. The parsed-
+    // document cache key needs path + mtime + size, so drop it before the
+    // source file itself is removed.
     await DocumentParser.clearCacheFor(book.path);
     final cover = book.coverPath;
     if (cover != null) {
@@ -963,22 +1033,6 @@ class LibraryService extends ChangeNotifier {
       } catch (e) {
         debugPrint('Failed to delete book file: $e');
       }
-    }
-    if (_db != null) {
-      await _db!.transaction(() async {
-        await _db!.customStatement('DELETE FROM bookmarks WHERE book_id = ?', [
-          id,
-        ]);
-        await _db!.customStatement(
-          'DELETE FROM reading_sessions WHERE book_id = ?',
-          [id],
-        );
-        await _db!.customStatement(
-          'DELETE FROM collection_books WHERE book_id = ?',
-          [id],
-        );
-        await _db!.deleteBookById(id);
-      });
     }
     _books.remove(book);
     _invalidateSortCache();

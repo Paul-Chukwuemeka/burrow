@@ -115,11 +115,12 @@ class MetadataApiService {
       final request = await client.getUrl(uri).timeout(_coverTimeout);
       final response = await request.close().timeout(_coverTimeout);
       if (response.statusCode != 200) return null;
-      // Cap at ~10 MB to prevent downloading a multi-GB payload.
+      // Cap at ~10 MB to prevent downloading a multi-GB payload. The stream
+      // timeout bounds slow-loris stalls; the outer callers bound getUrl/close.
       const maxBytes = 10 * 1024 * 1024;
       var total = 0;
       final chunks = <List<int>>[];
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(_coverTimeout)) {
         total += chunk.length;
         if (total > maxBytes) {
           debugPrint('MetadataApiService: cover too large, aborting download');
@@ -189,31 +190,28 @@ class MetadataApiService {
   /// Reads an HTTP response body with a hard byte-cap and timeout.
   ///
   /// `.take(n)` on a stream counts *events* (chunks), not bytes, so it is
-  /// useless as a size guard.  This helper counts actual bytes and aborts
-  /// once [maxBytes] is exceeded.
+  /// useless as a size guard.  This helper counts actual bytes inline and
+  /// aborts mid-stream once [maxBytes] is exceeded, so a 100 MB body is never
+  /// buffered. The whole read is wrapped in [_timeout] so a slow-loris server
+  /// (1 byte / 9 s stalls) cannot hang the future forever.
   static Future<String> _readBodyBounded(
     HttpClientResponse response, {
     int maxBytes = 10 * 1024 * 1024,
   }) async {
-    final chunks = <List<int>>[];
-    var total = 0;
-    final sub = response.listen(
-      (chunk) {
+    Future<String> read() async {
+      final chunks = <List<int>>[];
+      var total = 0;
+      await for (final chunk in response.timeout(_timeout)) {
         total += chunk.length;
+        if (total > maxBytes) {
+          throw FormatException('Response body exceeds $maxBytes bytes');
+        }
         chunks.add(chunk);
-      },
-      onDone: () {},
-      onError: (e) {},
-    );
-    final timer = Timer(_timeout, () {
-      sub.cancel();
-    });
-    await sub.asFuture<void>();
-    timer.cancel();
-    if (total > maxBytes) {
-      throw FormatException('Response body exceeds $maxBytes bytes');
+      }
+      return utf8.decode(chunks.expand((c) => c).toList(), allowMalformed: true);
     }
-    return utf8.decode(chunks.expand((c) => c).toList(), allowMalformed: true);
+
+    return read().timeout(_timeout);
   }
 
   static Future<List<ApiBookMetadata>> _searchGoogleBooks({

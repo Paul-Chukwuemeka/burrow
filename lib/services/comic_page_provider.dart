@@ -32,15 +32,44 @@ class ComicPageProvider {
 
   final LinkedHashMap<int, Uint8List> _cache = LinkedHashMap();
 
+  /// Maximum compressed CBZ size (matches `DocumentParser`).
+  ///
+  /// Kept as a local constant (instead of importing the parser's) so the
+  /// reader path can never silently lose its guard if the parser changes.
+  static const _maxCompressedBytes = 500 * 1024 * 1024;
+
+  /// Maximum total decompressed bytes (matches `DocumentParser`).
+  static const _maxDecompressedBytes = 512 * 1024 * 1024;
+
   /// Opens a CBZ archive and builds page metadata without reading image bytes.
+  ///
+  /// Rejects oversized archives before decoding so a 500 MB CBZ or a
+  /// highly-compressible zip-bomb cannot OOM the reader on low-end Android.
+  /// (Round 12 added these guards to `DocumentParser`, but this is the actual
+  /// reader path, so they are replicated here.)
   ///
   /// TODO(#38): `ZipDecoder().decodeBytes()` decompresses all entries into
   /// memory upfront. For large CBZ files this is O(archive_size). A proper
   /// fix would use a ZIP library that supports random-access reads of the
   /// central directory, decompressing entries only on demand in [loadPage].
   static Future<ComicPageProvider> open(String path) async {
-    final bytes = await File(path).readAsBytes();
+    final file = File(path);
+    final length = await file.length();
+    if (length > _maxCompressedBytes) {
+      throw const FormatException('CBZ file too large (limit 500 MB)');
+    }
+    final bytes = await file.readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);
+
+    var decompressed = 0;
+    for (final f in archive.files) {
+      decompressed += f.size;
+      if (decompressed > _maxDecompressedBytes) {
+        throw const FormatException(
+          'Archive decompressed size exceeds 512 MB',
+        );
+      }
+    }
 
     final entries = archive.files
         .where((f) => f.isFile && DocumentParser.isImageEntry(f.name))

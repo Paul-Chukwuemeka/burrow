@@ -164,6 +164,8 @@ class _BurrowAppState extends State<BurrowApp> {
     _library?.dispose();
     _library = null;
     await AppDatabase.deleteDatabaseFile();
+    // Clear the legacy snapshot + covers so load() can't resurrect them.
+    await LibraryService.clearResetState();
     // Also clear the PDF plugin cache so a corrupt cache can't block startup.
     final home = await _buildHome(context);
     if (!context.mounted) return;

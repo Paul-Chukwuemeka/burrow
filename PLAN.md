@@ -1454,7 +1454,7 @@ the metadata byte cap doesn't cap bytes.
 
 ### Blockers
 
-- [ ] **125. CBR parsing broken: `getTemporaryDirectory()` called inside `compute` isolate**
+- [x] **125. CBR parsing broken: `getTemporaryDirectory()` called inside `compute` isolate**
   - **File:** `lib/services/document_parser.dart:1343` (`_parseComicBook`), reached from `_parseIsolate` (`compute` at `218`, call at `463`)
   - **What:** `path_provider` uses a platform channel; `compute`/`Isolate.run` background isolates have no plugin registration (no `BackgroundIsolateBinaryMessenger.ensureInitialized` in `lib/`). The codebase itself documents this: `_resolveCacheDirPath` says "Must be called on the main isolate", and callers resolve the cache dir on the main isolate and pass it into `parse()` as `cacheDirPath`. `getTemporaryDirectory()` here throws `MissingPluginException`, caught at `1359`/`1371` and rethrown as `FormatException('Not a valid CBR/RAR archive')` → **every CBR file fails to open** with a misleading error. Previous code used `Directory.systemTemp`, which works in an isolate.
   - **Fix:** Resolve the temp dir on the main isolate and pass it into `parse()` (extend the `(path, cacheDirPath)` tuple), or revert to `Directory.systemTemp.createTemp('cbr_')`. Do not call path_provider inside `_parseIsolate`.
@@ -1462,7 +1462,7 @@ the metadata byte cap doesn't cap bytes.
 
 ### Majors
 
-- [ ] **126. Metadata API byte cap is a no-op; body reads have no timeout**
+- [x] **126. Metadata API byte cap is a no-op; body reads have no timeout**
   - **File:** `lib/services/metadata_api_service.dart:381` (`_fetchOpenLibraryByIsbn`), `:422` (`_searchOpenLibraryAll`), `:203` (`_searchGoogleBooks`)
   - **What:** `response.take(10 * 1024 * 1024)` takes the first **n events (chunks)**, not n bytes, so it permits ~10M chunks — effectively unbounded. `toList()`/`expand` then accumulate the whole body → OOM from a misbehaving/hostile server. `_searchGoogleBooks` still uses `transform(utf8.decoder).join()` with no cap at all. None of the three wrap the body read in `.timeout(_timeout)` (only `getUrl`/`close` are), so a slow-loris server hangs the future forever.
   - **Fix:** Count bytes in an `await for` loop with `response.timeout(_timeout)`:
@@ -1496,7 +1496,7 @@ the metadata byte cap doesn't cap bytes.
   - **Fix:** Add a "Reset library" action that deletes the DB file then retries; dispose the failed `LibraryService` before nulling it.
   - **Verify:** Force `library.load()` to throw, confirm Reset recovers and Retry doesn't leak.
 
-- [ ] **130. CBR temp dir keyed by basename only → concurrent collision**
+- [x] **130. CBR temp dir keyed by basename only → concurrent collision**
   - **File:** `lib/services/document_parser.dart:1339-1350` + `_safeTempName` (`1442-1449`)
   - **What:** Path is `cbr_<basename>`, so two different books named `comic.cbr` / `01.cbr` map to the same dir. Code does `deleteSync(recursive: true)` then recreate; metadata extraction runs with concurrency 2 and full parses can overlap, so one parse can delete the dir another is reading → `_findExtractedFile` returns null → spurious `FormatException` or truncated reads. Comment says "reuse it" but the code deletes it. Mostly masked by #125 until that's fixed.
   - **Fix:** Include a unique component (book id/hash) in the dir name, or `createTemp` under a main-isolate-resolved cache dir; make cleanup ownership explicit.
@@ -1546,3 +1546,151 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing. Agent A merges first (CBR blocker), Agent B rebases onto it. No CBR test exists — Agent A should add one that exercises the isolate path (or at minimum assert the temp-dir resolution doesn't use a platform channel in the isolate).
+
+---
+
+## Review Round 14 — On-Call Review (2026-09-16, post-Round-13 commits + uncommitted chrome/ContinueCard tweaks)
+
+Overall: the reader-path CBZ guard bypass, delete-before-commit file ordering, and iOS CBR channel failure are pager-grade data-loss/OOM issues. The CSS key mismatch, annotation-abort, Reset-resurrect, and vertical-flip throw are systematic correctness bugs that survive the Round 12/13 fixes.
+
+Scope: full-tree review via 4 parallel agents (DB/library, reader/controllers, parser/scan/network, UI/models/tests), then triaged by verifying top claims against source. One reported Blocker was checked and cleared: `search_controller.dart:115,154` `_pdfSearcher?.removeListener(_pdfSearcherListener!)` does NOT throw on EPUB — Dart `?.` short-circuits without evaluating arguments when the receiver is null, and both fields are set/cleared together. At most a defensive Nit.
+
+### Blockers
+
+- [x] **132. `ComicPageProvider.open` bypasses all archive size guards — reader-path OOM**
+  - Severity: Blocker
+  - Location: `lib/services/comic_page_provider.dart` `open` (lines 41-43)
+  - Issue: does `File(path).readAsBytes()` + `ZipDecoder().decodeBytes()` with no compressed-length check and no decompressed-sum check. The Round 12 guards live in `DocumentParser`, but this is the actual reader path, so a 500MB CBZ or 90MB zip-bomb opens fine here and OOM-kills on low-end Android.
+  - Fix: replicate the guards before decode — reject `length > maxComicCompressedBytes`, then post-decode decompressed-sum check (same helper as the parser path).
+
+- [x] **133. `deleteBookWithFile` deletes user files before the DB transaction commits**
+  - Severity: Blocker
+  - Location: `lib/services/library_service.dart` `deleteBookWithFile` (lines 950-982)
+  - Issue: cover file, parsed-cache entry, and (when `deleteFile: true`) the source book file are deleted first; the DB row is removed afterward in a transaction. A kill/crash in between leaves a DB row pointing at a deleted file (ghost book that fails to open), and a DB failure after the file delete leaves the file gone while the book stays in the library. Orphan DB rows are recoverable; deleted user files are not.
+  - Fix: run the `transaction` (bookmarks/sessions/collection_books/book deletes) first, then delete cover/cache/source file. Judgment call: keeping the current order for UI snappiness is defensible, but user-file deletion must come after the commit.
+
+- [x] **134. CBR fails on iOS/macOS — `rar` uses a platform channel outside Android**
+  - Severity: Blocker
+  - Location: `lib/services/document_parser.dart` `_parseComicBook` via `compute(_parseIsolate)`; root cause in `rar-0.3.0/lib/rar_platform_interface.dart` `_createDefaultInstance`
+  - Issue: verified in pub cache — `_createDefaultInstance` returns `RarFfi()` only on Android, `RarMethodChannel()` elsewhere. `Rar.listRarContents`/`extractRarFile` inside `compute` therefore throws `MissingPluginException` on iOS/macOS (background isolates have no channel). Passing only the temp *dir* in (#125 fix) did not fix the channel problem — every CBR fails on iOS.
+  - Fix: list + extract on the main isolate before `compute` (same pattern as `_safeCacheDirPath`), pass the file list / temp paths into the isolate.
+
+### Majors
+
+- [x] **135. Chapter CSS key mismatch — uppercase/encoded paths silently lose all styling** (Agent B, round14-agentB)
+  - Severity: Major
+  - Location: `lib/services/epub_css_parser.dart` `parse` (line 73, 80, 102) vs `lib/services/document_parser.dart` (lines 673, 705)
+  - Issue: `document_parser` stores `chapterDoms` keyed by `_normalizeKey(p)` (lowercase + decode) but `EpubCssParser.parse` looks up `chapterDom?[chapterPath]` raw and stores `allRules[chapterPath]` raw, while the consumer reads `chapterStyles[_normalizeKey(p)]`. Any book with uppercase or percent-encoded spine paths gets zero CSS (falls back to re-parse for the DOM, but the rules map still misses). Most EPUBs are lowercase so this is conditional, not universal.
+  - Fix: normalize on both sides — `chapterDom?[_normalizeKey(chapterPath)]` and `allRules[_normalizeKey(chapterPath)]`.
+
+- [x] **136. `_mergeCssStyles` maps rules to the wrong text, or drops them entirely** (Agent B, round14-agentB)
+  - Severity: Major
+  - Location: `lib/services/document_parser.dart` `_mergeCssStyles` (lines 1848-1864)
+  - Issue: (a) early return when `runs.isEmpty` — chapters with no `<b>/<i>/blockquote` runs drop pure-CSS typography (e.g. `.title{font-size:24px}` on a plain `<p>`). (b) element located via `body.indexOf(elementText)` — first-substring match, not DOM position, so repeated paragraphs all restyle the first occurrence and whitespace-collapsed text often misses (`-1`, skipped).
+  - Fix: build new `StyleRun`s for CSS ranges instead of only patching existing ones; map elements to offsets via DOM walk, not `indexOf`.
+
+- [x] **137. Metadata body cap checked after buffering; slow-loris hangs forever**
+  - Severity: Major
+  - Location: `lib/services/metadata_api_service.dart` `_readBodyBounded` (lines 194-217)
+  - Issue: chunks are all appended and `total > maxBytes` is only checked after `await sub.asFuture()` — a 100MB body is already buffered (plus a second copy in `expand().toList()`). The cancel timer has no total timeout on the await, so 1 byte/9s stalls hang forever; the outer `.timeout` only covers `getUrl`/`close`, not the body. (Assumption: `downloadCover`'s per-chunk counting pattern is the intended convention — it does this correctly.)
+  - Fix: follow the `downloadCover` pattern — `await for` with inline `if (total > maxBytes) throw`, wrapped in `.timeout(_timeout)`.
+
+- [x] **138. `BookSearch` unbounded results + post-dispose callbacks**
+  - Severity: Major
+  - Location: `lib/services/book_search.dart` `_scanIncrementally` (lines 97-141), `dispose` (lines 161-164)
+  - Issue: no result cap — query "e"/"a" on a 5MB book builds 100k+ `SearchResult`s with 60-char snippets and calls `onResults` per chapter with the live mutable list. A single huge TXT chapter never yields (no per-N yield), freezing the UI despite debounce. `dispose()` only flips `_running`; an already-scheduled microtask still calls `onResults`/`onDone` → `setState` after dispose.
+  - Fix: cap results (≈500, stop scan), `await Future.delayed(Duration.zero)` every ~200 matches, add `_disposed` guard + pass `List.of(_allResults)`.
+
+- [x] **139. `importLibrary` — one bad annotation discards the whole book**
+  - Severity: Major
+  - Location: `lib/services/library_service.dart` `importLibrary` (lines 421-435)
+  - Issue: bookmark/session inserts are inside the per-book transaction (good granularity), but `bookmarkFromJson`/`sessionFromJson` hard-cast (`m['startedAt'] as int`) so a single malformed entry throws, aborting the transaction — the valid book is rolled back and skipped with no per-entry logging.
+  - Fix: try/catch around each individual annotation insert inside the transaction + `debugPrint` with the entry id.
+
+- [x] **140. `_resetLibrary` doesn't clear the legacy key — Reset resurrects the library**
+  - Severity: Major
+  - Location: `lib/services/library_service.dart` `_resetLibrary` vs `load` (line 206 reads `_legacyLibraryKey = 'burrow.library.v1'`)
+  - Issue: Reset deletes only `burrow.db`, but `load` re-imports the legacy SharedPreferences snapshot whenever the DB is empty, and the legacy key is never cleared. Any user with that key set gets their old library back immediately after Reset.
+  - Fix: `prefs.remove(_legacyLibraryKey)` (and covers dir) in `_resetLibrary`.
+
+- [x] **141. ContinueCard fix incomplete at large textScale** (Agent B, round14-agentB — adaptive height + continue_card_test.dart)
+  - Severity: Major
+  - Location: `lib/widgets/library_state_widgets.dart` `ContinueCard.build` (title ~376, author ~388, fixed `SizedBox(height: 165)`)
+  - Issue: the uncommitted fix (title in `Flexible` + `Spacer()` + 40→36 button) absorbs the ~3px overrun at default scale, but the author `Text` is still inflexible and nothing constrains `textScaler`. At 1.3–2.0x system text size the same `RenderFlex` overflow returns for accessibility users.
+  - Fix: also bound the author line (`Flexible`, `maxLines: 1`, ellipsis) or make card height adaptive instead of fixed 165. Verify with a widget test at `textScaler` 1.5–2.0 (no such test exists today).
+
+- [x] **142. Volume-key/tap flip in vertical comic mode throws (no PageView client)** (Agent B, round14-agentB)
+  - Severity: Major
+  - Location: `lib/controllers/comic_controller.dart` `flip` (line 148) + `lib/screens/reader_screen.dart` `_flip` comic branch
+  - Issue: `flip` calls `comicPageController?.animateToPage` unconditionally. In vertical mode the UI builds a `ListView` (no `PageView`), so the controller has no clients → `animateToPage` throws `StateError`. Trigger: volume keys or edge-tap in vertical comic mode.
+  - Fix: guard with `hasClients` and branch vertical mode through the vertical scroll controller (scroll by viewport height) instead of `animateToPage`.
+
+### Minors (grouped)
+
+- [~] **143. Round-14 minors** (Agent B UI slice DONE: stats Future.wait+retry, _loadFilters skip, brightness non-finite, by-tail, onboarding _finishOnce, style_run min-scale, comic empty-clamp. Agent A slice DONE: importFilesFast per-chunk add, metadata-queue dedupe)
+  - `lib/screens/stats_screen.dart` `_loadStats` (~49-89): 8 sequential DB awaits, zero error handling — one corrupt-stats throw leaves a permanent spinner. Fix: `Future.wait` in try/catch with error state + retry.
+  - `lib/screens/library_screen.dart` `_loadFilters` (~143-152): unknown persisted format falls back to `BookFormat.epub`, forcing an epub-only filter that hides the library. Fix: skip unparseable entries.
+  - `lib/models/reader_settings.dart` `_parseBrightness` (~373-387): NaN/Infinity not rejected (unlike `fontSize`/`lineHeight` via `_clampTo`) — can reach the platform brightness channel. Fix: return `null` (follow system) for non-finite.
+  - `lib/utils/book_title.dart` `cleanBookTitle` (~78-82): "Stand by Me" matches `\s+by\s+<names>$` and truncates to "Stand". Fix: only strip the `by…` tail with a filename-cruft signal or ≥2 author tokens.
+  - `lib/screens/onboarding_screen.dart` `_ctas` (~394-402): "Browse library" calls `_finish()` directly while scan callbacks can concurrently fire `_finishOnce()` → double `onDone` navigation (assumption: `onDone` pushes/replaces the library route). Fix: call `_finishOnce()` in the CTA too.
+  - `lib/services/library_service.dart` `importFilesFast` (~584-614): `_books.addAll(batch)` upfront, but on chunk-insert failure only the failing chunk is removed and later chunks stay as in-memory ghosts that block re-import via `containsPath`. Fix: add per-chunk only after that chunk's transaction succeeds.
+  - `lib/services/library_service.dart` metadata queue: enqueue sites never dedupe the same book id (bulk-import + `resumeMetadataExtraction`), so two workers mutate the same `Book` and double-write covers. Fix: `contains` guard or companion `Set`.
+  - `lib/controllers/comic_controller.dart` `loadComicPages` (lines 65, 89): `clamp(0, count - 1)` with `count == 0` throws — currently swallowed by the outer catch so the "No pages found" view still shows, but the throw path is unintentional. Fix: early-return on empty before clamping. (Downgraded from reported Major after verification.)
+  - `lib/models/style_run.dart` `_naturalSize` (~219-227): `maxW`/`maxH` don't compose (`cssScale` overwritten, not multiplied) — 1000×1000 with max 500×250 yields 500×500, violating `maxH`. Fix: multiply, don't assign.
+  - Assumption on `rar` CBR temp sweep: if unique-suffix dirs are adopted, add a startup sweep for stale `cbr_*` dirs.
+
+### Nits
+
+- [~] **144. Round-14 nits** (Agent B: search_controller short-circuit comments added, ReaderChrome zero-callsite verified. RarFfi doc already covered by Agent A parse() comment)
+  - `RarFfi` vs `RarMethodChannel` split is Android-only FFI — document in `_parseComicBook` why main-isolate listing is required (link `rar_platform_interface.dart`).
+  - `ReaderChrome` widget file has zero call sites (only the private `_chrome()` in `reader_screen.dart` renders) — the uncommitted `tune` icon change was applied to both, which is correct for consistency, but future chrome fixes must target the private `_chrome()`.
+  - `search_controller.dart:115,154`: add a comment that `?.` short-circuits argument evaluation, so the `listener!` force-unwrap is safe only while both fields are set/cleared together.
+
+### What's done well
+
+- `downloadCover` (`metadata_api_service.dart:110-130`) counts bytes per-chunk and aborts mid-stream — the correct bounded-read pattern the JSON body reader should copy.
+- The atomic-reflow pagination design (live set stays complete while the next layout builds in a buffer, `_programmaticTarget` guarding `onPageChanged`, per-chapter styles, LRU layout cache) explicitly engineers against scrubber-break and position-drift that most readers ship with.
+
+Verdict: Request changes — Blockers #132, #133, #134 must be fixed before merge.
+
+---
+
+## Coordination — Round 14 Agent Split
+
+File-disjoint split. Agent A owns executable services + DB/shell; Agent B owns parser/CSS/reader/UI. No shared files.
+
+### Agent A — Services + startup (OOM, data-loss, hang)
+
+Issues: #132 → #133 → #134 (CBR main-isolate part) → #137 → #138 → #139 → #140
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 132 | `lib/services/comic_page_provider.dart` | Blocker | small (compressed + decompressed guards) |
+| 133 | `lib/services/library_service.dart` (`deleteBookWithFile`) | Blocker | small (transaction first, then file deletes) |
+| 134-main | `lib/services/document_parser.dart` + callers (CBR list/extract hoist) | Blocker | medium (main-isolate RAR, pass file list in) |
+| 137 | `lib/services/metadata_api_service.dart` | Major | small (byte-count loop + body timeout) |
+| 138 | `lib/services/book_search.dart` | Major | small (result cap + yield + disposed guard) |
+| 139 | `lib/services/library_service.dart` (`importLibrary` annotations) | Major | small (per-entry try/catch) |
+| 140 | `lib/services/library_service.dart` (`_resetLibrary`) | Major | trivial (remove legacy key + covers) |
+
+### Agent B — Parser + CSS + reader + UI
+
+Issues: #135 → #136 → #141 → #142 → #143 (UI slice) → #144
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 135 | `lib/services/epub_css_parser.dart` | Major | trivial (normalize lookup + store keys) |
+| 136 | `lib/services/document_parser.dart` (`_mergeCssStyles`) | Major | medium (offset map + new runs) |
+| 141 | `lib/widgets/library_state_widgets.dart` | Major | small (bound author + textScaler test) |
+| 142 | `lib/controllers/comic_controller.dart`, `lib/screens/reader_screen.dart` | Major | small (vertical branch + hasClients) |
+| 143-UI | `lib/screens/stats_screen.dart`, `lib/screens/library_screen.dart`, `lib/models/reader_settings.dart`, `lib/utils/book_title.dart`, `lib/screens/onboarding_screen.dart`, `lib/models/style_run.dart` | Minor | small (each one-line-ish) |
+| 144 | docs/comments | Nit | trivial |
+
+### Merge point (Round 14)
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing. Agent A merges first (Blockers are load-bearing), Agent B rebases onto it. Agent B must add: (1) CBR test exercising the main-isolate path on a fixture `.rar`, (2) ContinueCard overflow test at `textScaler` 1.5–2.0 with long title + author.

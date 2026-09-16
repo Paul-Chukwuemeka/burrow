@@ -49,6 +49,14 @@ class BookSearch {
     required this.onDone,
   });
 
+  /// Maximum results kept per search. A one-letter query on a large book
+  /// would otherwise build 100k+ results with snippets and freeze the UI.
+  static const maxResults = 500;
+
+  /// Matches scanned before yielding to the event loop inside a single huge
+  /// chapter (which otherwise never yields and freezes the UI).
+  static const _yieldEveryMatches = 200;
+
   final List<Chapter> chapters;
   final ValueChanged<List<SearchResult>> onResults;
   final VoidCallback onDone;
@@ -57,6 +65,7 @@ class BookSearch {
   String _query = '';
   String _lastQuery = '';
   bool _running = false;
+  bool _disposed = false;
   List<SearchResult> _allResults = [];
 
   /// All results from the last completed search.
@@ -64,6 +73,7 @@ class BookSearch {
 
   /// Start a debounced search. Rapid keystrokes cancel prior scans.
   void search(String query) {
+    if (_disposed) return;
     _query = query.trim();
     _debounce?.cancel();
     if (_query.isEmpty) {
@@ -76,6 +86,7 @@ class BookSearch {
 
   /// Run a full search immediately (used for submit/enter).
   void searchImmediate(String query) {
+    if (_disposed) return;
     _query = query.trim();
     _debounce?.cancel();
     if (_query.isEmpty) {
@@ -87,16 +98,26 @@ class BookSearch {
   }
 
   void _startScan() {
-    if (_running) return;
+    if (_disposed || _running) return;
     _running = true;
     _lastQuery = _query;
     _allResults = [];
-    _scanIncrementally(0);
+    unawaited(_scanIncrementally(0));
   }
 
-  void _scanIncrementally(int chapterIndex) {
+  Future<void> _scanIncrementally(int chapterIndex) async {
+    if (_disposed) {
+      _running = false;
+      return;
+    }
+    if (_allResults.length >= maxResults) {
+      _running = false;
+      if (_lastQuery == _query) onDone();
+      return;
+    }
     if (chapterIndex >= chapters.length || _lastQuery != _query) {
       _running = false;
+      if (_disposed) return;
       if (_lastQuery == _query) {
         onDone();
       } else {
@@ -110,8 +131,11 @@ class BookSearch {
     final queryLower = _lastQuery.toLowerCase();
     final batch = <SearchResult>[];
     var start = 0;
+    var sinceYield = 0;
 
     while (start <= body.length - queryLower.length) {
+      if (_disposed || _lastQuery != _query) break;
+      if (_allResults.length + batch.length >= maxResults) break;
       final idx = lower.indexOf(queryLower, start);
       if (idx == -1) break;
 
@@ -131,13 +155,41 @@ class BookSearch {
         ),
       );
       start = idx + queryLower.length;
+      if (++sinceYield >= _yieldEveryMatches) {
+        sinceYield = 0;
+        // Yield so a single huge chapter never freezes the UI.
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    if (_disposed) {
+      _running = false;
+      return;
+    }
+    if (_lastQuery != _query) {
+      _running = false;
+      _startScan();
+      return;
     }
 
     _allResults.addAll(batch);
-    onResults(_allResults);
+    // Pass a snapshot so callers never observe the live mutable list.
+    onResults(List.of(_allResults));
+
+    if (_allResults.length >= maxResults) {
+      _running = false;
+      onDone();
+      return;
+    }
 
     // Yield to the event loop, then scan next chapter.
-    Future.microtask(() => _scanIncrementally(chapterIndex + 1));
+    await Future<void>.delayed(Duration.zero);
+    if (_disposed || _lastQuery != _query) {
+      _running = false;
+      if (!_disposed && _lastQuery != _query) _startScan();
+      return;
+    }
+    await _scanIncrementally(chapterIndex + 1);
   }
 
   /// Finds which result index contains the given chapter + offset, or -1.
@@ -159,6 +211,7 @@ class BookSearch {
   }
 
   void dispose() {
+    _disposed = true;
     _debounce?.cancel();
     _running = false;
   }
