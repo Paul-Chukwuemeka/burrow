@@ -72,6 +72,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _onControllerUpdate() {
+    // A running scan ("settling in…") goes straight to the library; the
+    // scan keeps importing in the background.
+    if (_ctrl.scanStatus == ScanStatus.running) {
+      _finishOnce();
+      return;
+    }
     // Sync the PageView to the controller's current index.
     if (_page.hasClients && _page.page?.round() != _ctrl.currentPageIndex) {
       _page.animateToPage(
@@ -91,6 +97,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         : 0;
     _analytics.onboardingCompleted(totalDurationMs: elapsed);
     widget.onDone(context);
+  }
+
+  bool _finished = false;
+
+  /// Finishes onboarding at most once; progress callbacks from the
+  /// background scan keep firing after the screen is gone.
+  void _finishOnce() {
+    if (_finished || !mounted) return;
+    _finished = true;
+    _finish();
   }
 
   // -------------------------------------------------------------------------

@@ -51,6 +51,22 @@ class OnboardingFlowController extends ChangeNotifier {
   int scanProgress = 0;
   int scanTotal = 0;
 
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    // The scan keeps importing after onboarding is dismissed (the library
+    // is updated directly); drop updates once nobody is listening.
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
   // ---- Derived -----------------------------------------------------------
 
   int get pageCount => _pageCount;
