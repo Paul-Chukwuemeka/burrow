@@ -144,13 +144,21 @@ class AppDatabase extends _$AppDatabase {
     onCreate: (m) async {
       await m.createAll();
     },
+    // Each step is idempotent for already-applied DDL (retry after a
+    // force-kill mid-migration) but rethrows genuine failures so Drift
+    // does NOT bump schemaVersion on a partial migration.
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         try {
           await m.createTable(collections);
           await m.createTable(collectionBooks);
         } catch (e) {
-          debugPrint('Migration step from=$from to=2 failed: $e');
+          if (_isBenignMigrationError(e)) {
+            debugPrint('Migration step to=2 already applied, skipping: $e');
+          } else {
+            debugPrint('Migration step from=$from to=2 failed: $e');
+            rethrow;
+          }
         }
       }
       if (from < 3) {
@@ -164,7 +172,12 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(books, books.language);
           await m.addColumn(books, books.review);
         } catch (e) {
-          debugPrint('Migration step from=$from to=3 failed: $e');
+          if (_isBenignMigrationError(e)) {
+            debugPrint('Migration step to=3 already applied, skipping: $e');
+          } else {
+            debugPrint('Migration step from=$from to=3 failed: $e');
+            rethrow;
+          }
         }
       }
       if (from < 4) {
@@ -177,14 +190,24 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(books, books.titleSort);
           await m.addColumn(books, books.authorSort);
         } catch (e) {
-          debugPrint('Migration step from=$from to=4 failed: $e');
+          if (_isBenignMigrationError(e)) {
+            debugPrint('Migration step to=4 already applied, skipping: $e');
+          } else {
+            debugPrint('Migration step from=$from to=4 failed: $e');
+            rethrow;
+          }
         }
       }
       if (from < 5) {
         try {
           await m.addColumn(books, books.metadataComplete);
         } catch (e) {
-          debugPrint('Migration step from=$from to=5 failed: $e');
+          if (_isBenignMigrationError(e)) {
+            debugPrint('Migration step to=5 already applied, skipping: $e');
+          } else {
+            debugPrint('Migration step from=$from to=5 failed: $e');
+            rethrow;
+          }
         }
       }
       if (from < 6) {
@@ -194,10 +217,21 @@ class AppDatabase extends _$AppDatabase {
           );
         } catch (e) {
           debugPrint('Migration step from=$from to=6 failed: $e');
+          rethrow;
         }
       }
     },
   );
+
+  /// True for "already applied" DDL errors after a force-kill mid-migration
+  /// (table/column/index already exists). Everything else rethrows so the
+  /// schema version is not bumped on a genuinely partial migration.
+  static bool _isBenignMigrationError(Object e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('already exists')) return true;
+    if (msg.contains('duplicate column')) return true;
+    return false;
+  }
 
   // -- Books CRUD ------------------------------------------------------------
 
@@ -305,7 +339,9 @@ class AppDatabase extends _$AppDatabase {
       'WHERE book_id = ? AND ended_at > 0',
       variables: [Variable.withString(bookId)],
     ).get();
-    return result.isNotEmpty ? result.first.read<int>('total') : 0;
+    return result.isNotEmpty
+        ? result.first.readNullable<int>('total') ?? 0
+        : 0;
   }
 
   Future<int> getTotalPagesRead(String bookId) async {
@@ -313,7 +349,9 @@ class AppDatabase extends _$AppDatabase {
       'SELECT SUM(pages) AS total FROM reading_sessions WHERE book_id = ?',
       variables: [Variable.withString(bookId)],
     ).get();
-    return result.isNotEmpty ? result.first.read<int>('total') : 0;
+    return result.isNotEmpty
+        ? result.first.readNullable<int>('total') ?? 0
+        : 0;
   }
 
   /// Returns sessions grouped by local calendar day with total time in ms.
@@ -335,13 +373,12 @@ class AppDatabase extends _$AppDatabase {
   Future<int> getReadingStreak() async {
     final daily = await getDailyReadingTime();
     if (daily.isEmpty) return 0;
-    final today = localDayKey(DateTime.now().millisecondsSinceEpoch);
-    final msPerDay = 86400000;
+    final now = DateTime.now();
+    var cursor = DateTime(now.year, now.month, now.day);
     var streak = 0;
-    var day = today;
-    while (daily.containsKey(day)) {
+    while (daily.containsKey(cursor.millisecondsSinceEpoch)) {
       streak++;
-      day -= msPerDay;
+      cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);
     }
     return streak;
   }
@@ -376,7 +413,9 @@ class AppDatabase extends _$AppDatabase {
     final result = await customSelect(
       'SELECT MAX(ended_at - started_at) AS longest FROM reading_sessions WHERE ended_at > 0',
     ).get();
-    return result.isNotEmpty ? result.first.read<int>('longest') : 0;
+    return result.isNotEmpty
+        ? result.first.readNullable<int>('longest') ?? 0
+        : 0;
   }
 
   /// Returns the average session duration in ms.
@@ -385,21 +424,24 @@ class AppDatabase extends _$AppDatabase {
       'SELECT AVG(ended_at - started_at) AS avg FROM reading_sessions WHERE ended_at > 0',
     ).get();
     if (result.isEmpty) return 0;
-    final avg = result.first.read<double>('avg');
+    final avg = result.first.readNullable<double>('avg');
+    if (avg == null) return 0;
     return avg.round();
   }
 
   /// Returns total reading time in ms for today.
   Future<int> getTodayReadingTimeMs() async {
     final dayStart = localDayKey(DateTime.now().millisecondsSinceEpoch);
-    final dayEnd = dayStart + 86400000;
+    final dayEnd = localDayKey(dayStart + 86400000 + 43200000);
     final result = await customSelect(
       'SELECT SUM(ended_at - started_at) AS total '
       'FROM reading_sessions '
       'WHERE ended_at > 0 AND started_at >= ? AND started_at < ?',
       variables: [Variable.withInt(dayStart), Variable.withInt(dayEnd)],
     ).get();
-    return result.isNotEmpty ? result.first.read<int>('total') : 0;
+    return result.isNotEmpty
+        ? result.first.readNullable<int>('total') ?? 0
+        : 0;
   }
 
   /// Returns total reading time in ms for the last 7 days.
@@ -413,7 +455,9 @@ class AppDatabase extends _$AppDatabase {
       'WHERE ended_at > 0 AND started_at >= ?',
       variables: [Variable.withInt(weekAgo)],
     ).get();
-    return result.isNotEmpty ? result.first.read<int>('total') : 0;
+    return result.isNotEmpty
+        ? result.first.readNullable<int>('total') ?? 0
+        : 0;
   }
 
   /// Returns per-book reading stats for all started books, sorted by time desc.

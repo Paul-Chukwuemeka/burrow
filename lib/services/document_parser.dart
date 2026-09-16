@@ -181,6 +181,33 @@ class TocEntry {
 }
 
 class DocumentParser {
+  /// Maximum total decompressed bytes allowed for a ZIP-based book.
+  ///
+  /// `ZipDecoder().decodeBytes` inflates the whole archive into memory plus
+  /// chapter strings/DOMs duplicate text, so a highly-compressible 90 MB
+  /// EPUB or a 500 MB CBZ can transiently exceed gigabytes and OOM low-end
+  /// Android. Abort early instead.
+  static const int maxDecompressedBytes = 512 * 1024 * 1024;
+
+  /// Maximum compressed file size for CBZ/CBR comics.
+  ///
+  /// EPUB/TXT already cap at 100 MB; comics legitimately run larger, so allow
+  /// up to 500 MB compressed here. The decompressed cap above is the real
+  /// OOM guard.
+  static const int maxComicCompressedBytes = 500 * 1024 * 1024;
+
+  static void _assertDecompressedSize(Archive archive) {
+    var total = 0;
+    for (final f in archive.files) {
+      total += f.size;
+      if (total > maxDecompressedBytes) {
+        throw const FormatException(
+          'Archive decompressed size exceeds 512 MB',
+        );
+      }
+    }
+  }
+
   /// Parses a document into chapters. Heavy work runs in a background isolate.
   ///
   /// The cache directory is resolved here, on the main isolate, because
@@ -294,6 +321,7 @@ class DocumentParser {
     } catch (_) {
       throw const FormatException('Not a valid EPUB file');
     }
+    _assertDecompressedSize(archive);
 
     final entries = <String, ArchiveFile>{
       for (final f in archive.files)
@@ -355,9 +383,14 @@ class DocumentParser {
   /// Runs entirely inside the metadata isolate, so the archive read/decode and
   /// cover extraction never touch the UI thread.
   static Future<ParsedMetadata> _extractCbzMetadata(String path) async {
+    final file = File(path);
+    final length = await file.length();
+    if (length > maxComicCompressedBytes) {
+      throw const FormatException('CBZ file too large (limit 500 MB)');
+    }
     final Uint8List bytes;
     try {
-      bytes = await File(path).readAsBytes();
+      bytes = await file.readAsBytes();
     } catch (_) {
       throw const FormatException('Not a valid CBZ file');
     }
@@ -367,6 +400,7 @@ class DocumentParser {
     } catch (_) {
       throw const FormatException('Not a valid CBZ/ZIP archive');
     }
+    _assertDecompressedSize(archive);
     final names =
         archive.files
             .where((f) => f.isFile && _isImage(f.name))
@@ -469,6 +503,7 @@ class DocumentParser {
     } catch (_) {
       throw const FormatException('Not a valid EPUB file');
     }
+    _assertDecompressedSize(archive);
 
     // Case-insensitive entry lookup; EPUBs are inconsistent about casing.
     final entries = {
@@ -585,10 +620,15 @@ class DocumentParser {
       (byFile[e.fileKey] ??= <TocEntry>[]).add(e);
     }
 
-    // Build archive entry lookup once (not per spine doc).
+    // Build image-only lookup lazily (not per spine doc, and not for every
+    // entry). The previous version touched `e.content` for ALL entries
+    // (HTML, CSS, fonts, audio), duplicating multi-GB transient on top of
+    // chapter strings + DOMs. Only images referenced by `<img>` tags are
+    // needed for `archiveEntries`, so retain image entries only.
     final archiveContentMap = <String, Uint8List>{
       for (final e in entries.values)
-        Uri.decodeComponent(e.name.toLowerCase()): e.content,
+        if (e.isFile && _isImage(e.name))
+          Uri.decodeComponent(e.name.toLowerCase()): e.content,
     };
 
     // Cover image hrefs, from both EPUB3 `properties="cover-image"` and the
@@ -1231,9 +1271,14 @@ class DocumentParser {
 
     try {
       if (format == BookFormat.cbz) {
+        final file = File(path);
+        final length = await file.length();
+        if (length > maxComicCompressedBytes) {
+          throw const FormatException('CBZ file too large (limit 500 MB)');
+        }
         final Uint8List bytes;
         try {
-          bytes = await File(path).readAsBytes();
+          bytes = await file.readAsBytes();
         } catch (_) {
           throw const FormatException('Not a valid CBZ file');
         }
@@ -1243,16 +1288,36 @@ class DocumentParser {
         } catch (_) {
           throw const FormatException('Not a valid CBZ/ZIP archive');
         }
+        _assertDecompressedSize(archive);
         entryNames = archive.files
             .where((f) => f.isFile && _isImage(f.name))
             .map((f) => f.name)
             .toList();
         readEntry = (name) {
-          final file = archive.files.firstWhere((f) => f.name == name);
-          return Uint8List.fromList(file.content as List<int>);
+          ArchiveFile? found;
+          for (final f in archive.files) {
+            if (f.name == name) {
+              found = f;
+              break;
+            }
+          }
+          if (found == null) {
+            throw FormatException('Entry not found: $name');
+          }
+          return Uint8List.fromList(found.content as List<int>);
         };
       } else {
         // CBR: use rar package (libarchive) to list and extract entries.
+        final cbrFile = File(path);
+        try {
+          final cbrLength = await cbrFile.length();
+          if (cbrLength > maxComicCompressedBytes) {
+            throw const FormatException('CBR file too large (limit 500 MB)');
+          }
+        } catch (e) {
+          if (e is FormatException) rethrow;
+          // If length can't be read, listRarContents below will fail anyway.
+        }
         final List<dynamic> allFiles;
         try {
           final listResult = await Rar.listRarContents(rarFilePath: path);

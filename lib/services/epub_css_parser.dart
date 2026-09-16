@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
@@ -39,22 +40,29 @@ class EpubCssParser {
     final fontFaces = <String, FontFaceInfo>{};
 
     // Collect CSS file contents from the manifest.
+    // NOTE: `manifest` is id -> href (archive path). `readEntry` resolves
+    // archive paths, so look up by href — not by manifest id (entry.key).
     final cssFiles = <String, String>{};
     for (final entry in manifest.entries) {
       final href = entry.value;
       if (href.toLowerCase().endsWith('.css')) {
         try {
-          final bytes = readEntry(entry.key);
-          cssFiles[href] = String.fromCharCodes(bytes);
+          final bytes = readEntry(href);
+          cssFiles[href] = utf8.decode(bytes, allowMalformed: true);
         } catch (_) {}
       }
     }
 
     // Compile external CSS once — shared across all chapters.
+    // Extract @font-face per CSS file so relative font URLs resolve against
+    // that file's directory, not the archive root.
     final externalCss = cssFiles.values.join('\n');
     css_visitor.StyleSheet? externalStylesheet;
     if (externalCss.isNotEmpty) {
-      _extractFontFacesFromCss(externalCss, fontFaces, readEntry);
+      for (final cssEntry in cssFiles.entries) {
+        _extractFontFacesFromCss(cssEntry.value, fontFaces, readEntry,
+            cssPath: cssEntry.key);
+      }
       externalStylesheet = css.compile(externalCss);
     }
 
@@ -66,7 +74,7 @@ class EpubCssParser {
       if (doc == null) {
         try {
           final xhtmlBytes = readEntry(chapterPath);
-          final xhtml = String.fromCharCodes(xhtmlBytes);
+          final xhtml = utf8.decode(xhtmlBytes, allowMalformed: true);
           doc = html_parser.parse(xhtml);
         } catch (_) {
           allRules[chapterPath] = rules;
@@ -140,8 +148,9 @@ class EpubCssParser {
   static void _extractFontFacesFromCss(
     String cssText,
     Map<String, FontFaceInfo> fontFaces,
-    Uint8List Function(String) readEntry,
-  ) {
+    Uint8List Function(String) readEntry, {
+    String? cssPath,
+  }) {
     final ffPattern = RegExp(r'@font-face\s*\{([^}]+)\}', dotAll: true);
     final familyPattern = RegExp(r'font-family\s*:\s*([^;]+)');
     final srcPattern = RegExp(
@@ -158,12 +167,18 @@ class EpubCssParser {
             .group(1)!
             .replaceAll(RegExp(r"['\u201C\u201D]"), '')
             .trim();
-        var src = srcMatch.group(1)!;
-        if (family.isNotEmpty && src.isNotEmpty) {
-          // Resolve relative paths against archive root.
-          if (src.startsWith('../')) {
-            src = src.substring(3);
+        var rawSrc = srcMatch.group(1)!.trim();
+        // Strip query/fragment, ignore absolute/data URLs.
+        rawSrc = rawSrc.split('?').first.split('#').first.trim();
+        if (family.isNotEmpty && rawSrc.isNotEmpty) {
+          if (rawSrc.startsWith('data:') ||
+              rawSrc.startsWith('http://') ||
+              rawSrc.startsWith('https://') ||
+              rawSrc.startsWith('/')) {
+            continue;
           }
+          // Resolve relative font URLs against the CSS file's directory.
+          final src = _resolveFontHref(cssPath, rawSrc);
           Uint8List? bytes;
           try {
             bytes = readEntry(src);
@@ -176,6 +191,41 @@ class EpubCssParser {
         }
       }
     }
+  }
+
+  /// Resolves a font `url()` [src] found in the CSS file at [cssPath] against
+  /// that file's directory, normalizing `.`/`..` segments.
+  static String _resolveFontHref(String? cssPath, String src) {
+    var clean = src.trim();
+    // Strip leading ./ segments.
+    while (clean.startsWith('./')) {
+      clean = clean.substring(2);
+    }
+    if (cssPath == null || !cssPath.contains('/')) {
+      // CSS at archive root: just normalize .. segments.
+      final parts = <String>[];
+      for (final part in clean.split('/')) {
+        if (part.isEmpty || part == '.') continue;
+        if (part == '..') {
+          if (parts.isNotEmpty) parts.removeLast();
+        } else {
+          parts.add(part);
+        }
+      }
+      return parts.join('/');
+    }
+    final cssDir = cssPath.substring(0, cssPath.lastIndexOf('/'));
+    final combined = cssDir.isEmpty ? clean : '$cssDir/$clean';
+    final parts = <String>[];
+    for (final part in combined.split('/')) {
+      if (part.isEmpty || part == '.') continue;
+      if (part == '..') {
+        if (parts.isNotEmpty) parts.removeLast();
+      } else {
+        parts.add(part);
+      }
+    }
+    return parts.join('/');
   }
 
   static void _resolveInlineStyles(

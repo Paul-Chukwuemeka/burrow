@@ -14,8 +14,9 @@ class ScanService {
   static const _maxDepth = 14;
 
   /// Directories never worth walking (app sandboxes, virtual mounts).
+  /// All lowercase: compared against `name.toLowerCase()`.
   static const _skipNames = {
-    'Android',
+    'android',
     'proc',
     'sys',
     'dev',
@@ -38,6 +39,8 @@ class ScanService {
 
   /// Walks shared storage looking for documents. Returns absolute paths not
   /// already present in [knownPaths].
+  /// Throws [TimeoutException] after 2 minutes so callers can distinguish
+  /// "scan timed out — try a folder" from "no books found".
   static Future<List<String>> scanDevice({
     Set<String> knownPaths = const {},
     Set<String>? extensions,
@@ -45,7 +48,7 @@ class ScanService {
     final exts = extensions ?? defaultExtensions;
     return Isolate.run(
       () => _walk('/storage/emulated/0', knownPaths, exts),
-    ).timeout(const Duration(minutes: 2), onTimeout: () => []);
+    ).timeout(const Duration(minutes: 2));
   }
 
   /// Recursively scans a single user-chosen folder.
@@ -57,7 +60,7 @@ class ScanService {
     final exts = extensions ?? defaultExtensions;
     return Isolate.run(
       () => _walk(folder, knownPaths, exts),
-    ).timeout(const Duration(minutes: 2), onTimeout: () => []);
+    ).timeout(const Duration(minutes: 2));
   }
 
   /// Scans multiple specific folders and merges the results.
@@ -73,7 +76,7 @@ class ScanService {
       if (!await Directory(folder).exists()) continue;
       final found = await Isolate.run(
         () => _walk(folder, knownPaths, exts),
-      ).timeout(const Duration(minutes: 2), onTimeout: () => []);
+      ).timeout(const Duration(minutes: 2));
       results.addAll(found);
     }
     results.sort();

@@ -1297,7 +1297,7 @@ Issues: #94, #95, #96, #98, #99, #101, #102, #104, #108, #109, #110, #111
 | 110 | `lib/screens/library_screen.dart:823,846` | Minor | small (deduplicate handlers) |
 | 111 | `lib/db/database.dart:404-408` | Minor | trivial (wrap in transaction) |
 
-### Merge point
+### Merge point (Round 11)
 
 After both agents finish, run:
 ```bash
@@ -1305,3 +1305,139 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing.
+
+---
+
+## Review Round 12 — On-Call Review (2026-09-16)
+
+Overall: fresh-install Stats crash, migration swallow bricking schema, splash brick on init failure, and comic OOM are pager-grade. External CSS silently dropped + session/progress/search leaks are systematic correctness bugs.
+
+### Blockers
+
+- [x] **112. `SUM`/`MAX`/`AVG` on empty table throws — Stats crash for new users**
+  - **File:** `lib/db/database.dart:302,311,375,383,393,406` (`getTotalReadingTimeMs`, `getTotalPagesRead`, `getLongestSessionMs`, `getAverageSessionMs`, `getTodayReadingTimeMs`, `getThisWeekReadingTimeMs`)
+  - **What:** Aggregates return 1 row with `NULL` on zero matches. `result.isNotEmpty ? result.first.read<int>('total') : 0` throws on `NULL`. Any new user opening Stats crashes.
+  - **Fix:** `result.first.readNullable<int>('total') ?? 0` (same for `longest`, `avg` as `readNullable<double>`, week/today totals).
+  - **Verify:** Fresh DB (no sessions), open Stats, call each method directly.
+
+- [x] **113. Migration swallow correctness — #94 fix bricks schema permanently (corrects #94)**
+  - **File:** `lib/db/database.dart:148-198` (`migration.onUpgrade`)
+  - **What:** #94 wrapped each DDL step in try-catch that swallows and returns normally, so Drift still bumps `schemaVersion` to 6 on partial failure. Disk-full halfway through `addColumn` leaves partial schema; all future launches skip migration, `insertBook` fails with `no such column` forever. Unrecoverable without wipe.
+  - **Fix (judgment call):** Remove swallow or make idempotent (`CREATE TABLE IF NOT EXISTS`, check `columnExists` before `addColumn`); rethrow after logging so version isn't bumped on failure.
+  - **Verify:** Simulate failing step, confirm version not bumped and retry succeeds.
+
+- [x] **114. `_buildHome` has no error handling — failed init bricks app on splash**
+  - **File:** `lib/main.dart:97-112` (`_buildHome`) + `lib/screens/splash_screen.dart:35-36` (`_navigateToHome`)
+  - **What:** `Pdfrx.init`, `DictionaryService.init`, `library.load()` await with no try/catch; splash caller also has no try/catch. Corrupt DB / full disk / denied storage rejects future → splash spins forever, no retry.
+  - **Fix:** try/catch in `_buildHome` → return error screen with Retry / Reset-DB; add try/catch in `_navigateToHome` as belt-and-braces.
+  - **Verify:** Throw from `library.load()` in test, confirm error screen not infinite spinner.
+
+- [ ] **115. CBZ has no size guard + EPUB/CBZ no decompressed cap — OOM kill**
+  - **File:** `lib/services/document_parser.dart:444-457,589-592` (EPUB), `1226-1253` (CBZ `_parseComicBook`)
+  - **What:** EPUB guards compressed size only (100 MB); CBZ does `readAsBytes()` unconditional. `ZipDecoder().decodeBytes` inflates everything + `archiveContentMap` touches every entry while chapter strings + DOMs duplicate text. 90 MB compressible EPUB / 500 MB CBZ → multi-GB transient → OOM on low-end Android.
+  - **Fix:** Add `file.length()` guard to CBZ; cap total decompressed bytes (abort >512 MB); build `archiveContentMap` lazily for referenced images only.
+  - **Verify:** Open 200+ MB CBZ / crafted highly-compressible EPUB, monitor isolate heap.
+
+### Majors
+
+- [ ] **116. External CSS never loads — manifest ID used as archive path**
+  - **File:** `lib/services/epub_css_parser.dart:43-48` (`EpubCssParser.parse`) caller `lib/services/document_parser.dart:629-634`
+  - **What:** `manifest` is `id -> href`, but loader does `readEntry(entry.key)` (ID) where `readEntry` only resolves archive paths. Returns `Uint8List(0)` for every stylesheet. All `.css`-file styling silently dropped; inline `<style>` masks it in tests.
+  - **Fix:** `final bytes = readEntry(href); // not entry.key` + `String.fromCharCodes` → `utf8.decode(allowMalformed:true)`; resolve font hrefs against CSS file dir.
+  - **Verify:** EPUB with external `.css`, confirm rules match before/after.
+
+- [ ] **117. Pending session leaks + `notifyListeners` after dispose**
+  - **File:** `lib/controllers/reading_session.dart:33-75` (`startSession`/`endSession`/`dispose`)
+  - **What:** `startSession` sets `-2` sentinel then async-inserts. `endSession` early-returns on `-2`, orphaning the row; `dispose` also early-returns, then pending `.then` fires and calls `notifyListeners()` on disposed object → `StateError`. Extends #104 (generation counter exists but `-2` + dispose path not handled).
+  - **Fix:** `_startGeneration++` in `endSession`/`dispose` to cancel pending; handle `-2` explicitly (await-then-end or reset to `-1`).
+  - **Verify:** Open book, background/close during insert, no crash + no orphan row.
+
+- [ ] **118. Comics can never hit `isFinished`**
+  - **File:** `lib/screens/reader_screen.dart:1492` (+ paginated comic branch) + `lib/models/book.dart:95`
+  - **What:** `progress: newIndex / count`, last page `(N-1)/N` (0.95 for N=20). `isFinished => progress >= 0.999` unreachable for N<1000. Finished counts / smart groups systematically undercount.
+  - **Fix:** `progress: (newIndex + 1) / count`; for reflowable force `1.0` on last page.
+  - **Verify:** Read 20-page comic to end, confirm `isFinished` true.
+
+- [x] **119. `_skipNames` case bug walks `Android/` sandbox**
+  - **File:** `lib/services/scan_service.dart:17-25,103` (`_walk`)
+  - **What:** Set contains `'Android'` but check is `contains(name.toLowerCase())` → `'android' != 'Android'`, never skips top-level `Android/` (thousands of cache files, permission errors, battery drain). Direct cause of timeouts.
+  - **Fix:** Lowercase set: `{'android','proc','sys','dev','config','cache','data'}`.
+  - **Verify:** `scanDevice` on fixture with `Android/` dir, confirm skipped.
+
+- [x] **120. Scan 2-min timeout discards found results**
+  - **File:** `lib/services/scan_service.dart:46-49,58-61,74-76` (`scanDevice`/`scanFolder`/`scanFolders`)
+  - **What:** `.timeout(2min, onTimeout: () => [])` throws away up to 1999 paths, caller sees success-empty "0 books found". Indistinguishable from empty library.
+  - **Fix:** Throw `TimeoutException` so UI shows "timed out — try a folder", or return partials with `truncated` flag.
+  - **Verify:** Timeout path shows warning, not silent empty.
+
+- [ ] **121. `PdfTextSearcher` never disposed — subscription leak**
+  - **File:** `lib/controllers/search_controller.dart:115-117,151-156` (`toggleSearch`/`dispose`)
+  - **What:** Both do `removeListener + resetTextSearch + null`, never `dispose()`. Assumption: `pdfrx` `dispose()` cancels document subscription (per pdfrx-2.4.5 source). Repeated open/close accumulates subscriptions holding old searchers + viewer controller.
+  - **Fix:** `_pdfSearcher?.dispose(); _pdfSearcher = null;`
+  - **Verify:** Open/close PDF search 10x, confirm no subscription growth.
+
+- [ ] **122. Dictionary toolbar clamp + double-remove crash**
+  - **File:** `lib/controllers/dictionary_overlay.dart:46-54,144-148`
+  - **What:** `(dx-140).clamp(8.0, width-296.0)` throws when `width<304` (split-screen/foldable). `remove()` on unmounted entry throws on double-dismiss (route pop + settings change + dispose).
+  - **Fix:** `clamp(8.0, math.max(8.0, width-296.0))`; wrap `remove()` in try/catch + null in `finally`.
+  - **Verify:** Lookup at 280px width, rapid open/close + theme change.
+
+- [x] **123. `importLibrary` has no transaction — half-restore + orphans**
+  - **File:** `lib/services/library_service.dart:363-475` (`importLibrary`)
+  - **What:** `_books.add` + per-row bookmark/session inserts run as N+1 writes; catch removes from `_books` but leaves partial DB rows. Kill mid-restore → half books + orphans; retry hits PK conflict and skips. Extends #95 (memory rollback) to DB atomicity.
+  - **Fix:** Wrap restore in `database.transaction()`; delete partial rows on failure.
+  - **Verify:** Kill mid-restore in test, confirm all-or-nothing.
+
+### Minors (grouped)
+
+- [x] **124. DST / formatting / model minors**
+  - `database.dart:335-347,393-403` streak/today step fixed `86400000` vs calendar-midnight `localDayKey` → step by calendar days.
+  - `stats_screen.dart:273-279,504-509` `mm.round()` emits `1h 60m` → floor or carry.
+  - `book.dart:127-155` `BookFormat.values.byName` throws on corrupt row → `firstWhere(orElse:)` + log; `formatFromExtension:3-17` defaults `.mobi/.azw3` to `txt` → surface unsupported explicitly.
+  - `document_parser.dart:1893-1902` cache key is 32-bit `hashCode` → SHA-1/FNV hex.
+  - `document_parser.dart:1707-1733` `String.fromCharCode(int.parse(...))` throws on `&#99999999;` → range-check ≤0x10FFFF.
+  - `metadata_api_service.dart:108-124,176-206` cover/body reads unbounded, no timeout on body join, one bad item drops all → cap ~10 MB, `https` only, per-item try/catch.
+  - `document_parser.dart:1272-1298` CBR extracts all to `systemTemp`, `deleteSync` in `finally` never runs if isolate killed → app cache dir + startup sweep, reject `..`/absolute members.
+
+---
+
+## Coordination — Round 12 Agent Split
+
+File-disjoint split. Agent A owns DB/shell/scan/library; Agent B owns parser/CSS/reader/controllers. No shared files → no merge conflicts.
+
+### Agent A — DB + shell + scan + library import
+
+Issues: #112 → #113 → #114 → #119 → #120 → #123 → #124 (DB/model slice only)
+
+| # | File | Effort |
+|---|------|--------|
+| 112 | `lib/db/database.dart` | trivial (readNullable + ?? 0) |
+| 113 | `lib/db/database.dart` | small (idempotent DDL + rethrow) |
+| 114 | `lib/main.dart`, `lib/screens/splash_screen.dart` | small (error screen + retry) |
+| 119 | `lib/services/scan_service.dart` | trivial (lowercase set) |
+| 120 | `lib/services/scan_service.dart` | small (throw vs partials) |
+| 123 | `lib/services/library_service.dart` | medium (transaction wrap) |
+| 124-part | `lib/db/database.dart` (DST), `lib/models/book.dart`, `lib/screens/stats_screen.dart` (60m) | small |
+
+### Agent B — Parser + CSS + reader + controllers
+
+Issues: #115 → #116 → #117 → #118 → #121 → #122 → #124 (parser slice only)
+
+| # | File | Effort |
+|---|------|--------|
+| 115 | `lib/services/document_parser.dart` | medium (size + decompressed caps, lazy map) |
+| 116 | `lib/services/epub_css_parser.dart` | small (href not key + utf8) |
+| 117 | `lib/controllers/reading_session.dart` | small (cancel pending, handle -2) |
+| 118 | `lib/screens/reader_screen.dart` | trivial ((i+1)/count) |
+| 121 | `lib/controllers/search_controller.dart` | trivial (dispose not reset) |
+| 122 | `lib/controllers/dictionary_overlay.dart` | trivial (clamp + try/catch remove) |
+| 124-part | `lib/services/document_parser.dart` (hash, entity, CBR), `lib/services/metadata_api_service.dart` | medium |
+
+### Merge point (Round 12)
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing. Agent A merges first (DB + shell are load-bearing), Agent B rebases onto it.

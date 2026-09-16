@@ -96,32 +96,61 @@ class _BurrowAppState extends State<BurrowApp> {
 
   Future<Widget> _buildHome(BuildContext context) async {
     // Heavy initialization runs while the splash is visible.
-    final injected = widget.library;
-    if (injected == null) {
-      await PdfrxEntryFunctions.instance.init();
-      await DictionaryService.instance.init();
-    }
-    final library = injected ?? LibraryService();
-    _library = library;
-    library.addListener(_onThemeChanged);
-    if (injected == null) {
-      await library.load();
-      // Finish metadata extraction for books left incomplete by an
-      // interrupted scan/import.
-      library.resumeMetadataExtraction();
-    }
+    // Never throw: a rejected future bricks the splash (infinite spinner),
+    // so failures degrade to a retryable error screen instead.
+    try {
+      final injected = widget.library;
+      if (injected == null) {
+        await PdfrxEntryFunctions.instance.init();
+        await DictionaryService.instance.init();
+      }
+      final library = injected ?? LibraryService();
+      _library = library;
+      library.addListener(_onThemeChanged);
+      if (injected == null) {
+        try {
+          await library.load();
+        } catch (e) {
+          library.removeListener(_onThemeChanged);
+          // Don't dispose the injected/test instance; only our own partial.
+          _library = null;
+          debugPrint('Library load failed: $e');
+          return _StartupErrorScreen(
+            message: 'Could not open your library ($e)',
+            onRetry: () => _retryStartup(context),
+          );
+        }
+        // Finish metadata extraction for books left incomplete by an
+        // interrupted scan/import.
+        library.resumeMetadataExtraction();
+      }
 
-    if (library.onboardingComplete) {
-      return LibraryScreen(library: library);
+      if (library.onboardingComplete) {
+        return LibraryScreen(library: library);
+      }
+      return OnboardingScreen(
+        library: library,
+        onDone: (context) {
+          library.markOnboardingComplete();
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => LibraryScreen(library: library)),
+          );
+        },
+      );
+    } catch (e) {
+      debugPrint('Startup failed: $e');
+      return _StartupErrorScreen(
+        message: 'Startup failed ($e)',
+        onRetry: () => _retryStartup(context),
+      );
     }
-    return OnboardingScreen(
-      library: library,
-      onDone: (context) {
-        library.markOnboardingComplete();
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => LibraryScreen(library: library)),
-        );
-      },
+  }
+
+  Future<void> _retryStartup(BuildContext context) async {
+    final home = await _buildHome(context);
+    if (!context.mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => home),
     );
   }
 
@@ -178,6 +207,38 @@ class _BurrowAppState extends State<BurrowApp> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       dividerTheme: DividerThemeData(color: scheme.outlineVariant),
+    );
+  }
+}
+
+/// Shown when startup initialization fails instead of leaving the splash
+/// spinning forever. Retry re-runs [_BurrowAppState._buildHome].
+class _StartupErrorScreen extends StatelessWidget {
+  const _StartupErrorScreen({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48),
+              const SizedBox(height: 16),
+              const Text('Something went wrong'),
+              const SizedBox(height: 8),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

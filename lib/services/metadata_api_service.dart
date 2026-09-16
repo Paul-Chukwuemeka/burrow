@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 /// Book metadata fetched from an online API.
 class ApiBookMetadata {
   final String? title;
@@ -86,7 +88,9 @@ class MetadataApiService {
 
     try {
       result = await fetchFromGoogleBooks(isbn: isbn, title: title, author: author);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('MetadataApiService: Google Books fetch failed: $e');
+    }
 
     // Try Open Library for anything Google Books didn't return.
     try {
@@ -94,7 +98,9 @@ class MetadataApiService {
       if (ol != null) {
         result = result?.merge(ol) ?? ol;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('MetadataApiService: Open Library fetch failed: $e');
+    }
 
     return result;
   }
@@ -109,7 +115,8 @@ class MetadataApiService {
       if (response.statusCode != 200) return null;
       final chunks = await response.toList();
       return chunks.expand((c) => c).toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('MetadataApiService: cover download failed: $e');
       return null;
     } finally {
       client.close();
@@ -130,7 +137,9 @@ class MetadataApiService {
     try {
       final gb = await _searchGoogleBooks(query: query, maxResults: maxResults);
       results.addAll(gb);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('MetadataApiService: Google Books search failed: $e');
+    }
 
     try {
       final ol = await _searchOpenLibraryAll(query: query, limit: maxResults);
@@ -141,7 +150,9 @@ class MetadataApiService {
             r.author?.toLowerCase() == item.author?.toLowerCase());
         if (!isDupe) results.add(item);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('MetadataApiService: Open Library search failed: $e');
+    }
 
     return results;
   }
@@ -186,7 +197,8 @@ class MetadataApiService {
         for (final item in items)
           _parseGoogleBooksVolume(item as Map<String, dynamic>),
       ];
-    } catch (_) {
+    } catch (e) {
+      debugPrint('MetadataApiService: Google Books API error: $e');
       return [];
     } finally {
       client.close();
@@ -353,7 +365,8 @@ class MetadataApiService {
       final body = await response.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
       return _parseOpenLibraryBook(json, isbn: isbn);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('MetadataApiService: Open Library ISBN lookup failed: $e');
       return null;
     } finally {
       client.close();
@@ -395,7 +408,8 @@ class MetadataApiService {
         for (final doc in docs)
           _parseOpenLibrarySearchResult(doc as Map<String, dynamic>),
       ];
-    } catch (_) {
+    } catch (e) {
+      debugPrint('MetadataApiService: Open Library search failed: $e');
       return [];
     } finally {
       client.close();

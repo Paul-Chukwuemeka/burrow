@@ -14,6 +14,8 @@ class ReadingSessionManager extends ChangeNotifier {
   int _sessionId = -1;
   int _pagesFlipped = 0;
   int _startGeneration = 0;
+  bool _disposed = false;
+  Future<int>? _pendingStart;
 
   int get sessionId => _sessionId;
 
@@ -31,33 +33,64 @@ class ReadingSessionManager extends ChangeNotifier {
   }
 
   void startSession() {
-    if (_sessionId >= 0) return;
+    if (_disposed) return;
+    if (_sessionId >= 0 || _sessionId == -2) return;
     _sessionId = -2; // sentinel: session pending
     final gen = ++_startGeneration;
-    library
-        .startSession(book.id)
-        .then(
-          (id) {
-            if (gen != _startGeneration) return; // superseded
-            _sessionId = id;
-            notifyListeners();
-          },
-          onError: (_) {
-            if (gen != _startGeneration) return;
-            _sessionId = -1;
-            notifyListeners();
-          },
-        );
+    final fut = library.startSession(book.id);
+    _pendingStart = fut;
+    fut.then(
+      (id) {
+        if (_disposed || gen != _startGeneration) return; // superseded
+        _sessionId = id;
+        _pendingStart = null;
+        notifyListeners();
+      },
+      onError: (_) {
+        if (_disposed || gen != _startGeneration) return;
+        _sessionId = -1;
+        _pendingStart = null;
+        notifyListeners();
+      },
+    );
   }
 
   Future<void> endSession() async {
+    // Pending insert: cancel the stale callback, then await the insert and
+    // end the resulting session so no orphan row leaks. If the insert fails,
+    // just reset to idle.
+    if (_sessionId == -2) {
+      _startGeneration++; // invalidate the pending .then callback
+      final pages = _pagesFlipped;
+      int? sid;
+      try {
+        sid = await _pendingStart;
+      } catch (e) {
+        debugPrint('Failed to start session for ${book.id}: $e');
+      }
+      _pendingStart = null;
+      _sessionId = -1;
+      _pagesFlipped = 0;
+      if (!_disposed) notifyListeners();
+      if (sid != null) {
+        try {
+          await library.endSession(sid, pages: pages);
+        } catch (e) {
+          debugPrint('Failed to end session $sid: $e');
+        }
+      }
+      return;
+    }
     if (_sessionId < 0) return;
+    // Invalidate any in-flight start (defensive; startSession guards -2, but
+    // a rapid toggle could interleave).
+    _startGeneration++;
     // Capture values before zeroing so the async write uses the correct data.
     final sid = _sessionId;
     final pages = _pagesFlipped;
     _sessionId = -1;
     _pagesFlipped = 0;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
     try {
       await library.endSession(sid, pages: pages);
     } catch (e) {
@@ -67,9 +100,12 @@ class ReadingSessionManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _startGeneration++; // cancel any pending startSession callback so it
+    // never calls notifyListeners() on this disposed object.
     // Fire-and-forget: the DB write completes in the background even after
-    // dispose. This is safe because endSession captures session ID and pages
-    // as locals before the await.
+    // dispose. endSession captures session ID and pages as locals before
+    // the await, and skips notifyListeners when _disposed.
     unawaited(endSession());
     super.dispose();
   }

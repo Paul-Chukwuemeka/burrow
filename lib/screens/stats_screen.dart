@@ -273,8 +273,12 @@ class _StatsScreenState extends State<StatsScreen> {
   String _formatDuration(int ms) {
     if (ms < 60000) return '${(ms / 1000).round()}s';
     if (ms < 3600000) return '${(ms / 60000).round()}m';
-    final h = (ms / 3600000).floor();
-    final m = ((ms % 3600000) / 60000).round();
+    var h = (ms / 3600000).floor();
+    var m = ((ms % 3600000) / 60000).round();
+    if (m == 60) {
+      h += 1;
+      m = 0;
+    }
     return '${h}h ${m}m';
   }
 }
@@ -421,13 +425,14 @@ class _WeeklyChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final today = AppDatabase.localDayKey(now.millisecondsSinceEpoch);
-    final msPerDay = 86400000;
+    // Calendar-day stepping (DST-safe): recompute midnight per day instead
+    // of subtracting fixed 86400000ms, which lands off-midnight on 23/25h days.
     final days = <MapEntry<int, String>>[];
 
     for (var i = 6; i >= 0; i--) {
-      final day = today - i * msPerDay;
-      final label = _dayLabel(now.subtract(Duration(days: i)));
+      final date = DateTime(now.year, now.month, now.day - i);
+      final day = AppDatabase.localDayKey(date.millisecondsSinceEpoch);
+      final label = _dayLabel(date);
       days.add(MapEntry(day, label));
     }
 
@@ -503,8 +508,12 @@ class _WeeklyChart extends StatelessWidget {
 
   String _shortDuration(int ms) {
     if (ms < 3600000) return '${(ms / 60000).round()}m';
-    final h = (ms / 3600000).floor();
-    final m = ((ms % 3600000) / 60000).round();
+    var h = (ms / 3600000).floor();
+    var m = ((ms % 3600000) / 60000).round();
+    if (m == 60) {
+      h += 1;
+      m = 0;
+    }
     return m > 0 ? '${h}h${m}m' : '${h}h';
   }
 }
@@ -621,8 +630,12 @@ class _MonthlyChart extends StatelessWidget {
 
   String _formatDuration(int ms) {
     if (ms < 3600000) return '${(ms / 60000).round()}m';
-    final h = (ms / 3600000).floor();
-    final m = ((ms % 3600000) / 60000).round();
+    var h = (ms / 3600000).floor();
+    var m = ((ms % 3600000) / 60000).round();
+    if (m == 60) {
+      h += 1;
+      m = 0;
+    }
     return '${h}h ${m}m';
   }
 }
@@ -777,8 +790,12 @@ class _PerBookStatsTile extends StatelessWidget {
 
   String _formatDuration(int ms) {
     if (ms < 3600000) return '${(ms / 60000).round()}m';
-    final h = (ms / 3600000).floor();
-    final m = ((ms % 3600000) / 60000).round();
+    var h = (ms / 3600000).floor();
+    var m = ((ms % 3600000) / 60000).round();
+    if (m == 60) {
+      h += 1;
+      m = 0;
+    }
     return '${h}h ${m}m';
   }
 }

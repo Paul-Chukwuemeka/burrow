@@ -345,9 +345,12 @@ class ReaderScreenState extends State<ReaderScreen>
     _sessionCtrl.onPageFlipped();
     _anchorChapter = chapter;
     _anchorOffset = offsetInChapter;
-    final progress = _totalChars == 0
+    var progress = _totalChars == 0
         ? 0.0
         : (_charsBefore[chapter] + offsetInChapter) / _totalChars;
+    // Last flat page must report 1.0 so `Book.isFinished` (>=0.999) is
+    // reachable. Otherwise the final page start still sits below 1.0.
+    if (_flatTotal > 0 && _flatPage >= _flatTotal - 1) progress = 1.0;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 600), () {
       widget.library.savePosition(
@@ -385,13 +388,15 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   void _savePositionFor(int chapter, int offset) {
+    var progress = _totalChars == 0
+        ? 0.0
+        : (_charsBefore[chapter] + offset) / _totalChars;
+    if (_flatTotal > 0 && _flatPage >= _flatTotal - 1) progress = 1.0;
     widget.library.savePosition(
       id: _book.id,
       chapter: chapter,
       offset: offset,
-      progress: _totalChars == 0
-          ? 0
-          : (_charsBefore[chapter] + offset) / _totalChars,
+      progress: progress,
     );
   }
 
@@ -1425,7 +1430,7 @@ class ReaderScreenState extends State<ReaderScreen>
                 offset: 0,
                 progress: _comicCtrl.comicPageCount == 0
                     ? 0
-                    : i / _comicCtrl.comicPageCount,
+                    : (i + 1) / _comicCtrl.comicPageCount,
               );
               if (_comicCtrl.isLazy) _prefetchComicPages(i);
               if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(i);
@@ -1489,7 +1494,7 @@ class ReaderScreenState extends State<ReaderScreen>
             id: _book.id,
             chapter: newIndex,
             offset: controller.offset.toInt(),
-            progress: newIndex / count,
+            progress: (newIndex + 1) / count,
           );
           if (_comicCtrl.isLazy) _prefetchComicPages(newIndex);
           if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(newIndex);

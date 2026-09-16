@@ -33,7 +33,22 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateToHome() async {
-    final home = await widget.onReady(context);
+    late final Widget home;
+    try {
+      home = await widget.onReady(context);
+    } catch (e) {
+      // Belt-and-braces: _buildHome already returns an error screen instead
+      // of throwing, but never leave the splash spinning on a rejected future.
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            body: Center(child: Text('Startup failed: $e')),
+          ),
+        ),
+      );
+      return;
+    }
 
     // Keep the splash visible for at least a short beat so it feels intentional.
     await Future<void>.delayed(const Duration(milliseconds: 400));

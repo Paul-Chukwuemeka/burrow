@@ -489,7 +489,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (mounted) {
         setState(() {
           _activeStatus = StatusType.completed;
-          _statusResult = 'Scan failed. Please try again.';
+          _statusResult = e is TimeoutException
+              ? 'Scan timed out — try a specific folder'
+              : 'Scan failed. Please try again.';
         });
         Future<void>.delayed(const Duration(seconds: 2), () {
           if (mounted) {

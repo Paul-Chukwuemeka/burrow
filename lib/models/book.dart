@@ -11,6 +11,8 @@ BookFormat formatFromExtension(String path) {
       return BookFormat.cbz;
     case 'cbr':
       return BookFormat.cbr;
+    case 'txt':
+      return BookFormat.txt;
     default:
       return BookFormat.txt;
   }
@@ -124,35 +126,47 @@ class Book {
     'metadataComplete': metadataComplete,
   };
 
-  static Book fromJson(Map<String, dynamic> json) => Book(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    author: (json['author'] as String?) ?? '',
-    path: json['path'] as String,
-    format: BookFormat.values.byName(json['format'] as String),
-    coverPath: json['coverPath'] as String?,
-    addedAt: json['addedAt'] as int? ?? 0,
-    lastReadAt: json['lastReadAt'] as int? ?? 0,
-    progress: (json['progress'] as num?)?.toDouble() ?? 0,
-    lastChapter: json['lastChapter'] as int? ?? 0,
-    lastOffset: json['lastOffset'] as int? ?? 0,
-    description: json['description'] as String?,
-    annotation: json['annotation'] as String?,
-    genre: json['genre'] as String?,
-    seriesName: json['seriesName'] as String?,
-    seriesIndex: (json['seriesIndex'] as num?)?.toDouble(),
-    publisher: json['publisher'] as String?,
-    isbn: json['isbn'] as String?,
-    language: json['language'] as String?,
-    review: json['review'] as String?,
-    publicationDate: json['publicationDate'] as String?,
-    rights: json['rights'] as String?,
-    type: json['type'] as String?,
-    source: json['source'] as String?,
-    titleSort: json['titleSort'] as String?,
-    authorSort: json['authorSort'] as String?,
-    metadataComplete: json['metadataComplete'] as bool? ?? false,
-  );
+  static Book fromJson(Map<String, dynamic> json) {
+    // Handle unknown/corrupt format values gracefully instead of throwing.
+    BookFormat fmt;
+    try {
+      fmt = BookFormat.values.byName(json['format'] as String);
+    } catch (_) {
+      // ignore: avoid_print
+      print('Unknown book format "${json['format']}", defaulting to txt');
+      fmt = BookFormat.txt;
+    }
+
+    return Book(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      author: (json['author'] as String?) ?? '',
+      path: json['path'] as String,
+      format: fmt,
+      coverPath: json['coverPath'] as String?,
+      addedAt: json['addedAt'] as int? ?? 0,
+      lastReadAt: json['lastReadAt'] as int? ?? 0,
+      progress: (json['progress'] as num?)?.toDouble() ?? 0,
+      lastChapter: json['lastChapter'] as int? ?? 0,
+      lastOffset: json['lastOffset'] as int? ?? 0,
+      description: json['description'] as String?,
+      annotation: json['annotation'] as String?,
+      genre: json['genre'] as String?,
+      seriesName: json['seriesName'] as String?,
+      seriesIndex: (json['seriesIndex'] as num?)?.toDouble(),
+      publisher: json['publisher'] as String?,
+      isbn: json['isbn'] as String?,
+      language: json['language'] as String?,
+      review: json['review'] as String?,
+      publicationDate: json['publicationDate'] as String?,
+      rights: json['rights'] as String?,
+      type: json['type'] as String?,
+      source: json['source'] as String?,
+      titleSort: json['titleSort'] as String?,
+      authorSort: json['authorSort'] as String?,
+      metadataComplete: json['metadataComplete'] as bool? ?? false,
+    );
+  }
 
   /// Pretty-printed progress, e.g. "42%" or "New".
   String get progressLabel {

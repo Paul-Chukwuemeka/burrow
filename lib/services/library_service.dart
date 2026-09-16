@@ -412,19 +412,26 @@ class LibraryService extends ChangeNotifier {
       _books.add(book);
       try {
         if (_db != null) {
-          await _db!.insertBook(db.bookToCompanion(book));
-          // Annotations are restored only for newly imported books so
-          // repeated imports never duplicate them.
-          for (final m in bookmarksByBook[book.id] ?? const []) {
-            if (!await _db!.bookmarkExists(m['id'] as String)) {
-              await _db!.insertBookmark(db.bookmarkFromJson(m));
+          // Per-book transaction: book + its bookmarks/sessions commit
+          // atomically, so a kill mid-restore never leaves orphaned
+          // annotations for a rolled-back book. (One transaction per book,
+          // not one for the whole backup — the DB runs on the UI isolate
+          // and a giant transaction would freeze the interface.)
+          await _db!.transaction(() async {
+            await _db!.insertBook(db.bookToCompanion(book));
+            // Annotations are restored only for newly imported books so
+            // repeated imports never duplicate them.
+            for (final m in bookmarksByBook[book.id] ?? const []) {
+              if (!await _db!.bookmarkExists(m['id'] as String)) {
+                await _db!.insertBookmark(db.bookmarkFromJson(m));
+              }
             }
-          }
-          for (final m in sessionsByBook[book.id] ?? const []) {
-            if (!await _db!.sessionExists(book.id, m['startedAt'] as int)) {
-              await _db!.insertSession(db.sessionFromJson(m));
+            for (final m in sessionsByBook[book.id] ?? const []) {
+              if (!await _db!.sessionExists(book.id, m['startedAt'] as int)) {
+                await _db!.insertSession(db.sessionFromJson(m));
+              }
             }
-          }
+          });
         }
         imported++;
       } catch (e) {

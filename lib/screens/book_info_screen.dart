@@ -492,7 +492,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                     );
                   },
                   icon: const Icon(Icons.menu_book_outlined, size: 22),
-                  label: const Text('Read'),
+                  label: Text(book.isStarted ? 'Continue' : 'Read'),
                   style: FilledButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: Burrow.r(Burrow.shapeSm),
