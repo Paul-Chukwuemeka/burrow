@@ -1,5 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 enum BookFormat { epub, txt, pdf, cbz, cbr }
 
+/// Extensions that map cleanly to a supported format.
+/// Unknown extensions (`.mobi`, `.azw3`, etc.) fall through to `txt` and will
+/// be Latin-1-decoded into garbage chapters — callers should surface an error
+/// for unsupported types rather than silently importing them.
 BookFormat formatFromExtension(String path) {
   final ext = path.toLowerCase().split('.').last;
   switch (ext) {
@@ -133,7 +139,7 @@ class Book {
       fmt = BookFormat.values.byName(json['format'] as String);
     } catch (_) {
       // ignore: avoid_print
-      print('Unknown book format "${json['format']}", defaulting to txt');
+      debugPrint('Unknown book format "${json['format']}", defaulting to txt');
       fmt = BookFormat.txt;
     }
 

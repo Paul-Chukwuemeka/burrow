@@ -1441,3 +1441,108 @@ flutter analyze
 flutter test
 ```
 Review combined diff together before committing. Agent A merges first (DB + shell are load-bearing), Agent B rebases onto it.
+
+---
+
+## Review Round 13 — Post-Fix Review (2026-09-16)
+
+Review of Round 12 commits (`5160acd`, `fb663d0`) + uncommitted chrome tweak. The
+`readNullable` aggregate fixes, calendar-day streak stepping, `_skipNames`
+lowercasing, scan-timeout propagation, and comic progress `(i+1)/count` are all
+correct. New findings below — Agent B's CBR change is a functional regression and
+the metadata byte cap doesn't cap bytes.
+
+### Blockers
+
+- [ ] **125. CBR parsing broken: `getTemporaryDirectory()` called inside `compute` isolate**
+  - **File:** `lib/services/document_parser.dart:1343` (`_parseComicBook`), reached from `_parseIsolate` (`compute` at `218`, call at `463`)
+  - **What:** `path_provider` uses a platform channel; `compute`/`Isolate.run` background isolates have no plugin registration (no `BackgroundIsolateBinaryMessenger.ensureInitialized` in `lib/`). The codebase itself documents this: `_resolveCacheDirPath` says "Must be called on the main isolate", and callers resolve the cache dir on the main isolate and pass it into `parse()` as `cacheDirPath`. `getTemporaryDirectory()` here throws `MissingPluginException`, caught at `1359`/`1371` and rethrown as `FormatException('Not a valid CBR/RAR archive')` → **every CBR file fails to open** with a misleading error. Previous code used `Directory.systemTemp`, which works in an isolate.
+  - **Fix:** Resolve the temp dir on the main isolate and pass it into `parse()` (extend the `(path, cacheDirPath)` tuple), or revert to `Directory.systemTemp.createTemp('cbr_')`. Do not call path_provider inside `_parseIsolate`.
+  - **Verify:** Open a `.cbr` on device (or assert `getTemporaryDirectory()` throws in a spawned isolate test). Note: no CBR test exists today.
+
+### Majors
+
+- [ ] **126. Metadata API byte cap is a no-op; body reads have no timeout**
+  - **File:** `lib/services/metadata_api_service.dart:381` (`_fetchOpenLibraryByIsbn`), `:422` (`_searchOpenLibraryAll`), `:203` (`_searchGoogleBooks`)
+  - **What:** `response.take(10 * 1024 * 1024)` takes the first **n events (chunks)**, not n bytes, so it permits ~10M chunks — effectively unbounded. `toList()`/`expand` then accumulate the whole body → OOM from a misbehaving/hostile server. `_searchGoogleBooks` still uses `transform(utf8.decoder).join()` with no cap at all. None of the three wrap the body read in `.timeout(_timeout)` (only `getUrl`/`close` are), so a slow-loris server hangs the future forever.
+  - **Fix:** Count bytes in an `await for` loop with `response.timeout(_timeout)`:
+    ```dart
+    final chunks = <List<int>>[];
+    var total = 0;
+    await for (final c in response.timeout(_timeout)) {
+      total += c.length;
+      if (total > 10 * 1024 * 1024) return null; // or []
+      chunks.add(c);
+    }
+    ```
+    Apply to all three reads.
+  - **Verify:** Stub a server returning >10 MB / a stalled body; confirm bounded memory and timeout.
+
+- [x] **127. Migration benign-error catch abandons the remaining columns in the step**
+  - **File:** `lib/db/database.dart:147-238` (`onUpgrade` + `_isBenignMigrationError`)
+  - **What:** Each step wraps all `addColumn` calls in one `try`. If the first already-present column throws `duplicate column` (benign), the catch logs and skips the rest of that step. Assumption: Drift does not roll back a partially-applied `onUpgrade` across process kills (the premise #94/#113 were written under). Scenario: crash after `description`..`publisher` added leaves `isbn/language/review` missing; next launch `addColumn(description)` throws benign, the whole `from < 3` step is skipped, yet `schemaVersion` still advances to 6 (no rethrow on benign) → permanent `no such column: isbn`. Catches-and-skips is not equivalent to idempotent.
+  - **Fix:** Guard each column individually: `if (!await m.columnExists(books, 'isbn')) await m.addColumn(books, books.isbn);` (verify the exact Drift `Migrator` API), instead of catching and skipping the whole step.
+  - **Verify:** Simulate a duplicate column mid-step; confirm later columns are still added.
+
+- [x] **128. `ReaderSearchController.dispose` still leaks `PdfTextSearcher`**
+  - **File:** `lib/controllers/search_controller.dart:151-160`
+  - **What:** `toggleSearch` (`115-117`) got the `_pdfSearcher?.dispose()` fix, but the `dispose()` override still does `removeListener` + `resetTextSearch` + null without `dispose()`. Assumption (verified against pdfrx 2.4.5 in the prior round): `resetTextSearch()` does not cancel the document subscription; only `dispose()` does. Leaks the searcher + `PdfViewerController`/document subscription on every reader close.
+  - **Fix:** Mirror `toggleSearch`: add `_pdfSearcher?.dispose();` before `_pdfSearcher = null;` in `dispose()`.
+  - **Verify:** Open/close reader 10x on a PDF; confirm no subscription growth.
+
+- [x] **129. Startup error screen is Retry-only and leaks the failed service**
+  - **File:** `lib/main.dart:97-163` (`_buildHome`, `_retryStartup`), `:213-245` (`_StartupErrorScreen`)
+  - **What:** If `library.load()` fails deterministically (e.g. the #127 schema case), every Retry re-runs the same failing path — the user is stuck in a loop with no recovery, and the plan explicitly called for Retry **/ Reset-DB**. Also `_library = null` on failure without `dispose()`, leaking the partially-constructed `LibraryService` (and its `AppDatabase` connection) per retry.
+  - **Fix:** Add a "Reset library" action that deletes the DB file then retries; dispose the failed `LibraryService` before nulling it.
+  - **Verify:** Force `library.load()` to throw, confirm Reset recovers and Retry doesn't leak.
+
+- [ ] **130. CBR temp dir keyed by basename only → concurrent collision**
+  - **File:** `lib/services/document_parser.dart:1339-1350` + `_safeTempName` (`1442-1449`)
+  - **What:** Path is `cbr_<basename>`, so two different books named `comic.cbr` / `01.cbr` map to the same dir. Code does `deleteSync(recursive: true)` then recreate; metadata extraction runs with concurrency 2 and full parses can overlap, so one parse can delete the dir another is reading → `_findExtractedFile` returns null → spurious `FormatException` or truncated reads. Comment says "reuse it" but the code deletes it. Mostly masked by #125 until that's fixed.
+  - **Fix:** Include a unique component (book id/hash) in the dir name, or `createTemp` under a main-isolate-resolved cache dir; make cleanup ownership explicit.
+  - **Verify:** Parse two same-named CBRs concurrently; confirm distinct dirs.
+
+### Minors (grouped)
+
+- [x] **131. Round-13 minors**
+  - `lib/models/book.dart:132-137` uses `print` for the unknown-format path → use `debugPrint`/logger. `formatFromExtension:3-17` still silently maps unknown extensions (`.mobi`, `.azw3`) to `txt`, so binaries are Latin-1-decoded into garbage chapters — the "surface unsupported types" half of #124 was not done.
+  - `lib/services/document_parser.dart:199-210` `_assertDecompressedSize` sums `f.size` from the ZIP central directory; a crafted archive can under-declare and bypass the cap. Consider also bounding actual bytes read per entry (state assumption if the `archive` package rejects size mismatches).
+  - `lib/services/scan_service.dart:48-49` `Isolate.run(...).timeout(...)` cannot cancel the spawned isolate, so the walk keeps consuming CPU/battery after timeout. Add a comment; acceptable.
+  - `lib/services/library_service.dart:412-435` per-book transactions are a defensible tradeoff (DB on UI isolate; a whole-restore transaction would freeze the UI) but the commit message's "atomicity" overstates it — a kill mid-restore still yields a partial library, just internally consistent. Update wording.
+  - `lib/db/database.dart:427` `dayEnd = localDayKey(dayStart + 86400000 + 43200000)` works but relies on a magic +12h offset; prefer `localDayKey(DateTime(...).add(const Duration(days: 1)).millisecondsSinceEpoch)`.
+
+---
+
+## Coordination — Round 13 Agent Split
+
+File-disjoint split. Agent A owns parser + network; Agent B owns DB/shell/controllers. No shared files.
+
+### Agent A — Parser + metadata network
+
+Issues: #125 → #126 → #130
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 125 | `lib/services/document_parser.dart` | Blocker | medium (pass temp dir into isolate / revert to systemTemp) |
+| 126 | `lib/services/metadata_api_service.dart` | Major | small (byte-count loop + body timeout) |
+| 130 | `lib/services/document_parser.dart` | Major | small (unique temp dir name) |
+
+### Agent B — DB + shell + controllers
+
+Issues: #127 → #128 → #129 → #131
+
+| # | File | Severity | Effort |
+|---|------|----------|--------|
+| 127 | `lib/db/database.dart` | Major | small (per-column `columnExists` guard) |
+| 128 | `lib/controllers/search_controller.dart` | Major | trivial (add `dispose()`) |
+| 129 | `lib/main.dart` | Major | small (Reset action + dispose failed service) |
+| 131 | `lib/models/book.dart`, `lib/services/scan_service.dart`, `lib/db/database.dart`, `lib/services/library_service.dart` | Minor | small (log/comment/wording cleanup) |
+
+### Merge point (Round 13)
+
+After both agents finish, run:
+```bash
+flutter analyze
+flutter test
+```
+Review combined diff together before committing. Agent A merges first (CBR blocker), Agent B rebases onto it. No CBR test exists — Agent A should add one that exercises the isolate path (or at minimum assert the temp-dir resolution doesn't use a platform channel in the isolate).

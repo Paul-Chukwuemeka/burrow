@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -144,93 +143,64 @@ class AppDatabase extends _$AppDatabase {
     onCreate: (m) async {
       await m.createAll();
     },
-    // Each step is idempotent for already-applied DDL (retry after a
-    // force-kill mid-migration) but rethrows genuine failures so Drift
-    // does NOT bump schemaVersion on a partial migration.
+    // Each step checks column existence individually so a crash mid-step
+    // (e.g. disk full after adding some columns) doesn't cause future runs
+    // to skip the remaining columns. `addColumn` throws `duplicate column`
+    // if the column already exists — but we avoid that entirely.
     onUpgrade: (m, from, to) async {
+      Future<bool> hasColumn(String table, String column) async {
+        final rows = await customSelect(
+          "PRAGMA table_info($table)",
+        ).get();
+        return rows.any((r) => r.data['name'] == column);
+      }
+
       if (from < 2) {
-        try {
-          await m.createTable(collections);
-          await m.createTable(collectionBooks);
-        } catch (e) {
-          if (_isBenignMigrationError(e)) {
-            debugPrint('Migration step to=2 already applied, skipping: $e');
-          } else {
-            debugPrint('Migration step from=$from to=2 failed: $e');
-            rethrow;
-          }
-        }
+        await customStatement(
+          "CREATE TABLE IF NOT EXISTS collections (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, sort_type INTEGER DEFAULT 0, created_at INTEGER NOT NULL)",
+        );
+        await customStatement(
+          "CREATE TABLE IF NOT EXISTS collection_books (id INTEGER PRIMARY KEY AUTOINCREMENT, collection_id TEXT NOT NULL REFERENCES collections(id), book_id TEXT NOT NULL, added_at INTEGER NOT NULL, sort_position INTEGER DEFAULT 0)",
+        );
       }
       if (from < 3) {
-        try {
-          await m.addColumn(books, books.description);
-          await m.addColumn(books, books.genre);
-          await m.addColumn(books, books.seriesName);
-          await m.addColumn(books, books.seriesIndex);
-          await m.addColumn(books, books.publisher);
-          await m.addColumn(books, books.isbn);
-          await m.addColumn(books, books.language);
-          await m.addColumn(books, books.review);
-        } catch (e) {
-          if (_isBenignMigrationError(e)) {
-            debugPrint('Migration step to=3 already applied, skipping: $e');
-          } else {
-            debugPrint('Migration step from=$from to=3 failed: $e');
-            rethrow;
-          }
-        }
+        if (!await hasColumn('books', 'description')) await m.addColumn(books, books.description);
+        if (!await hasColumn('books', 'genre')) await m.addColumn(books, books.genre);
+        if (!await hasColumn('books', 'series_name')) await m.addColumn(books, books.seriesName);
+        if (!await hasColumn('books', 'series_index')) await m.addColumn(books, books.seriesIndex);
+        if (!await hasColumn('books', 'publisher')) await m.addColumn(books, books.publisher);
+        if (!await hasColumn('books', 'isbn')) await m.addColumn(books, books.isbn);
+        if (!await hasColumn('books', 'language')) await m.addColumn(books, books.language);
+        if (!await hasColumn('books', 'review')) await m.addColumn(books, books.review);
       }
       if (from < 4) {
-        try {
-          await m.addColumn(books, books.annotation);
-          await m.addColumn(books, books.publicationDate);
-          await m.addColumn(books, books.rights);
-          await m.addColumn(books, books.type);
-          await m.addColumn(books, books.source);
-          await m.addColumn(books, books.titleSort);
-          await m.addColumn(books, books.authorSort);
-        } catch (e) {
-          if (_isBenignMigrationError(e)) {
-            debugPrint('Migration step to=4 already applied, skipping: $e');
-          } else {
-            debugPrint('Migration step from=$from to=4 failed: $e');
-            rethrow;
-          }
-        }
+        if (!await hasColumn('books', 'annotation')) await m.addColumn(books, books.annotation);
+        if (!await hasColumn('books', 'publication_date')) await m.addColumn(books, books.publicationDate);
+        if (!await hasColumn('books', 'rights')) await m.addColumn(books, books.rights);
+        if (!await hasColumn('books', 'type')) await m.addColumn(books, books.type);
+        if (!await hasColumn('books', 'source')) await m.addColumn(books, books.source);
+        if (!await hasColumn('books', 'title_sort')) await m.addColumn(books, books.titleSort);
+        if (!await hasColumn('books', 'author_sort')) await m.addColumn(books, books.authorSort);
       }
       if (from < 5) {
-        try {
+        if (!await hasColumn('books', 'metadata_complete')) {
           await m.addColumn(books, books.metadataComplete);
-        } catch (e) {
-          if (_isBenignMigrationError(e)) {
-            debugPrint('Migration step to=5 already applied, skipping: $e');
-          } else {
-            debugPrint('Migration step from=$from to=5 failed: $e');
-            rethrow;
-          }
         }
       }
       if (from < 6) {
-        try {
-          await customStatement(
-            'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (book_id)',
-          );
-        } catch (e) {
-          debugPrint('Migration step from=$from to=6 failed: $e');
-          rethrow;
-        }
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (book_id)',
+        );
       }
     },
   );
 
-  /// True for "already applied" DDL errors after a force-kill mid-migration
-  /// (table/column/index already exists). Everything else rethrows so the
-  /// schema version is not bumped on a genuinely partial migration.
-  static bool _isBenignMigrationError(Object e) {
-    final msg = e.toString().toLowerCase();
-    if (msg.contains('already exists')) return true;
-    if (msg.contains('duplicate column')) return true;
-    return false;
+  /// Deletes the database file so the next open creates a fresh DB.
+  /// For "Reset Library" when the DB is corrupt or stuck.
+  static Future<void> deleteDatabaseFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final dbFile = File(p.join(dir.path, 'burrow.db'));
+    if (await dbFile.exists()) await dbFile.delete();
   }
 
   // -- Books CRUD ------------------------------------------------------------
@@ -432,7 +402,11 @@ class AppDatabase extends _$AppDatabase {
   /// Returns total reading time in ms for today.
   Future<int> getTodayReadingTimeMs() async {
     final dayStart = localDayKey(DateTime.now().millisecondsSinceEpoch);
-    final dayEnd = localDayKey(dayStart + 86400000 + 43200000);
+    final dayEnd = localDayKey(
+      DateTime.fromMillisecondsSinceEpoch(dayStart)
+          .add(const Duration(days: 1))
+          .millisecondsSinceEpoch,
+    );
     final result = await customSelect(
       'SELECT SUM(ended_at - started_at) AS total '
       'FROM reading_sessions '

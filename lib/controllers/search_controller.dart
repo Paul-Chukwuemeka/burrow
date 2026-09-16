@@ -153,6 +153,7 @@ class ReaderSearchController extends ChangeNotifier {
     _search?.dispose();
     _pdfSearcher?.removeListener(_pdfSearcherListener!);
     _pdfSearcher?.resetTextSearch();
+    _pdfSearcher?.dispose();
     _pdfSearcher = null;
     _pdfSearcherListener = null;
     searchController.dispose();

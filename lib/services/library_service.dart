@@ -413,10 +413,11 @@ class LibraryService extends ChangeNotifier {
       try {
         if (_db != null) {
           // Per-book transaction: book + its bookmarks/sessions commit
-          // atomically, so a kill mid-restore never leaves orphaned
-          // annotations for a rolled-back book. (One transaction per book,
-          // not one for the whole backup — the DB runs on the UI isolate
-          // and a giant transaction would freeze the interface.)
+          // together so a kill mid-restore never leaves orphaned annotations
+          // for a rolled-back book. (One transaction per book, not one for
+          // the whole backup — the DB runs on the UI isolate and a giant
+          // transaction would freeze the interface.) A kill mid-restore
+          // still yields a partial library; it's just internally consistent.
           await _db!.transaction(() async {
             await _db!.insertBook(db.bookToCompanion(book));
             // Annotations are restored only for newly imported books so

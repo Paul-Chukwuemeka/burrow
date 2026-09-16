@@ -48,7 +48,12 @@ class ScanService {
     final exts = extensions ?? defaultExtensions;
     return Isolate.run(
       () => _walk('/storage/emulated/0', knownPaths, exts),
-    ).timeout(const Duration(minutes: 2));
+    ).timeout(
+      const Duration(minutes: 2),
+      // Note: `.timeout` does NOT cancel the spawned isolate — the walk
+      // keeps consuming CPU/battery until the isolate exits naturally.
+      // This is acceptable for a user-initiated scan on Android.
+    );
   }
 
   /// Recursively scans a single user-chosen folder.

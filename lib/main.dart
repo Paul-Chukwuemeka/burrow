@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import 'db/database.dart';
 import 'models/reader_settings.dart';
 import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -112,12 +113,14 @@ class _BurrowAppState extends State<BurrowApp> {
           await library.load();
         } catch (e) {
           library.removeListener(_onThemeChanged);
+          library.dispose();
           // Don't dispose the injected/test instance; only our own partial.
           _library = null;
           debugPrint('Library load failed: $e');
           return _StartupErrorScreen(
             message: 'Could not open your library ($e)',
             onRetry: () => _retryStartup(context),
+            onReset: () => _resetLibrary(context),
           );
         }
         // Finish metadata extraction for books left incomplete by an
@@ -142,11 +145,26 @@ class _BurrowAppState extends State<BurrowApp> {
       return _StartupErrorScreen(
         message: 'Startup failed ($e)',
         onRetry: () => _retryStartup(context),
+        onReset: () => _resetLibrary(context),
       );
     }
   }
 
   Future<void> _retryStartup(BuildContext context) async {
+    final home = await _buildHome(context);
+    if (!context.mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => home),
+    );
+  }
+
+  Future<void> _resetLibrary(BuildContext context) async {
+    // Dispose any partial library state before wiping the DB.
+    _library?.removeListener(_onThemeChanged);
+    _library?.dispose();
+    _library = null;
+    await AppDatabase.deleteDatabaseFile();
+    // Also clear the PDF plugin cache so a corrupt cache can't block startup.
     final home = await _buildHome(context);
     if (!context.mounted) return;
     Navigator.of(context).pushReplacement(
@@ -214,10 +232,15 @@ class _BurrowAppState extends State<BurrowApp> {
 /// Shown when startup initialization fails instead of leaving the splash
 /// spinning forever. Retry re-runs [_BurrowAppState._buildHome].
 class _StartupErrorScreen extends StatelessWidget {
-  const _StartupErrorScreen({required this.message, required this.onRetry});
+  const _StartupErrorScreen({
+    required this.message,
+    required this.onRetry,
+    this.onReset,
+  });
 
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback? onReset;
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +258,13 @@ class _StartupErrorScreen extends StatelessWidget {
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               FilledButton(onPressed: onRetry, child: const Text('Retry')),
+              if (onReset != null) ...[
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: onReset,
+                  child: const Text('Reset library'),
+                ),
+              ],
             ],
           ),
         ),
