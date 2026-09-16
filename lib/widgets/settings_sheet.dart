@@ -321,11 +321,14 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
           ),
           SegmentedButton<TextJustification>(
-            segments: const [
-              ButtonSegment(value: TextJustification.left, label: Text('Left')),
+            segments: [
+              ButtonSegment(
+                value: TextJustification.left,
+                label: Text('Left', style: TextStyle(color: theme.text)),
+              ),
               ButtonSegment(
                 value: TextJustification.justify,
-                label: Text('Justify'),
+                label: Text('Justify', style: TextStyle(color: theme.text)),
               ),
             ],
             selected: {settings.textJustification},
@@ -465,20 +468,20 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
           ),
           SegmentedButton<PdfLayoutDirection>(
-            segments: const [
+            segments: [
               ButtonSegment(
                 value: PdfLayoutDirection.vertical,
-                label: Text('Vert'),
+                label: Text('Vert', style: TextStyle(color: theme.text)),
                 icon: Icon(Icons.swap_vert, size: 16),
               ),
               ButtonSegment(
                 value: PdfLayoutDirection.horizontalLtr,
-                label: Text('\u2190'),
+                label: Text('\u2190', style: TextStyle(color: theme.text)),
                 icon: Icon(Icons.arrow_back, size: 16),
               ),
               ButtonSegment(
                 value: PdfLayoutDirection.horizontalRtl,
-                label: Text('\u2192'),
+                label: Text('\u2192', style: TextStyle(color: theme.text)),
                 icon: Icon(Icons.arrow_forward, size: 16),
               ),
             ],
@@ -561,15 +564,15 @@ class _ThemedSheetState extends State<_ThemedSheet> {
               ),
             ),
             SegmentedButton<ComicReadingDirection>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: ComicReadingDirection.ltr,
-                  label: Text('\u2190'),
+                  label: Text('\u2190', style: TextStyle(color: theme.text)),
                   icon: Icon(Icons.arrow_back, size: 16),
                 ),
                 ButtonSegment(
                   value: ComicReadingDirection.rtl,
-                  label: Text('\u2192'),
+                  label: Text('\u2192', style: TextStyle(color: theme.text)),
                   icon: Icon(Icons.arrow_forward, size: 16),
                 ),
               ],
@@ -593,12 +596,18 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
           ),
           SegmentedButton<ComicFitMode>(
-            segments: const [
-              ButtonSegment(value: ComicFitMode.contain, label: Text('Fit')),
-              ButtonSegment(value: ComicFitMode.fitWidth, label: Text('Width')),
+            segments: [
+              ButtonSegment(
+                value: ComicFitMode.contain,
+                label: Text('Fit', style: TextStyle(color: theme.text)),
+              ),
+              ButtonSegment(
+                value: ComicFitMode.fitWidth,
+                label: Text('Width', style: TextStyle(color: theme.text)),
+              ),
               ButtonSegment(
                 value: ComicFitMode.fitHeight,
-                label: Text('Height'),
+                label: Text('Height', style: TextStyle(color: theme.text)),
               ),
             ],
             selected: {settings.comicFitMode},
