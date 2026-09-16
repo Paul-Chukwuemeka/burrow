@@ -53,7 +53,6 @@ class _StatsScreenState extends State<StatsScreen> {
       _loading = true;
       _error = null;
     });
-    final books = widget.library.books;
     late final Map<int, int> dailyTime;
     late final int streak;
     late final int todayTime;
@@ -90,6 +89,11 @@ class _StatsScreenState extends State<StatsScreen> {
       return;
     }
 
+    // Snapshot books after the await so header counts agree with the fresh
+    // stats even if the library changed mid-load.
+    if (!mounted) return;
+    final books = widget.library.books;
+
     var totalTime = 0;
     var totalPages = 0;
     var totalSessions = 0;
@@ -101,8 +105,6 @@ class _StatsScreenState extends State<StatsScreen> {
 
     final started = books.where((b) => b.isStarted).length;
     final finished = books.where((b) => b.isFinished).length;
-
-    if (!mounted) return;
     setState(() {
       _streak = streak;
       _totalTimeMs = totalTime;

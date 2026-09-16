@@ -1724,13 +1724,13 @@ Feedback loops: `flutter analyze lib test` clean for app code (316-issue count i
   - **Fix:** wrap each grouping iteration in try/catch, skip with `debugPrint`, mirroring the per-entry pattern below.
   - **Verify:** backup with one `{"bookId": 123}` entry restores all valid books.
 
-- [ ] **147. `_sliceRuns`/`_sliceImages` drop `css` — anchor-split EPUBs lose styling**
+- [x] **147. `_sliceRuns`/`_sliceImages` drop `css` — anchor-split EPUBs lose styling** (Agent B, round15-agentB)
   - **File:** `lib/services/document_parser.dart:1020-1064`
   - **What:** both slice functions omit the `css` field (`StyleRun.css` / `ImageRun.css` exist per `style_run.dart:22,60`); `_sliceImages` additionally drops `onTap`/`elementId`/`htmlWidth`. Any single-file EPUB split at anchors renders all chapters unstyled and collapses `fullWidth` covers to the 150px inline cap.
   - **Fix:** propagate `css: r.css` in `_sliceRuns`; propagate `css`/`onTap`/`elementId`/`htmlWidth`/`htmlHeight` in `_sliceImages`.
   - **Verify:** single-file EPUB with cover + 2 TOC fragments and a `.title` rule — all chapters styled after split.
 
-- [ ] **148. `_normalizeKey` throws on bare `%` — whole book fails to open**
+- [x] **148. `_normalizeKey` throws on bare `%` — whole book fails to open** (Agent B, round15-agentB — plus `_safeDecode` at 5 more sites: entries maps ×3, `_resolveHref`, `_resolveHrefForLookup`, `_findImageEntryName`)
   - **File:** `lib/services/document_parser.dart:1066-1067` + `lib/services/epub_css_parser.dart:283-284`
   - **What:** bare `Uri.decodeComponent(path)` with no guard (only `_splitHref` has the fallback). Spine path with a literal `%` throws `FormatException` out of `parse` — regression vs. pre-normalize code that never decoded.
   - **Fix:** `try { return Uri.decodeComponent(p).toLowerCase(); } catch (_) { return p.toLowerCase(); }` on both sides.
@@ -1742,7 +1742,7 @@ Feedback loops: `flutter analyze lib test` clean for app code (316-issue count i
   - **Fix:** route both sliders through `_comicCtrl.jumpToPage(v - 1, verticalViewportHeight: …)`; fix vertical targeting by item position (`Scrollable.ensureVisible` with per-page keys) instead of `page * vh`.
   - **Verify:** drag slider on first frame of a vertical comic; jump to page 15 of 20 mixed-height pages.
 
-- [ ] **150. `_resolveRules` — one bad selector kills the whole chapter**
+- [x] **150. `_resolveRules` — one bad selector kills the whole chapter** (Agent B, round15-agentB — plus fixed `_extractProperties` using span text: `Expression.toString()` dropped all non-trivial values)
   - **File:** `lib/services/epub_css_parser.dart:112-150` (line 134 `cas.queryAll`)
   - **What:** no per-selector try/catch (assumption, stated: cascadia throws on unsupported selectors like `p::first-letter`, `::-webkit-*`, common in commercial EPUBs). Exception propagates out of `parse` — zero rules for the chapter or failed import despite 99% valid CSS.
   - **Fix:** wrap `queryAll` + per-element loop per selector in try/catch, `continue` on failure.
@@ -1750,7 +1750,7 @@ Feedback loops: `flutter analyze lib test` clean for app code (316-issue count i
 
 ### Minors (grouped)
 
-- [~] **151. Round-15 minors** (Agent A services slice DONE: CBZ post-inflation note added to TODO(#38), `downloadCover` total deadline added. Rest is Agent B.)
+- [x] **151. Round-15 minors** (Agent A services slice DONE. Agent B DONE: image identity match via imgSrc/imgClass, document-order resolve without wrap retry, single-sweep `_applyCssRanges`, stats snapshot after await.)
   - `lib/services/comic_page_provider.dart:61-72` + `lib/services/document_parser.dart:1314-1368`: decompressed-sum guard runs after full inflation (CBZ) / CBR never sums extracted size — checks throw only after the OOM/disk-fill. Fix: header-only pre-scan pre-decode; walk CBR extract dir, abort + delete over cap. (Judgment call: honest fix is random-access reads per existing TODO.) [Agent A: honest-note added to provider TODO; random-access/CBR-walk deferred per judgment call]
   - `lib/services/metadata_api_service.dart:123` (`downloadCover`): per-event timeout only, no total deadline (unlike `_readBodyBounded:214`). Trickle server pins a metadata slot forever. Fix: wrap whole read in `.timeout(_coverTimeout)`. [Agent A: DONE]
   - `lib/services/metadata_api_service.dart:123` (`downloadCover`): per-event timeout only, no total deadline (unlike `_readBodyBounded:214`). Trickle server pins a metadata slot forever. Fix: wrap whole read in `.timeout(_coverTimeout)`.

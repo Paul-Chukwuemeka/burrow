@@ -354,7 +354,7 @@ class DocumentParser {
 
     final entries = <String, ArchiveFile>{
       for (final f in archive.files)
-        Uri.decodeComponent(f.name.toLowerCase()): f,
+        _safeDecode(f.name.toLowerCase()): f,
     };
     ArchiveFile? lookup(String name) => entries[name.toLowerCase()];
 
@@ -544,7 +544,7 @@ class DocumentParser {
     // Case-insensitive entry lookup; EPUBs are inconsistent about casing.
     final entries = {
       for (final f in archive.files)
-        Uri.decodeComponent(f.name.toLowerCase()): f,
+        _safeDecode(f.name.toLowerCase()): f,
     };
     Uint8List? entry(String name) => entries[name.toLowerCase()]?.content;
 
@@ -664,7 +664,7 @@ class DocumentParser {
     final archiveContentMap = <String, Uint8List>{
       for (final e in entries.values)
         if (e.isFile && _isImage(e.name))
-          Uri.decodeComponent(e.name.toLowerCase()): e.content,
+          _safeDecode(e.name.toLowerCase()): e.content,
     };
 
     // Cover image hrefs, from both EPUB3 `properties="cover-image"` and the
@@ -726,11 +726,17 @@ class DocumentParser {
       );
       if (body.trim().isEmpty) continue;
 
-      // Merge CSS-derived styles into the runs.
+      // Merge CSS-derived styles into the runs. The pre-built DOM supplies
+      // document order so identical texts resolve to the right offsets.
       final resolvedRules =
           cssParser.chapterStyles[_normalizeKey(p)] ?? const [];
       if (resolvedRules.isNotEmpty) {
-        _mergeCssStyles(body, runs, resolvedRules);
+        _mergeCssStyles(
+          body,
+          runs,
+          resolvedRules,
+          document: chapterDoms[_normalizeKey(p)],
+        );
         _mergeCssIntoImages(images, resolvedRules);
       }
 
@@ -1031,6 +1037,7 @@ class DocumentParser {
           bold: r.bold,
           italic: r.italic,
           quote: r.quote,
+          css: r.css,
         ),
       );
     }
@@ -1055,7 +1062,14 @@ class DocumentParser {
             intrinsicHeight: img.intrinsicHeight,
             alt: img.alt,
             fullWidth: img.fullWidth,
+            onTap: img.onTap,
+            css: img.css,
+            elementId: img.elementId,
+            htmlWidth: img.htmlWidth,
+            htmlHeight: img.htmlHeight,
             sourceKey: img.sourceKey,
+            imgSrc: img.imgSrc,
+            imgClass: img.imgClass,
           ),
         );
       }
@@ -1063,14 +1077,27 @@ class DocumentParser {
     return out;
   }
 
+  /// Percent-decodes [s], returning it unchanged when it is not valid
+  /// percent-encoding (e.g. a literal `%` in `100%_cover.xhtml`). Bare
+  /// `Uri.decodeComponent` throws `FormatException` on such input, which used
+  /// to abort the whole book at every archive-key boundary.
+  static String _safeDecode(String s) {
+    try {
+      return Uri.decodeComponent(s);
+    } catch (_) {
+      return s;
+    }
+  }
+
+  /// Lowercase + percent-decode [path] for map keys (see [_safeDecode]).
   static String _normalizeKey(String path) =>
-      Uri.decodeComponent(path).toLowerCase();
+      _safeDecode(path).toLowerCase();
 
   /// Resolves [href] (possibly `../`-relative, percent-encoded, with
   /// fragment) against the OPF's directory inside the zip.
   static String _resolveHref(String baseDir, String href) {
     final clean = href.split('#').first.trim();
-    final decoded = Uri.decodeComponent(clean);
+    final decoded = _safeDecode(clean);
     final parts = baseDir.isEmpty
         ? decoded.split('/')
         : '$baseDir/$decoded'.split('/');
@@ -1247,7 +1274,7 @@ class DocumentParser {
 
   /// Cover hrefs live in the same directory space as the OPF itself.
   static String _resolveHrefForLookup(String href) {
-    final clean = Uri.decodeComponent(href.split('#').first.trim());
+    final clean = _safeDecode(href.split('#').first.trim());
     final parts = clean.split('/');
     final out = <String>[];
     for (final part in parts) {
@@ -1783,6 +1810,11 @@ class DocumentParser {
     r'''\ssrcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
     caseSensitive: false,
   );
+  // The leading `\s` keeps `data-class` from matching as a bare `class`.
+  static final RegExp _classAttrRe = RegExp(
+    r'''\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>/]+))''',
+    caseSensitive: false,
+  );
 
   /// First candidate URL from a `srcset` list (`"a.jpg 1x, b.jpg 2x"`).
   static String? _firstSrcset(String? srcset) {
@@ -1868,6 +1900,8 @@ class DocumentParser {
             elementId: _attr(_idAttrRe, raw) ?? '',
             htmlWidth: htmlWidth != null ? double.tryParse(htmlWidth) : null,
             htmlHeight: htmlHeight != null ? double.tryParse(htmlHeight) : null,
+            imgSrc: src ?? '',
+            imgClass: _attr(_classAttrRe, raw) ?? '',
           );
         }
       default:
@@ -1921,56 +1955,68 @@ class DocumentParser {
   /// Merges CSS-derived typography into [runs].
   ///
   /// The regex parser that builds [body]/[runs] records no DOM offsets, so an
-  /// element is located by its whitespace-collapsed text. Two fixes over the
-  /// old `body.indexOf(element.text)` approach:
-  /// - each distinct element maps to successive occurrences of identical text
-  ///   (repeated paragraphs no longer all restyle the first one), while repeat
-  ///   rules for the *same* element reuse its cached range;
+  /// element is located by its whitespace-collapsed text:
+  /// - each element's rules are merged once (not once per rule);
+  /// - elements resolve in document order ([document] supplies the ordering;
+  ///   without it, stylesheet order is used), with per-text cursors so
+  ///   identical sibling paragraphs claim successive occurrences instead of
+  ///   all restyling the first one. There is deliberately no wrap-around
+  ///   retry: re-searching from 0 after a miss double-claims an earlier
+  ///   paragraph, which is worse than skipping the rule;
   /// - ranges with no existing run get a new [StyleRun] instead of being
   ///   dropped, so pure-CSS typography (e.g. `.title{font-size:24px}` on a
   ///   plain `<p>`) survives.
   static void _mergeCssStyles(
     String body,
     List<StyleRun> runs,
-    List<ResolvedCssRule> rules,
-  ) {
+    List<ResolvedCssRule> rules, {
+    dom.Document? document,
+  }) {
     if (rules.isEmpty || body.isEmpty) return;
     runs.sort((a, b) => a.start.compareTo(b.start));
 
-    // Resolved range per element identity; repeat rules for the same element
-    // (one per matching selector) must reuse the same range.
-    final rangeByElement = <dom.Element, (int, int)>{};
-    // Next search offset per collapsed text, so identical sibling paragraphs
-    // claim successive occurrences.
-    final nextSearchFrom = <String, int>{};
-
-    (int, int)? rangeFor(dom.Element element) {
-      final cached = rangeByElement[element];
-      if (cached != null) return cached;
-      final needle = _collapseForMatch(element.text);
-      if (needle.isEmpty) return null;
-      var from = nextSearchFrom[needle] ?? 0;
-      var idx = from <= body.length ? body.indexOf(needle, from) : -1;
-      if (idx < 0 && from > 0) {
-        // Whitespace drift may have shifted offsets; retry from the start
-        // rather than dropping the rule entirely.
-        idx = body.indexOf(needle);
-      }
-      if (idx < 0) return null;
-      final range = (idx, idx + needle.length);
-      rangeByElement[element] = range;
-      nextSearchFrom[needle] = idx + needle.length;
-      return range;
-    }
-
+    // Group properties by element, preserving stylesheet order per element.
+    final propsByElement = <dom.Element, Map<String, String>>{};
     for (final rule in rules) {
-      // Build a CssStyle from the matched rule's properties.
-      final css = EpubCssParser.propsToCssStyle(rule.properties);
-      if (css.isEmpty) continue;
-      final range = rangeFor(rule.element);
-      if (range == null) continue;
-      _applyCssToRange(runs, range.$1, range.$2, css);
+      (propsByElement[rule.element] ??= {}).addAll(rule.properties);
     }
+    // Resolve in document order so identical texts map to the right offsets.
+    final order = _elementDocumentOrder(document);
+    final elements = propsByElement.keys.toList()
+      ..sort(
+        (a, b) => (order[a] ?? (1 << 30)).compareTo(order[b] ?? (1 << 30)),
+      );
+
+    final nextSearchFrom = <String, int>{};
+    final ranges = <(int, int, CssStyle)>[];
+    for (final element in elements) {
+      final css = EpubCssParser.propsToCssStyle(propsByElement[element]!);
+      if (css.isEmpty) continue;
+      final needle = _collapseForMatch(element.text);
+      if (needle.isEmpty) continue;
+      final from = nextSearchFrom[needle] ?? 0;
+      final idx = from <= body.length ? body.indexOf(needle, from) : -1;
+      if (idx < 0) continue;
+      ranges.add((idx, idx + needle.length, css));
+      nextSearchFrom[needle] = idx + needle.length;
+    }
+    _applyCssRanges(runs, ranges);
+  }
+
+  /// Preorder index of every element in [document], for document-order CSS
+  /// resolution. Empty when [document] is null (falls back to rule order).
+  static Map<dom.Element, int> _elementDocumentOrder(dom.Document? document) {
+    final order = <dom.Element, int>{};
+    if (document == null) return order;
+    void walk(dom.Node node) {
+      if (node is dom.Element) order[node] = order.length;
+      for (final child in node.nodes) {
+        walk(child);
+      }
+    }
+
+    walk(document);
+    return order;
   }
 
   /// Collapses whitespace the same way the body builder does (runs of
@@ -1978,58 +2024,86 @@ class DocumentParser {
   static String _collapseForMatch(String s) =>
       s.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-  /// Applies [css] to [runs] over `[start, end)`, splitting overlapping runs
-  /// and creating new runs for gaps with no existing run. Keeps [runs] sorted.
-  static void _applyCssToRange(
+  /// Applies all [ranges] to [runs] in a single sweep: existing runs are split
+  /// at range boundaries and merged with the covering styles (outer ranges
+  /// first, so nested elements win), while union regions with no existing run
+  /// become new runs. Keeps [runs] sorted.
+  static void _applyCssRanges(
     List<StyleRun> runs,
-    int start,
-    int end,
-    CssStyle css,
+    List<(int, int, CssStyle)> ranges,
   ) {
+    if (ranges.isEmpty) return;
+    // Outer-first application order: earlier start, then longer span.
+    final ordered = ranges.toList()
+      ..sort((a, b) {
+        final c = a.$1.compareTo(b.$1);
+        return c != 0 ? c : b.$2.compareTo(a.$2);
+      });
+    // Union segments with the merged style of every covering range.
+    final bounds = <int>{};
+    for (final r in ordered) {
+      bounds.add(r.$1);
+      bounds.add(r.$2);
+    }
+    final pts = bounds.toList()..sort();
+    final segs = <(int, int, CssStyle)>[];
+    for (var i = 0; i + 1 < pts.length; i++) {
+      final s = pts[i], e = pts[i + 1];
+      CssStyle? acc;
+      for (final r in ordered) {
+        if (r.$1 <= s && r.$2 >= e) acc = acc == null ? r.$3 : acc.merge(r.$3);
+      }
+      if (acc != null) segs.add((s, e, acc));
+    }
+    if (segs.isEmpty) return;
+
+    // Pass 1: split existing runs at segment boundaries, merging styles.
     final out = <StyleRun>[];
-    var cursor = start;
-    var trailingFlushed = false;
+    var si = 0;
     for (final run in runs) {
-      if (run.end <= start || run.start >= end) {
-        if (!trailingFlushed && run.start >= end) {
-          if (cursor < end) out.add(StyleRun(cursor, end, css: css));
-          trailingFlushed = true;
+      while (si < segs.length && segs[si].$2 <= run.start) {
+        si++;
+      }
+      var cur = run.start;
+      var k = si;
+      while (k < segs.length && segs[k].$1 < run.end) {
+        final s = math.max(segs[k].$1, run.start);
+        final e = math.min(segs[k].$2, run.end);
+        if (s > cur) {
+          out.add(
+            StyleRun(
+              cur,
+              s,
+              bold: run.bold,
+              italic: run.italic,
+              quote: run.quote,
+              css: run.css,
+            ),
+          );
         }
-        out.add(run);
-        continue;
+        if (e > s) {
+          out.add(
+            StyleRun(
+              s,
+              e,
+              bold: run.bold,
+              italic: run.italic,
+              quote: run.quote,
+              css: run.css?.merge(segs[k].$3) ?? segs[k].$3,
+            ),
+          );
+          cur = e;
+        }
+        if (segs[k].$2 <= run.end) {
+          k++;
+        } else {
+          break;
+        }
       }
-      if (run.start < start) {
+      if (cur < run.end) {
         out.add(
           StyleRun(
-            run.start,
-            start,
-            bold: run.bold,
-            italic: run.italic,
-            quote: run.quote,
-            css: run.css,
-          ),
-        );
-      }
-      final os = math.max(run.start, start);
-      final oe = math.min(run.end, end);
-      // Gap between the previous coverage and this overlap: pure-CSS region
-      // with no emphasis run — create a run instead of dropping the style.
-      if (os > cursor) out.add(StyleRun(cursor, os, css: css));
-      out.add(
-        StyleRun(
-          os,
-          oe,
-          bold: run.bold,
-          italic: run.italic,
-          quote: run.quote,
-          css: run.css?.merge(css) ?? css,
-        ),
-      );
-      cursor = oe;
-      if (run.end > end) {
-        out.add(
-          StyleRun(
-            end,
+            cur,
             run.end,
             bold: run.bold,
             italic: run.italic,
@@ -2039,16 +2113,36 @@ class DocumentParser {
         );
       }
     }
-    if (!trailingFlushed && cursor < end) {
-      out.add(StyleRun(cursor, end, css: css));
+    // Pass 2: union regions with no overlapping run become new runs.
+    for (final seg in segs) {
+      if (_runOverlaps(runs, seg.$1, seg.$2)) continue;
+      out.add(StyleRun(seg.$1, seg.$2, css: seg.$3));
     }
+    out.sort((a, b) => a.start.compareTo(b.start));
     runs
       ..clear()
       ..addAll(out);
   }
 
-  /// Merges CSS-derived image-sizing rules into [images] by matching
-  /// resolved rules whose element is an `<img>` tag with a matching `id`.
+  /// True when any run in sorted [runs] intersects `[start, end)`.
+  static bool _runOverlaps(List<StyleRun> runs, int start, int end) {
+    var lo = 0, hi = runs.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (runs[mid].end <= start) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo < runs.length && runs[lo].start < end;
+  }
+
+  /// Merges CSS-derived image-sizing rules into [images] by matching resolved
+  /// rules whose element is an `<img>` tag. Match priority: `id`, then CSS
+  /// class overlap, then image `src` (exact, then basename) — so class/tag
+  /// rules like `.fullpage{width:100%}` apply instead of being dropped. A rule
+  /// applies to every matching image (no first-match break).
   static void _mergeCssIntoImages(
     List<ImageRun> images,
     List<ResolvedCssRule> rules,
@@ -2075,28 +2169,36 @@ class DocumentParser {
         continue;
       }
 
-      final imgId = element.id;
       for (var i = 0; i < images.length; i++) {
-        if (images[i].elementId == imgId && imgId.isNotEmpty) {
-          final existing = images[i].css;
-          images[i] = ImageRun(
-            offset: images[i].offset,
-            bytes: images[i].bytes,
-            intrinsicWidth: images[i].intrinsicWidth,
-            intrinsicHeight: images[i].intrinsicHeight,
-            alt: images[i].alt,
-            fullWidth: images[i].fullWidth,
-            onTap: images[i].onTap,
-            css: existing?.merge(css) ?? css,
-            elementId: images[i].elementId,
-            htmlWidth: images[i].htmlWidth,
-            htmlHeight: images[i].htmlHeight,
-            sourceKey: images[i].sourceKey,
-          );
-          break;
-        }
+        if (!_imageMatchesRule(images[i], element)) continue;
+        images[i] = images[i].copyWith(
+          css: images[i].css?.merge(css) ?? css,
+        );
       }
     }
+  }
+
+  /// Matches a parsed image to a resolved `<img>` rule element.
+  static bool _imageMatchesRule(ImageRun img, dom.Element el) {
+    final id = el.id;
+    if (id.isNotEmpty) return img.elementId == id;
+    final elClasses = el.classes
+        .map((c) => c.toLowerCase())
+        .where((c) => c.isNotEmpty)
+        .toSet();
+    if (elClasses.isNotEmpty && img.imgClass.isNotEmpty) {
+      for (final c in img.imgClass.split(RegExp(r'\s+'))) {
+        if (elClasses.contains(c.toLowerCase())) return true;
+      }
+    }
+    final src = el.attributes['src'] ?? el.attributes['href'];
+    if (src != null && src.isNotEmpty && img.imgSrc.isNotEmpty) {
+      if (img.imgSrc == src) return true;
+      final a = _RichTextBuilder._filenameOf(src).toLowerCase();
+      final b = _RichTextBuilder._filenameOf(img.imgSrc).toLowerCase();
+      if (a.isNotEmpty && a == b) return true;
+    }
+    return false;
   }
 
   // --------------------------------------------------------------------------
@@ -2419,7 +2521,7 @@ class DocumentParser {
     }
     final entries = <String, ArchiveFile>{
       for (final f in archive.files)
-        Uri.decodeComponent(f.name.toLowerCase()): f,
+        _safeDecode(f.name.toLowerCase()): f,
     };
     Uint8List? read(String key) {
       final entry = entries[key.toLowerCase()];
@@ -2552,6 +2654,8 @@ class _RichTextBuilder {
     String elementId = '',
     double? htmlWidth,
     double? htmlHeight,
+    String imgSrc = '',
+    String imgClass = '',
   }) {
     if (src == null || src.isEmpty) return;
     if (archiveEntries == null) return;
@@ -2602,6 +2706,8 @@ class _RichTextBuilder {
         htmlWidth: effectiveHtmlWidth,
         htmlHeight: effectiveHtmlHeight,
         sourceKey: entryName,
+        imgSrc: imgSrc,
+        imgClass: imgClass,
       ),
     );
   }
@@ -2609,7 +2715,7 @@ class _RichTextBuilder {
   String? _findImageEntryName(String resolved) {
     final entries = archiveEntries!;
     // Try exact match first.
-    final key = Uri.decodeComponent(resolved.toLowerCase());
+    final key = DocumentParser._safeDecode(resolved.toLowerCase());
     if (entries.containsKey(key)) return key;
     // Try filename-only match (handles path mismatches in EPUBs).
     final filename =
@@ -2895,6 +3001,8 @@ class _RichTextBuilder {
       htmlWidth: img.htmlWidth,
       htmlHeight: img.htmlHeight,
       sourceKey: img.sourceKey,
+      imgSrc: img.imgSrc,
+      imgClass: img.imgClass,
     );
   }
 

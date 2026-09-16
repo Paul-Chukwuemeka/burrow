@@ -62,6 +62,8 @@ class ImageRun {
     this.htmlWidth,
     this.htmlHeight,
     this.sourceKey,
+    this.imgSrc = '',
+    this.imgClass = '',
   });
 
   /// Character offset in the chapter body where the `\uFFFC` placeholder lives.
@@ -102,6 +104,15 @@ class ImageRun {
   /// have no backing archive entry (e.g. comics, or legacy data).
   final String? sourceKey;
 
+  /// Raw `src`/`href` attribute of the `<img>` tag, for CSS rule matching.
+  final String imgSrc;
+
+  /// Raw `class` attribute of the `<img>` tag, for class-selector matching.
+  ///
+  /// Strings (not the `dom.Element`) are carried so images never pin the
+  /// chapter DOM in memory.
+  final String imgClass;
+
   ImageRun copyWith({
     int? offset,
     Uint8List? bytes,
@@ -115,6 +126,8 @@ class ImageRun {
     double? htmlWidth,
     double? htmlHeight,
     String? sourceKey,
+    String? imgSrc,
+    String? imgClass,
   }) {
     return ImageRun(
       offset: offset ?? this.offset,
@@ -129,6 +142,8 @@ class ImageRun {
       htmlWidth: htmlWidth ?? this.htmlWidth,
       htmlHeight: htmlHeight ?? this.htmlHeight,
       sourceKey: sourceKey ?? this.sourceKey,
+      imgSrc: imgSrc ?? this.imgSrc,
+      imgClass: imgClass ?? this.imgClass,
     );
   }
 

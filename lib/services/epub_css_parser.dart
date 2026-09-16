@@ -131,16 +131,22 @@ class EpubCssParser {
           );
           if (properties.isEmpty) continue;
 
-          final matchedElements = cas.queryAll(doc, selectorText);
+          // One unsupported selector (e.g. `p::first-letter`, `::-webkit-*`,
+          // common in commercial EPUBs) must not kill the whole chapter.
+          try {
+            final matchedElements = cas.queryAll(doc, selectorText);
 
-          for (final element in matchedElements) {
-            rules.add(
-              ResolvedCssRule(
-                selector: selectorText,
-                properties: properties,
-                element: element,
-              ),
-            );
+            for (final element in matchedElements) {
+              rules.add(
+                ResolvedCssRule(
+                  selector: selectorText,
+                  properties: properties,
+                  element: element,
+                ),
+              );
+            }
+          } catch (_) {
+            continue;
           }
         }
       }
@@ -273,15 +279,25 @@ class EpubCssParser {
       if (decl is! css_visitor.Declaration) continue;
       final name = decl.property;
       if (name.isEmpty) continue;
-      final value = decl.expression?.toString().trim();
+      // NOTE: Expression.toString() is NOT the source text — for values like
+      // `100%` it yields "Instance of 'Expressions'", silently dropping every
+      // non-trivial declaration. The source span holds the real text.
+      final value = decl.expression?.span?.text.trim();
       if (value == null || value.isEmpty) continue;
       props[name.toLowerCase()] = value;
     }
     return props;
   }
 
-  static String _normalizeKey(String path) =>
-      Uri.decodeComponent(path).toLowerCase();
+  /// Lowercase + percent-decode [path] for map keys. Falls back to the raw
+  /// path when decoding throws (bare `%`), mirroring `DocumentParser`.
+  static String _normalizeKey(String path) {
+    try {
+      return Uri.decodeComponent(path).toLowerCase();
+    } catch (_) {
+      return path.toLowerCase();
+    }
+  }
 
   /// Returns the resolved [CssStyle] for a DOM element in a given chapter.
   CssStyle resolveStyle(String chapterPath, dom.Element element) {

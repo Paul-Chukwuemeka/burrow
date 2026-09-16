@@ -7,6 +7,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/document_parser.dart';
 
@@ -1012,6 +1013,102 @@ More text.''';
       expect(images.single.fullWidth, isFalse);
     });
   });
+
+  group('Round 15 CSS slice + key hardening', () {
+    test('splitByAnchors preserves css on runs and images', () {
+      const css = CssStyle(fontSize: 24);
+      final runs = [const StyleRun(0, 20, bold: true, css: css)];
+      final images = [
+        ImageRun(
+          offset: 5,
+          bytes: Uint8List(0),
+          intrinsicWidth: 100,
+          intrinsicHeight: 100,
+          elementId: 'cover-img',
+          htmlWidth: 50,
+          imgSrc: 'Images/cover.jpg',
+          imgClass: 'fullpage',
+          css: css,
+        ),
+      ];
+      final chapters = DocumentParser.splitByAnchors(
+        '0123456789ABCDEFGHIJ',
+        runs,
+        {'ch2': 10},
+        const [
+          TocEntry('doc', null, 'C1'),
+          TocEntry('doc', 'ch2', 'C2'),
+        ],
+        images,
+      );
+
+      expect(chapters.length, 2);
+      // The run spanning the cut is clipped into both chapters, css intact.
+      expect(chapters[0].runs.single.css?.fontSize, 24);
+      expect(chapters[0].runs.single.bold, isTrue);
+      expect(chapters[0].runs.single.end, 10);
+      expect(chapters[1].runs.single.css?.fontSize, 24);
+      expect(chapters[1].runs.single.start, 0);
+      // The image lands in the first slice with matching fields intact.
+      final sliced = chapters[0].images.single;
+      expect(sliced.offset, 5);
+      expect(sliced.css?.fontSize, 24);
+      expect(sliced.elementId, 'cover-img');
+      expect(sliced.htmlWidth, 50);
+      expect(sliced.imgSrc, 'Images/cover.jpg');
+      expect(sliced.imgClass, 'fullpage');
+      expect(chapters[1].images, isEmpty);
+    });
+
+    test('spine entry with a bare percent sign still opens', () {
+      // Regression: Uri.decodeComponent('100%_cover.xhtml') throws, which used
+      // to abort the whole book. The key falls back to the raw path.
+      final doc = DocumentParser.parseEpubBytes(
+        _buildEpub(
+          opf: _opf(
+            items:
+                '<item id="pct" href="Text/100%_cover.xhtml" '
+                'media-type="application/xhtml+xml"/>',
+            spine: '<itemref idref="pct"/>',
+          ),
+          docs: {
+            'Text/100%_cover.xhtml': _xhtml('<p>percent body</p>'),
+          },
+        ),
+      );
+
+      expect(doc.chapters.length, 1);
+      expect(doc.chapters.single.body, contains('percent body'));
+    });
+
+    test('class-selector image rules apply without an id', () {
+      final doc = DocumentParser.parseEpubBytes(
+        _buildEpub(
+          opf: _opf(
+            items:
+                '<item id="book" href="book.xhtml" '
+                'media-type="application/xhtml+xml"/>'
+                '<item id="pic" href="pic.png" media-type="image/png"/>',
+            spine: '<itemref idref="book"/>',
+          ),
+          docs: {
+            'book.xhtml': _xhtml(
+              '<style>.fullpage{width:100%}</style>'
+              '<p><img src="pic.png" class="fullpage"/></p>',
+            ),
+            // Archive lookup needs a real entry; content is irrelevant here
+            // because dimension decode falls back to 0x0, not to a throw.
+            'pic.png': '',
+          },
+        ),
+      );
+
+      final images = doc.chapters.single.images;
+      expect(images.length, 1);
+      expect(images.single.imgClass, 'fullpage');
+      expect(images.single.css?.width, isNotNull);
+    });
+  });
 }
 
 /// Minimal PNG header carrying [w]×[h] (enough for dimension decoding).
@@ -1404,6 +1501,7 @@ Uint8List _tinyJpeg() {
 // -----------------------------------------------------------------------------
 // Synthetic EPUB builders.
 // -----------------------------------------------------------------------------
+
 
 Uint8List _buildEpub({
   required String opf,
