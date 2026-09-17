@@ -547,46 +547,63 @@ class ReaderScreenState extends State<ReaderScreen>
   /// in atomically once done.  The reader opens fully laid out — no
   /// placeholders, no `…` page counts, no re-anchor jumps.
   void _startInitialFullPass(
-    Size viewport,
-    TextStyle style,
-    TextScaler scaler,
-    (int, int) anchor,
-    String signature,
-  ) {
-    final n = _doc!.chapters.length;
-    _disposeDrivers();
-    _cancelReflow();
+  Size viewport,
+  TextStyle style,
+  TextScaler scaler,
+  (int, int) anchor,
+  String signature,
+) {
+  final n = _doc!.chapters.length;
+  _disposeDrivers();
+  _cancelReflow();
 
-    _chapterStyles = List.filled(n, style);
-    _paginators
-      ..clear()
-      ..addAll(List.generate(n, (_) => _emptyPaginator()));
-    _paginationReady = List.filled(n, false);
-    _layoutSignature = signature;
-    _anchorChapter = anchor.$1.clamp(0, n - 1);
-    _anchorOffset = anchor.$2;
-    _recomputeFlatIndexes();
+  _chapterStyles = List.filled(n, style);
+  _paginators
+    ..clear()
+    ..addAll(List.generate(n, (_) => _emptyPaginator()));
+  _paginationReady = List.filled(n, false);
+  _layoutSignature = signature;
+  _anchorChapter = anchor.$1.clamp(0, n - 1);
+  _anchorOffset = anchor.$2;
+  _recomputeFlatIndexes();
 
-    final old = _pageController;
-    _pageController = null;
-    if (old != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
-    }
-
-    // Show the progress view.
-    _paginationRunning = true;
-
-    // Build every chapter into the reflow buffer and swap when done.
-    _reflowPages = List.filled(n, _emptyPaginator());
-    _reflowStyles = List.filled(n, style);
-    _reflowReady = List.filled(n, false);
-    _reflowNext = 0;
-    _reflowSignature = signature;
-    _reflowGeneration++;
-    final generation = _reflowGeneration;
-    if (mounted) setState(() {});
-    _reflowNextBatch(viewport, style, scaler, generation);
+  final old = _pageController;
+  _pageController = null;
+  if (old != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
   }
+
+  // Lay out the chapter being opened (and the next) synchronously so the
+  // first paint doesn't wait for the whole book. The remaining chapters
+  // fill in through the background pass below and swap atomically when
+  // done, so the scrubber never shows a half-built layout as final.
+  // `_paginationRunning` stays true until that swap, but the builder shows
+  // content as soon as the controller below exists.
+  _paginateChapterSync(_anchorChapter, viewport, style, scaler);
+  final next = _anchorChapter + 1;
+  if (next < n) _paginateChapterSync(next, viewport, style, scaler);
+  _recomputeFlatIndexes();
+  _setControllerToAnchor(recreate: true);
+
+  // Show the progress view only when there is truly nothing to show yet
+  // (the builder checks the controller); otherwise keep it for the
+  // background remainder.
+  _paginationRunning = true;
+
+  // Build every remaining chapter into the reflow buffer and swap when done.
+  // Seeded from the live set so the anchor/next layouts are reused, not redone.
+  _reflowPages = List.of(_paginators);
+  _reflowStyles = List.of(_chapterStyles);
+  _reflowReady = List.filled(n, false);
+  _reflowReady[_anchorChapter] = true;
+  if (next < n) _reflowReady[next] = true;
+  _reflowNext = 0;
+  _reflowSignature = signature;
+  _reflowGeneration++;
+  final generation = _reflowGeneration;
+  if (mounted) setState(() {});
+  _reflowNextBatch(viewport, style, scaler, generation);
+}
 
   /// Adopt a fully-built layout (cache hit or completed pass) and land on
   /// [anchor] without further work.
@@ -783,6 +800,42 @@ class ReaderScreenState extends State<ReaderScreen>
     _paginationReady[chapter] = true;
   }
 
+  /// Lays out [chapter] (and the next) on demand when a jump lands ahead of
+  /// the background initial pass, so navigation never shows a blank page.
+  /// Mirrors the result into the in-flight reflow buffer when one exists so
+  /// the atomic swap can't regress it back to a placeholder.
+  void _ensureChapterReady(int chapter) {
+    final viewport = _lastViewport;
+    if (_doc == null || viewport == null) return;
+    if (chapter < 0 || chapter >= _paginators.length) return;
+    if (_paginationReady.length == _paginators.length &&
+        _paginationReady[chapter]) {
+      final after = chapter + 1;
+      if (after >= _paginators.length || _paginationReady[after]) return;
+    }
+    final style = _settings.textStyle(context);
+    const scaler = TextScaler.noScaling;
+    _paginateChapterSync(chapter, viewport, style, scaler);
+    final next = chapter + 1;
+    if (next < _paginators.length) {
+      _paginateChapterSync(next, viewport, style, scaler);
+    }
+    _recomputeFlatIndexes();
+    if (_reflowActive) {
+      if (chapter < _reflowPages!.length) {
+        _reflowPages![chapter] = _paginators[chapter];
+        _reflowStyles![chapter] = _chapterStyles[chapter];
+        _reflowReady[chapter] = true;
+      }
+      if (next < _reflowPages!.length) {
+        _reflowPages![next] = _paginators[next];
+        _reflowStyles![next] = _chapterStyles[next];
+        _reflowReady[next] = true;
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
   ChapterPaginationDriver _makeDriver(
     int chapter,
     Size viewport,
@@ -974,6 +1027,8 @@ class ReaderScreenState extends State<ReaderScreen>
     _searchCtrl.jumpToResult(index);
     if (!_isPdf) {
       final result = _searchCtrl.searchResults[index];
+      if (result.chapter < 0 || result.chapter >= _paginators.length) return;
+      _ensureChapterReady(result.chapter);
       final pag = _paginators[result.chapter];
       final pageIndex = result.offset > 0 ? pag.pageIndexFor(result.offset) : 0;
       final flat = _flatIndexForChapter(result.chapter) + pageIndex;
@@ -1607,7 +1662,7 @@ class ReaderScreenState extends State<ReaderScreen>
       return Center(child: CircularProgressIndicator(color: theme.accent));
     }
 
-    if (_paginationRunning) {
+    if (_paginationRunning && _pageController == null) {
       return _buildLayingOutView(theme);
     }
 
@@ -1814,6 +1869,7 @@ class ReaderScreenState extends State<ReaderScreen>
   /// Jump directly to the start of [chapterIndex].
   void _jumpToChapter(int chapterIndex) {
     if (_doc == null || _pageController == null) return;
+    _ensureChapterReady(chapterIndex);
     final flat = _flatIndexForChapter(chapterIndex);
     _anchorChapter = chapterIndex;
     _anchorOffset = 0;

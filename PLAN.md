@@ -1846,3 +1846,30 @@ paths) and `chapterizeTxt`.
   headings-consumed-as-titles as the only allowed loss.
 - Note: saved reading offsets inside stripped chapters shift by the removed
   line; positions clamp on load, worst case a line off.
+
+---
+
+## Slow reader open: first paint waited for full-book pagination (user-reported)
+
+Symptom: spinner for seconds on a 144-chapter book before any page shows.
+Open path is serial (full parse in isolate → awaited embedded fonts →
+full-book chunked pagination), and `_startInitialFullPass` held the progress
+view until ALL chapters were laid out — contradicting `_restartPagination`'s
+own doc comment ("laying out only the anchor chapter up front").
+
+Fix: the initial pass now lays out the anchor chapter (+ next)
+synchronously, publishes the PageController immediately, and fills the rest
+through the existing background reflow buffer (atomically swapped on
+completion, so counts never show half-built as final). The progress view now
+gates on `_paginationRunning && _pageController == null`. Far jumps during
+the window (`_jumpToChapter`, `_jumpToResult`) sync-layout their target via
+`_ensureChapterReady` (mirrored into the reflow buffer) instead of landing
+on placeholder blank pages.
+- Tests: rewrote `full pass on initial load` (which had locked in the old
+  spinner-gated behavior) as `paints the anchor chapter without waiting`
+  — red pre-fix (no PageView), green post; 282/283 suite-wide, the 5
+  failures being pre-existing brightness-sheet breakage on this branch.
+- Deliberate tradeoff: unready chapters contribute one placeholder page each
+  until the background pass reaches them, so the scrubber total grows into
+  its final value; sequential reading never outruns the fill.
+- Leftover serial costs (full parse, awaited fonts) unchanged — follow-up.
