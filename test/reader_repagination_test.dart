@@ -188,21 +188,21 @@ void main() {
   }
 
   group('Reader repagination', () {
-    testWidgets('full pass on initial load, then opens the reader', (
-      tester,
-    ) async {
+    testWidgets('initial load paints the anchor chapter without waiting for '
+        'the whole book', (tester) async {
       await mountReader(tester);
-      // The whole book is laid out behind the progress view; no pages before
-      // the pass finishes, so the first impression is never a partial layout.
-      expect(
-        _progressView,
-        findsOneWidget,
-        reason: 'initial load shows progress while paginating',
-      );
+      // The anchor chapter is laid out synchronously, so content (not the
+      // progress view) is visible within a couple of frames while the rest
+      // of the book fills in behind the reader.
       expect(
         find.byType(PageView),
-        findsNothing,
-        reason: 'PageView is not shown until the pass completes',
+        findsOneWidget,
+        reason: 'PageView shows as soon as the anchor chapter is laid out',
+      );
+      expect(
+        _marker.hasMatch(_visibleText(tester)),
+        isTrue,
+        reason: 'first paint shows real chapter text, not placeholders',
       );
 
       await _settlePagination(tester);
