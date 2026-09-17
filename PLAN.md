@@ -1846,3 +1846,55 @@ paths) and `chapterizeTxt`.
   headings-consumed-as-titles as the only allowed loss.
 - Note: saved reading offsets inside stripped chapters shift by the removed
   line; positions clamp on load, worst case a line off.
+
+---
+
+## Slow reader open: first paint waited for full-book pagination (user-reported)
+
+Symptom: spinner for seconds on a 144-chapter book before any page shows.
+Open path is serial (full parse in isolate → awaited embedded fonts →
+full-book chunked pagination), and `_startInitialFullPass` held the progress
+view until ALL chapters were laid out — contradicting `_restartPagination`'s
+own doc comment ("laying out only the anchor chapter up front").
+
+Fix: the initial pass now lays out the anchor chapter (+ next)
+synchronously, publishes the PageController immediately, and fills the rest
+through the existing background reflow buffer (atomically swapped on
+completion, so counts never show half-built as final). The progress view now
+gates on `_paginationRunning && _pageController == null`. Far jumps during
+the window (`_jumpToChapter`, `_jumpToResult`) sync-layout their target via
+`_ensureChapterReady` (mirrored into the reflow buffer) instead of landing
+on placeholder blank pages.
+- Tests: rewrote `full pass on initial load` (which had locked in the old
+  spinner-gated behavior) as `paints the anchor chapter without waiting`
+  — red pre-fix (no PageView), green post; 282/283 suite-wide, the 5
+  failures being pre-existing brightness-sheet breakage on this branch.
+- Deliberate tradeoff: unready chapters contribute one placeholder page each
+  until the background pass reaches them, so the scrubber total grows into
+  its final value; sequential reading never outruns the fill.
+- Leftover serial costs (full parse, awaited fonts) unchanged — follow-up.
+
+---
+
+## Open books shared from other apps (2026-09-17)
+
+WhatsApp / file-manager shares and "Open with" now land in the library:
+- `AndroidManifest.xml`: VIEW + SEND/SEND_MULTIPLE filters for the ebook MIME
+  types (epub/pdf/txt/comics/zip/octet-stream) plus extension pathPatterns.
+- `MainActivity` (`burrow/share_in` channel): reads the intent on every
+  `getSharedFiles` call (cold start + `onNewIntent`), copies `content://`
+  URIs to app-private `files/shared/` (100 MB cap, 20-file cap), hands each
+  URI out once. Re-shares reuse the stable path so they dedupe; same-name
+  different-content gets a numbered fallback.
+- `ShareIntentService.drainSharedFiles()`: never-throwing split into
+  supported books vs rejected files (unknown extensions would otherwise be
+  misfiled as TXT by `formatFromExtension`).
+- `LibraryScreen` drains post-frame and on every resume through the existing
+  `_importPaths` pipeline (single book opens immediately).
+- Tests: `test/share_intent_service_test.dart` (mock channel). Verified with
+  `flutter build apk --debug` + merged-manifest inspection. iOS share sheet
+  is out of scope (needs a Share Extension target).
+- Note: tree arrived with unrelated uncommitted edits (`reader_screen.dart`,
+  `settings_sheet.dart`, `reader_repagination_test.dart`, plus a
+  non-compiling `_LayoutMode` reference in `library_screen.dart` which this
+  change repaired to `LayoutMode`); all left untouched except the last.

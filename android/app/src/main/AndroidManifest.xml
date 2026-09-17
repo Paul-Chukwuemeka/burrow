@@ -29,6 +29,62 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Open book files tapped in file managers ("Open with"). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content"/>
+                <data android:mimeType="application/epub+zip"/>
+                <data android:mimeType="application/pdf"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="application/vnd.comicbook+zip"/>
+                <data android:mimeType="application/vnd.comicbook-rar"/>
+                <data android:mimeType="application/x-cbz"/>
+                <data android:mimeType="application/x-cbr"/>
+                <data android:mimeType="application/x-rar"/>
+                <data android:mimeType="application/zip"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="file"/>
+                <data android:host="*"/>
+                <data android:pathPattern=".*\\.epub"/>
+                <data android:pathPattern=".*\\.pdf"/>
+                <data android:pathPattern=".*\\.txt"/>
+                <data android:pathPattern=".*\\.cbz"/>
+                <data android:pathPattern=".*\\.cbr"/>
+            </intent-filter>
+            <!-- Receive book files shared from other apps (WhatsApp, etc.). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="application/epub+zip"/>
+                <data android:mimeType="application/pdf"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="application/vnd.comicbook+zip"/>
+                <data android:mimeType="application/vnd.comicbook-rar"/>
+                <data android:mimeType="application/x-cbz"/>
+                <data android:mimeType="application/x-cbr"/>
+                <data android:mimeType="application/x-rar"/>
+                <data android:mimeType="application/zip"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="application/epub+zip"/>
+                <data android:mimeType="application/pdf"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="application/vnd.comicbook+zip"/>
+                <data android:mimeType="application/vnd.comicbook-rar"/>
+                <data android:mimeType="application/x-cbz"/>
+                <data android:mimeType="application/x-cbr"/>
+                <data android:mimeType="application/x-rar"/>
+                <data android:mimeType="application/zip"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../models/reader_settings.dart';
-import '../services/brightness_controller.dart';
 
 /// Bottom sheet for reading preferences. Mutates the passed [settings] object
 /// and calls [onChanged] when a tweak is *settled* so the reader can
@@ -65,10 +64,6 @@ class _ThemedSheet extends StatefulWidget {
 
 class _ThemedSheetState extends State<_ThemedSheet> {
   Timer? _debounce;
-
-  // Guards the async brightness seed (same rationale as the reader chrome:
-  // a stale `current()` future must not overwrite a newer toggle).
-  int _brightnessSeedGen = 0;
 
   ReaderSettings get settings => widget.settings;
 
@@ -155,95 +150,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
     ],
   );
 
-  // ── Brightness (device-level, shared by all formats) ───────────────────────
-
-  Widget _buildBrightness(ReaderTheme theme) {
-    final system = settings.brightness == null;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ToggleRow(
-          icon: Icons.brightness_auto,
-          label: 'System brightness',
-          value: system,
-          theme: theme,
-          onChanged: _setSystemBrightness,
-        ),
-        Row(
-          children: [
-            Icon(Icons.brightness_low, color: theme.muted, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: SliderTheme(
-                data: SliderThemeData(
-                  activeTrackColor: theme.accent,
-                  thumbColor: theme.accent,
-                  inactiveTrackColor: theme.muted.withValues(alpha: 0.3),
-                ),
-                child: Slider(
-                  value: (settings.brightness ?? 1.0).clamp(
-                    kMinBrightness,
-                    1.0,
-                  ),
-                  min: kMinBrightness,
-                  max: 1.0,
-                  divisions: 19,
-                  onChanged: system
-                      ? null
-                      : (v) => _preview(() {
-                          settings.brightness = v;
-                          unawaited(
-                            BrightnessController.instance.apply(v),
-                          );
-                        }),
-                  onChangeEnd: (_) => _commit(),
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 44,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _setSystemBrightness(!system),
-                child: Text(
-                  system
-                      ? 'Auto'
-                      : '${((settings.brightness ?? 1.0) * 100).round()}%',
-                  style: TextStyle(fontSize: 12, color: theme.muted),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Toggles follow-system brightness. Turning system mode off seeds the level
-  /// from the controller and commits exactly once when the seed lands.
-  void _setSystemBrightness(bool system) {
-    if (system) {
-      _brightnessSeedGen++;
-      _update(() {
-        settings.brightness = null;
-        unawaited(BrightnessController.instance.apply(null));
-      });
-      return;
-    }
-    final gen = ++_brightnessSeedGen;
-    BrightnessController.instance.current().then((v) {
-      if (!mounted || gen != _brightnessSeedGen) return;
-      final lv = v.isFinite ? v.clamp(kMinBrightness, 1.0).toDouble() : 1.0;
-      setState(() {
-        settings.brightness = lv;
-        unawaited(BrightnessController.instance.apply(lv));
-      });
-      _commit();
-    });
-  }
-
   // ── Format-specific panels ─────────────────────────────────────────────────
 
   Widget _buildReflowablePanel(ReaderTheme theme) => Column(
@@ -264,15 +170,15 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                 isExpanded: true,
                 isDense: true,
                 borderRadius: BorderRadius.circular(12),
+                dropdownColor: theme.background,
                 selectedItemBuilder: (context) {
-                  final cs = Theme.of(context).colorScheme;
                   return [
                     for (final font in kReaderFonts)
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
                           font.label,
-                          style: TextStyle(fontSize: 14, color: cs.onSurface),
+                          style: TextStyle(fontSize: 14, color: theme.text),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -283,7 +189,7 @@ class _ThemedSheetState extends State<_ThemedSheet> {
                   for (final font in kReaderFonts)
                     DropdownMenuItem(
                       value: font.family ?? '',
-                      child: _HoverableDropdownItem(font: font),
+                      child: _HoverableDropdownItem(font: font, theme: theme),
                     ),
                 ],
                 onChanged: (v) => _update(
@@ -416,15 +322,24 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
           ),
           SegmentedButton<TextJustification>(
-            segments: const [
-              ButtonSegment(value: TextJustification.left, label: Text('Left')),
+            segments: [
+              ButtonSegment(
+                value: TextJustification.left,
+                label: const Text('Left'),
+              ),
               ButtonSegment(
                 value: TextJustification.justify,
-                label: Text('Justify'),
+                label: const Text('Justify'),
               ),
             ],
             selected: {settings.textJustification},
             showSelectedIcon: false,
+            style: ButtonStyle(
+              foregroundColor: WidgetStateProperty.resolveWith((states) =>
+                  states.contains(WidgetState.selected)
+                      ? Colors.white
+                      : theme.text),
+            ),
             onSelectionChanged: (s) =>
                 _update(() => settings.textJustification = s.first),
           ),
@@ -560,20 +475,20 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
           ),
           SegmentedButton<PdfLayoutDirection>(
-            segments: const [
+            segments: [
               ButtonSegment(
                 value: PdfLayoutDirection.vertical,
-                label: Text('Vert'),
+                label: Text('Vert', style: TextStyle(color: theme.text)),
                 icon: Icon(Icons.swap_vert, size: 16),
               ),
               ButtonSegment(
                 value: PdfLayoutDirection.horizontalLtr,
-                label: Text('\u2190'),
+                label: Text('\u2190', style: TextStyle(color: theme.text)),
                 icon: Icon(Icons.arrow_back, size: 16),
               ),
               ButtonSegment(
                 value: PdfLayoutDirection.horizontalRtl,
-                label: Text('\u2192'),
+                label: Text('\u2192', style: TextStyle(color: theme.text)),
                 icon: Icon(Icons.arrow_forward, size: 16),
               ),
             ],
@@ -656,15 +571,15 @@ class _ThemedSheetState extends State<_ThemedSheet> {
               ),
             ),
             SegmentedButton<ComicReadingDirection>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: ComicReadingDirection.ltr,
-                  label: Text('\u2190'),
+                  label: Text('\u2190', style: TextStyle(color: theme.text)),
                   icon: Icon(Icons.arrow_back, size: 16),
                 ),
                 ButtonSegment(
                   value: ComicReadingDirection.rtl,
-                  label: Text('\u2192'),
+                  label: Text('\u2192', style: TextStyle(color: theme.text)),
                   icon: Icon(Icons.arrow_forward, size: 16),
                 ),
               ],
@@ -688,12 +603,18 @@ class _ThemedSheetState extends State<_ThemedSheet> {
             ),
           ),
           SegmentedButton<ComicFitMode>(
-            segments: const [
-              ButtonSegment(value: ComicFitMode.contain, label: Text('Fit')),
-              ButtonSegment(value: ComicFitMode.fitWidth, label: Text('Width')),
+            segments: [
+              ButtonSegment(
+                value: ComicFitMode.contain,
+                label: Text('Fit', style: TextStyle(color: theme.text)),
+              ),
+              ButtonSegment(
+                value: ComicFitMode.fitWidth,
+                label: Text('Width', style: TextStyle(color: theme.text)),
+              ),
               ButtonSegment(
                 value: ComicFitMode.fitHeight,
-                label: Text('Height'),
+                label: Text('Height', style: TextStyle(color: theme.text)),
               ),
             ],
             selected: {settings.comicFitMode},
@@ -731,8 +652,6 @@ class _ThemedSheetState extends State<_ThemedSheet> {
           children: [
             _buildHandle(theme),
             const SizedBox(height: 16),
-            _buildBrightness(theme),
-            const SizedBox(height: 8),
             panel,
           ],
         ),
@@ -832,9 +751,10 @@ class _ToggleRow extends StatelessWidget {
 }
 
 class _HoverableDropdownItem extends StatefulWidget {
-  const _HoverableDropdownItem({required this.font});
+  const _HoverableDropdownItem({required this.font, required this.theme});
 
   final ReaderFont font;
+  final ReaderTheme theme;
 
   @override
   State<_HoverableDropdownItem> createState() => _HoverableDropdownItemState();
@@ -845,7 +765,6 @@ class _HoverableDropdownItemState extends State<_HoverableDropdownItem> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final label = widget.font.subtitle != null
         ? '${widget.font.label}  \u00b7  ${widget.font.subtitle}'
         : widget.font.label;
@@ -856,12 +775,12 @@ class _HoverableDropdownItemState extends State<_HoverableDropdownItem> {
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: _hovered ? scheme.surfaceContainerHigh : Colors.transparent,
+          color: _hovered ? widget.theme.muted.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
           label,
-          style: TextStyle(fontSize: 14, color: scheme.onSurface),
+          style: TextStyle(fontSize: 14, color: widget.theme.text),
         ),
       ),
     );
