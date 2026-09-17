@@ -13,6 +13,7 @@ import '../models/reader_settings.dart';
 import '../services/import_helper.dart';
 import '../services/library_service.dart';
 import '../services/scan_service.dart';
+import '../services/share_intent_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
 import '../utils/date_format.dart';
@@ -44,7 +45,8 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class _LibraryScreenState extends State<LibraryScreen>
+    with WidgetsBindingObserver {
   bool _busy = false;
   bool _fabOpen = false;
   bool _searchOpen = false;
@@ -69,10 +71,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   final _searchController = TextEditingController();
   StreamSubscription<MetadataStatus>? _metadataSubscription;
+  bool _drainingShares = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _drainSharedFiles());
     final saved = widget.library.libraryLayout;
     _layout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     widget.library.addListener(_onLibraryChanged);
@@ -106,6 +111,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.library.removeListener(_onLibraryChanged);
     _metadataSubscription?.cancel();
     _searchController.dispose();
@@ -118,6 +124,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final newLayout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     _cacheKey = null;
     setState(() => _layout = newLayout);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A share intent arriving while the app is open lands via onNewIntent;
+    // drain on every resume (cold-start shares are caught post-frame above).
+    if (state == AppLifecycleState.resumed) _drainSharedFiles();
+  }
+
+  /// Imports files shared from other apps (one tap opens a single book).
+  /// Re-entrant calls collapse: the native bridge hands each file out once.
+  Future<void> _drainSharedFiles() async {
+    if (_drainingShares) return;
+    _drainingShares = true;
+    try {
+      final (:supported, :unsupported) =
+          await ShareIntentService.drainSharedFiles();
+      if (!mounted) return;
+      if (supported.isEmpty) {
+        if (unsupported > 0) {
+          _snack('Only EPUB, PDF, TXT, CBZ and CBR files are supported');
+        }
+        return;
+      }
+      await _importPaths(supported, openFirst: supported.length == 1);
+      if (unsupported > 0 && mounted) {
+        _snack('Skipped $unsupported unsupported file(s)');
+      }
+    } finally {
+      _drainingShares = false;
+    }
   }
 
   Future<void> _loadFilters() async {

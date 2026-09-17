@@ -1873,3 +1873,28 @@ on placeholder blank pages.
   until the background pass reaches them, so the scrubber total grows into
   its final value; sequential reading never outruns the fill.
 - Leftover serial costs (full parse, awaited fonts) unchanged — follow-up.
+
+---
+
+## Open books shared from other apps (2026-09-17)
+
+WhatsApp / file-manager shares and "Open with" now land in the library:
+- `AndroidManifest.xml`: VIEW + SEND/SEND_MULTIPLE filters for the ebook MIME
+  types (epub/pdf/txt/comics/zip/octet-stream) plus extension pathPatterns.
+- `MainActivity` (`burrow/share_in` channel): reads the intent on every
+  `getSharedFiles` call (cold start + `onNewIntent`), copies `content://`
+  URIs to app-private `files/shared/` (100 MB cap, 20-file cap), hands each
+  URI out once. Re-shares reuse the stable path so they dedupe; same-name
+  different-content gets a numbered fallback.
+- `ShareIntentService.drainSharedFiles()`: never-throwing split into
+  supported books vs rejected files (unknown extensions would otherwise be
+  misfiled as TXT by `formatFromExtension`).
+- `LibraryScreen` drains post-frame and on every resume through the existing
+  `_importPaths` pipeline (single book opens immediately).
+- Tests: `test/share_intent_service_test.dart` (mock channel). Verified with
+  `flutter build apk --debug` + merged-manifest inspection. iOS share sheet
+  is out of scope (needs a Share Extension target).
+- Note: tree arrived with unrelated uncommitted edits (`reader_screen.dart`,
+  `settings_sheet.dart`, `reader_repagination_test.dart`, plus a
+  non-compiling `_LayoutMode` reference in `library_screen.dart` which this
+  change repaired to `LayoutMode`); all left untouched except the last.
