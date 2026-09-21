@@ -2,6 +2,7 @@ import '../models/book.dart';
 
 /// Cache for displayTitle to avoid re-running 7 regexes per access.
 final Map<String, String> _displayTitleCache = <String, String>{};
+const int _cacheMaxSize = 500;
 
 /// Filename cruft stripped from imported titles before display.
 ///
@@ -111,6 +112,12 @@ String cleanBookTitle(String raw) {
 
 extension BookDisplayTitle on Book {
   /// Cleaned display title; memoized to avoid re-running regex on every access.
-  String get displayTitle =>
-      _displayTitleCache[title] ??= cleanBookTitle(title);
+  String get displayTitle {
+    final cached = _displayTitleCache[title];
+    if (cached != null) return cached;
+    if (_displayTitleCache.length >= _cacheMaxSize) {
+      _displayTitleCache.clear();
+    }
+    return _displayTitleCache[title] = cleanBookTitle(title);
+  }
 }
