@@ -131,12 +131,16 @@ class LibraryService extends ChangeNotifier {
         }
         try {
           await importFile(path);
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('Failed to import $path: $e');
+        }
         completed++;
         scanImported = completed;
         // notifyListeners is called by importFile for each added book.
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Background scan failed: $e');
+    }
     _activeScan = null;
     scanImported = 0;
     scanTotal = 0;
