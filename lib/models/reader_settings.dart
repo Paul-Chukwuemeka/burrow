@@ -191,6 +191,7 @@ class ReaderSettings {
     this.textJustification = TextJustification.justify,
     this.horizontalMargin = 20,
     this.comicFitMode = ComicFitMode.contain,
+    this.lastZoomLevel = 1.0,
     this.uiFontFamily,
     this.uiTextScale = 1.0,
     this.respectCssStyles = true,
@@ -221,6 +222,9 @@ class ReaderSettings {
   TextJustification textJustification;
   double horizontalMargin;
   ComicFitMode comicFitMode;
+
+  /// Last zoom level used in PDF/comic reader (persists across sessions).
+  double lastZoomLevel;
 
   String? uiFontFamily;
   double uiTextScale;
@@ -266,6 +270,7 @@ class ReaderSettings {
     'textJustification': textJustification.name,
     'horizontalMargin': horizontalMargin,
     'comicFitMode': comicFitMode.name,
+    'lastZoomLevel': lastZoomLevel,
     'uiFontFamily': uiFontFamily,
     'uiTextScale': uiTextScale,
     'respectCssStyles': respectCssStyles,
@@ -336,6 +341,11 @@ class ReaderSettings {
     comicFitMode: ComicFitMode.values.firstWhere(
       (m) => m.name == json['comicFitMode'],
       orElse: () => ComicFitMode.contain,
+    ),
+    lastZoomLevel: _clampTo(
+      const (0.5, 5.0),
+      (json['lastZoomLevel'] as num?)?.toDouble() ?? 1.0,
+      1.0,
     ),
     uiFontFamily: json['uiFontFamily'] as String?,
     uiTextScale: _clampTo(

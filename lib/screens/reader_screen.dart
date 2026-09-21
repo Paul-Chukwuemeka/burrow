@@ -172,6 +172,14 @@ class ReaderScreenState extends State<ReaderScreen>
   bool _chromeVisible = false;
   Timer? _saveDebounce;
 
+  // Zoom state (PDF + comic).
+  bool _zoomMode = false;
+  double _zoomLevel = 1.0;
+  static const double _zoomStep = 0.15;
+  static const double _zoomMin = 0.5;
+  static const double _zoomMax = 4.0;
+  TransformationController? _comicTransformationController;
+
   // Guards the async brightness seed: a stale `current()` future must not
   // overwrite a mode toggle made while it was in flight.
   int _brightnessSeedGen = 0;
@@ -325,6 +333,7 @@ class ReaderScreenState extends State<ReaderScreen>
     );
     _searchCtrl.dispose();
     _dictOverlay?.dismissDictionaryButton();
+    _comicTransformationController?.dispose();
     _doc = null;
     WakelockPlus.disable();
     BrightnessController.instance.reset();
@@ -338,6 +347,87 @@ class ReaderScreenState extends State<ReaderScreen>
     _sessionCtrl.onLifecycleChanged(state);
     if (state == AppLifecycleState.resumed) {
       BrightnessController.instance.apply(_settings.brightness);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zoom (PDF + comic)
+  // ---------------------------------------------------------------------------
+
+  bool get _supportsZoom => _isPdf || _isComic;
+
+  void _toggleZoomMode() {
+    if (!_supportsZoom) return;
+    setState(() {
+      _zoomMode = !_zoomMode;
+      if (_zoomMode) {
+        // Enter zoom: restore last level or default to 1.1x
+        final saved = _settings.lastZoomLevel;
+        _zoomLevel = saved > 1.0 ? saved : 1.1;
+      } else {
+        // Exit zoom: reset to 1x
+        _zoomLevel = 1.0;
+      }
+    });
+    _applyZoom();
+  }
+
+  void _zoomIn() {
+    if (!_supportsZoom || !_zoomMode) return;
+    setState(() {
+      _zoomLevel = (_zoomLevel + _zoomStep).clamp(_zoomMin, _zoomMax);
+      _settings.lastZoomLevel = _zoomLevel;
+    });
+    _applyZoom();
+  }
+
+  void _zoomOut() {
+    if (!_supportsZoom || !_zoomMode) return;
+    setState(() {
+      _zoomLevel = (_zoomLevel - _zoomStep).clamp(_zoomMin, _zoomMax);
+      _settings.lastZoomLevel = _zoomLevel;
+    });
+    _applyZoom();
+  }
+
+  void _applyZoom() {
+    if (_isPdf) {
+      _applyPdfZoom();
+    } else if (_isComic) {
+      _applyComicZoom();
+    }
+  }
+
+  void _applyPdfZoom() {
+    if (!_pdfCtrl.pdfController.isReady) return;
+    final controller = _pdfCtrl.pdfController;
+    if (_zoomLevel <= 1.0) {
+      // Reset to fit: go to current page with center anchor
+      controller.goToPage(
+        pageNumber: _pdfCtrl.pdfPage,
+        anchor: PdfPageAnchor.center,
+      );
+    } else {
+      // Set zoom by going to current position with custom zoom
+      final currentZoom = controller.currentZoom;
+      if ((currentZoom - _zoomLevel).abs() > 0.01) {
+        controller.goToPosition(
+          documentOffset: controller.visibleRect.topLeft,
+          zoom: _zoomLevel,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    }
+  }
+
+  void _applyComicZoom() {
+    final tc = _comicTransformationController;
+    if (tc == null) return;
+    final currentScale = tc.value.getMaxScaleOnAxis();
+    if ((currentScale - _zoomLevel).abs() > 0.01) {
+      // Build a new matrix at the desired scale, centered
+      final matrix = Matrix4.diagonal3Values(_zoomLevel, _zoomLevel, 1.0);
+      tc.value = matrix;
     }
   }
 
@@ -1385,6 +1475,7 @@ class ReaderScreenState extends State<ReaderScreen>
                 onCenter: () =>
                     setState(() => _chromeVisible = !_chromeVisible),
               ),
+              onDoubleTapDown: (_) => _toggleZoomMode(),
             ),
           ),
         ],
@@ -1462,11 +1553,13 @@ class ReaderScreenState extends State<ReaderScreen>
 
   Widget _buildComicPaginated(ReaderTheme theme) {
     final rtl = _settings.comicReadingDirection == ComicReadingDirection.rtl;
+    _comicTransformationController ??= TransformationController();
     return Stack(
       children: [
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (details) {
+            if (_zoomMode) return; // let InteractiveViewer handle taps
             final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
             final dx = details.localPosition.dx;
             if (dx < w * 0.3) {
@@ -1477,6 +1570,7 @@ class ReaderScreenState extends State<ReaderScreen>
               setState(() => _chromeVisible = !_chromeVisible);
             }
           },
+          onDoubleTapDown: (_) => _toggleZoomMode(),
           child: PageView.builder(
             reverse: rtl,
             controller: _comicCtrl.comicPageController!,
@@ -1494,8 +1588,8 @@ class ReaderScreenState extends State<ReaderScreen>
               if (_comicCtrl.isLazy) _prefetchComicPages(i);
               if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(i);
             },
-            itemBuilder: (context, i) => Center(
-              child: _comicCtrl.isLazy
+            itemBuilder: (context, i) {
+              final page = _comicCtrl.isLazy
                   ? _LazyComicPageWidget(
                       provider: _comicCtrl.comicPageProvider!,
                       pageIndex: i,
@@ -1504,8 +1598,17 @@ class ReaderScreenState extends State<ReaderScreen>
                   : Image.memory(
                       _comicCtrl.comicPages[i],
                       fit: _comicCtrl.boxFit,
-                    ),
-            ),
+                    );
+              if (_zoomMode) {
+                return InteractiveViewer(
+                  transformationController: _comicTransformationController,
+                  minScale: 1.0,
+                  maxScale: _zoomMax,
+                  child: Center(child: page),
+                );
+              }
+              return Center(child: page);
+            },
           ),
         ),
         IgnorePointer(
@@ -1524,8 +1627,6 @@ class ReaderScreenState extends State<ReaderScreen>
                 ? '-/-'
                 : '${(((_comicCtrl.comicPage + 1) / _comicCtrl.comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              // Routed through the controller for hasClients/range guards
-              // (a bare jumpToPage throws with no PageView attached).
               _comicCtrl.jumpToPage(v - 1);
             },
           ),
@@ -1564,25 +1665,33 @@ class ReaderScreenState extends State<ReaderScreen>
     }
     return Stack(
       children: [
-        ListView.builder(
-          controller: controller,
-          padding: EdgeInsets.zero,
-          itemCount: _comicCtrl.comicPageCount,
-          itemBuilder: (context, i) => InteractiveViewer(
-            key: _comicCtrl.verticalPageKey(i),
-            minScale: 1.0,
-            maxScale: 4.0,
-            child: Center(
-              child: _comicCtrl.isLazy
-                  ? _LazyComicPageWidget(
-                      provider: _comicCtrl.comicPageProvider!,
-                      pageIndex: i,
-                      fit: _comicCtrl.boxFit,
-                    )
-                  : Image.memory(
-                      _comicCtrl.comicPages[i],
-                      fit: _comicCtrl.boxFit,
-                    ),
+        GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onDoubleTapDown: (_) => _toggleZoomMode(),
+          child: ListView.builder(
+            controller: controller,
+            padding: EdgeInsets.zero,
+            itemCount: _comicCtrl.comicPageCount,
+            itemBuilder: (context, i) => InteractiveViewer(
+              key: _comicCtrl.verticalPageKey(i),
+              transformationController: _zoomMode
+                  ? _comicTransformationController
+                  : null,
+              minScale: 1.0,
+              maxScale: _zoomMode ? _zoomMax : 1.0,
+              scaleEnabled: _zoomMode,
+              child: Center(
+                child: _comicCtrl.isLazy
+                    ? _LazyComicPageWidget(
+                        provider: _comicCtrl.comicPageProvider!,
+                        pageIndex: i,
+                        fit: _comicCtrl.boxFit,
+                      )
+                    : Image.memory(
+                        _comicCtrl.comicPages[i],
+                        fit: _comicCtrl.boxFit,
+                      ),
+              ),
             ),
           ),
         ),
@@ -1602,13 +1711,7 @@ class ReaderScreenState extends State<ReaderScreen>
                 ? '-/-'
                 : '${(((_comicCtrl.comicPage + 1) / _comicCtrl.comicPageCount) * 100).round()}%',
             onSliderChanged: (v) {
-              // Routed through the controller: guards hasClients/clamps to
-              // the extent and targets the item's actual position instead of
-              // assuming fixed page heights.
-              _comicCtrl.jumpToPage(
-                v - 1,
-                verticalViewportHeight: MediaQuery.sizeOf(context).height,
-              );
+              _comicCtrl.jumpToPage(v - 1);
             },
           ),
         ),
@@ -2096,6 +2199,22 @@ class ReaderScreenState extends State<ReaderScreen>
                               !_comicCtrl.comicPreviewVisible,
                         ),
                       ),
+                    if (_supportsZoom) ...[
+                      if (_zoomMode)
+                        IconButton(
+                          icon: Icon(Icons.zoom_out, color: theme.text),
+                          tooltip: 'Zoom out',
+                          onPressed: _zoomLevel > _zoomMin ? _zoomOut : null,
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          _zoomMode ? Icons.zoom_in : Icons.search,
+                          color: _zoomMode ? theme.accent : theme.text,
+                        ),
+                        tooltip: _zoomMode ? 'Zoom in' : 'Enter zoom',
+                        onPressed: _zoomMode ? _zoomIn : _toggleZoomMode,
+                      ),
+                    ],
                     IconButton(
                       icon: Icon(Icons.tune, color: theme.text),
                       tooltip: 'Display settings',
