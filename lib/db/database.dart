@@ -214,8 +214,14 @@ class AppDatabase extends _$AppDatabase {
   Future<void> updateBook(BooksCompanion book) async =>
       (update(books)..where((t) => t.id.equals(book.id.value))).write(book);
 
-  Future<void> deleteBookById(String id) async =>
-      (delete(books)..where((t) => t.id.equals(id))).go();
+  Future<void> deleteBookById(String id) async {
+    await transaction(() async {
+      await (delete(bookmarks)..where((t) => t.bookId.equals(id))).go();
+      await (delete(readingSessions)..where((t) => t.bookId.equals(id))).go();
+      await (delete(collectionBooks)..where((t) => t.bookId.equals(id))).go();
+      await (delete(books)..where((t) => t.id.equals(id))).go();
+    });
+  }
 
   // -- Meta (schema versioning) ----------------------------------------------
 
