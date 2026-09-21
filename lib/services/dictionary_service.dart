@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:lexicor/lexicor.dart';
 import 'package:path_provider/path_provider.dart';
@@ -18,6 +21,10 @@ class DictionaryService {
       'https://github.com/Paul-Chukwuemeka/burrow/releases/download/Dictionary/dictionary_full.sqlite';
 
   static const _dbFileName = 'dictionary_full.sqlite';
+
+  /// SHA-256 hash of the known-good dictionary database.
+  /// Updated when a new version is published. Empty string skips verification.
+  static const _expectedDbHash = '';
 
   Lexicor? _lexicor;
   bool _initializing = false;
@@ -52,7 +59,8 @@ class DictionaryService {
       return;
     }
     _initializing = true;
-    _initCompleter = Completer<void>();
+    final completer = Completer<void>();
+    _initCompleter = completer;
 
     try {
       final file = await _dbFile;
@@ -71,10 +79,10 @@ class DictionaryService {
         withDefinitions: true,
       );
 
-      if (!_initCompleter!.isCompleted) _initCompleter!.complete();
       _isDownloaded = true;
+      completer.complete();
     } catch (e) {
-      if (!_initCompleter!.isCompleted) _initCompleter!.completeError(e);
+      completer.completeError(e);
       rethrow;
     } finally {
       _initializing = false;
@@ -174,6 +182,16 @@ class DictionaryService {
       }
 
       await tempFile.rename(targetFile.path);
+
+      // Verify download integrity if a hash is configured.
+      if (_expectedDbHash.isNotEmpty) {
+        final bytes = await targetFile.readAsBytes();
+        final digest = sha256.convert(bytes);
+        if (digest.toString() != _expectedDbHash) {
+          await targetFile.delete();
+          throw StateError('Dictionary download integrity check failed');
+        }
+      }
     } finally {
       client.close();
     }
