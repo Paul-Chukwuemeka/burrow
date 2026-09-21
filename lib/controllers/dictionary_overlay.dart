@@ -12,12 +12,12 @@ import '../widgets/dictionary_sheet.dart';
 
 class DictionaryOverlay {
   DictionaryOverlay({
-    required this.context,
+    required BuildContext context,
     required this.theme,
     required this.library,
-  });
+  }) : _context = context;
 
-  final BuildContext context;
+  final BuildContext _context;
   final ReaderTheme theme;
   final LibraryService library;
 
@@ -114,7 +114,7 @@ class DictionaryOverlay {
       },
     );
 
-    Overlay.of(context).insert(_dictionaryButtonEntry!);
+    Overlay.of(_context).insert(_dictionaryButtonEntry!);
   }
 
   Widget _toolbarButton({required String label, required VoidCallback onTap}) {
@@ -146,22 +146,26 @@ class DictionaryOverlay {
   void dismissDictionaryButton() {
     try {
       _dictionaryButtonEntry?.remove();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to remove dictionary overlay: $e');
+    }
     _dictionaryButtonEntry = null;
     _selectedWordRange = null;
   }
 
   void openDictionarySheet(String word) {
+    if (!_context.mounted) return;
     if (DictionaryService.instance.isDownloaded) {
-      DictionarySheet.show(context, word: word.toLowerCase(), theme: theme);
+      DictionarySheet.show(_context, word: word.toLowerCase(), theme: theme);
     } else {
       showDownloadDialog(word);
     }
   }
 
   void showDownloadDialog(String word) {
+    if (!_context.mounted) return;
     showDialog(
-      context: context,
+      context: _context,
       builder: (ctx) => AlertDialog(
         backgroundColor: theme.background,
         title: Text(
@@ -181,7 +185,7 @@ class DictionaryOverlay {
             onPressed: () {
               Navigator.of(ctx).pop();
               SettingsScreen.show(
-                context,
+                _context,
                 library: library,
                 autoDownloadDictionary: true,
               );
