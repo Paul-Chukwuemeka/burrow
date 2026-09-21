@@ -745,5 +745,10 @@ CollectionBooksCompanion collectionBookFromJson(Map<String, dynamic> j) =>
 LazyDatabase _openConnection() => LazyDatabase(() async {
   final dir = await getApplicationDocumentsDirectory();
   final file = File(p.join(dir.path, 'burrow.db'));
-  return NativeDatabase(file);
+  return NativeDatabase(
+    file,
+    setup: (database) {
+      database.execute('PRAGMA foreign_keys = ON;');
+    },
+  );
 });
