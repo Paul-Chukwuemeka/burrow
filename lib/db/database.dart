@@ -94,6 +94,9 @@ class CollectionBooks extends Table {
   TextColumn get bookId => text().references(Books, #id)();
   IntColumn get addedAt => integer()();
   IntColumn get sortPosition => integer().withDefault(const Constant(0))();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [{collectionId, bookId}];
 }
 
 class _PerBookAggregate {
@@ -128,7 +131,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   /// Returns the local-midnight epoch-ms for the day containing [ms].
   /// Two timestamps on the same calendar day (in the device's local timezone)
@@ -191,6 +194,29 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks (book_id)',
         );
+      }
+      if (from < 7) {
+        // Recreate collection_books with unique constraint.
+        // SQLite doesn't support ALTER TABLE ADD CONSTRAINT, so we recreate.
+        await customStatement('''
+          CREATE TABLE collection_books_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            collection_id TEXT NOT NULL REFERENCES collections(id),
+            book_id TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            sort_position INTEGER DEFAULT 0,
+            UNIQUE(collection_id, book_id)
+          );
+        ''');
+        await customStatement('''
+          INSERT INTO collection_books_new (id, collection_id, book_id, added_at, sort_position)
+          SELECT id, collection_id, book_id, added_at, sort_position FROM collection_books;
+        ''');
+        await customStatement('DROP TABLE collection_books;');
+        await customStatement('ALTER TABLE collection_books_new RENAME TO collection_books;');
+        await customStatement('CREATE INDEX IF NOT EXISTS idx_reading_sessions_book_id ON reading_sessions (book_id);');
+        await customStatement('CREATE INDEX IF NOT EXISTS idx_collection_books_collection_id ON collection_books (collection_id);');
+        await customStatement('CREATE INDEX IF NOT EXISTS idx_collection_books_book_id ON collection_books (book_id);');
       }
     },
   );
@@ -495,7 +521,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> addBookToCollection(String collectionId, String bookId) async {
-    await into(collectionBooks).insert(
+    await into(collectionBooks).insertOnConflictUpdate(
       CollectionBooksCompanion.insert(
         collectionId: collectionId,
         bookId: bookId,

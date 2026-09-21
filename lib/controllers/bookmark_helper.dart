@@ -20,6 +20,7 @@ class BookmarkHelper extends ChangeNotifier {
 
   List<db.Bookmark> _bookmarks = [];
   bool _isCurrentPageBookmarked = false;
+  bool _disposed = false;
 
   List<db.Bookmark> get bookmarks => List.unmodifiable(_bookmarks);
   bool get isCurrentPageBookmarked => _isCurrentPageBookmarked;
@@ -28,7 +29,7 @@ class BookmarkHelper extends ChangeNotifier {
 
   Future<void> loadBookmarks() async {
     _bookmarks = await library.getBookmarks(book.id);
-    notifyListeners();
+    if (!_disposed) notifyListeners();
     await _checkBookmarkState();
   }
 
@@ -36,14 +37,14 @@ class BookmarkHelper extends ChangeNotifier {
     final pos = getCurrentPosition();
     if (pos == null) {
       _isCurrentPageBookmarked = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
       return;
     }
 
     if (isPdf) {
       final found = _bookmarks.any((bm) => bm.chapter == pos.chapter);
       _isCurrentPageBookmarked = found;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
       return;
     }
 
@@ -53,7 +54,7 @@ class BookmarkHelper extends ChangeNotifier {
       offset: pos.offset,
     );
     _isCurrentPageBookmarked = found;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> toggleBookmark() async {
@@ -96,5 +97,11 @@ class BookmarkHelper extends ChangeNotifier {
       );
     }
     await loadBookmarks();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
