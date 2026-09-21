@@ -743,7 +743,10 @@ class _LibraryScreenState extends State<LibraryScreen>
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      titleController.dispose();
+      authorController.dispose();
+    });
   }
 
   Future<void> _showBookDetailsSheet(Book book) async {
@@ -1020,7 +1023,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           ],
         ),
       ),
-    );
+    ).whenComplete(() => controller.dispose());
   }
 
   @override
@@ -1487,7 +1490,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           ],
         ),
       ),
-    );
+    ).whenComplete(() => controller.dispose());
   }
 
   void _showCollectionActions(db.Collection collection) {
@@ -1609,7 +1612,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           ],
         ),
       ),
-    );
+    ).whenComplete(() => controller.dispose());
   }
 
   Widget _bookGrid(double width, List<Book> books) {
