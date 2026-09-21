@@ -439,12 +439,6 @@ class ReaderScreenState extends State<ReaderScreen>
     _sessionCtrl.onPageFlipped();
     _anchorChapter = chapter;
     _anchorOffset = offsetInChapter;
-    var progress = _totalChars == 0
-        ? 0.0
-        : (_charsBefore[chapter] + offsetInChapter) / _totalChars;
-    // Last flat page must report 1.0 so `Book.isFinished` (>=0.999) is
-    // reachable. Otherwise the final page start still sits below 1.0.
-    if (_flatTotal > 0 && _flatPage >= _flatTotal - 1) progress = 1.0;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 600), () {
       _saveCurrentPosition();
