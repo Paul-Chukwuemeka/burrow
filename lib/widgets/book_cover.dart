@@ -256,8 +256,10 @@ class _FittedTitle extends StatelessWidget {
       maxLines: 3,
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: constraints.maxWidth);
-    return painter.height <= constraints.maxHeight &&
+    final fits = painter.height <= constraints.maxHeight &&
         !painter.didExceedMaxLines;
+    painter.dispose();
+    return fits;
   }
 }
 
