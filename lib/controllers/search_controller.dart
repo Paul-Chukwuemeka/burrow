@@ -82,7 +82,7 @@ class ReaderSearchController extends ChangeNotifier {
     }
     _searchDone = false;
     if (isPdf) {
-      _pdfSearcher!.startTextSearch(q);
+      _pdfSearcher?.startTextSearch(q);
     } else {
       _search?.search(q);
     }
@@ -95,7 +95,7 @@ class ReaderSearchController extends ChangeNotifier {
     if (q.isEmpty) return;
     _searchDone = false;
     if (isPdf) {
-      _pdfSearcher!.startTextSearch(q, searchImmediately: true);
+      _pdfSearcher?.startTextSearch(q, searchImmediately: true);
     } else {
       _search?.searchImmediate(q);
     }
@@ -115,7 +115,9 @@ class ReaderSearchController extends ChangeNotifier {
       // Safe: `?.` short-circuits without evaluating the argument when the
       // receiver is null, so `_pdfSearcherListener!` never throws here — but
       // only while both fields are always set/cleared together (see below).
-      _pdfSearcher?.removeListener(_pdfSearcherListener!);
+      if (_pdfSearcherListener != null) {
+        _pdfSearcher?.removeListener(_pdfSearcherListener!);
+      }
       _pdfSearcher?.resetTextSearch();
       _pdfSearcher?.dispose();
       _pdfSearcher = null;
@@ -156,7 +158,9 @@ class ReaderSearchController extends ChangeNotifier {
     _search?.dispose();
     // Same `?.` short-circuit guarantee as in toggleSearch: both fields are
     // set together in initPdfSearch and nulled together above/below.
-    _pdfSearcher?.removeListener(_pdfSearcherListener!);
+    if (_pdfSearcherListener != null) {
+      _pdfSearcher?.removeListener(_pdfSearcherListener!);
+    }
     _pdfSearcher?.resetTextSearch();
     _pdfSearcher?.dispose();
     _pdfSearcher = null;
