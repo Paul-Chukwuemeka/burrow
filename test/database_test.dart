@@ -1,6 +1,6 @@
 import 'package:burrow/db/database.dart';
 import 'package:burrow/models/book.dart';
-import 'package:drift/native.dart';
+import 'package:drift/native.dart' show NativeDatabase;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -139,6 +139,60 @@ void main() {
       expect(all.first.progress, 0.0); // drift default
       expect(all.first.lastChapter, 0); // drift default
       expect(all.first.lastOffset, 0); // drift default
+    });
+  });
+
+  group('Bookmarks', () {
+    test('insert and retrieve bookmarks for a book', () async {
+      await db.into(db.books).insert(
+        BooksCompanion.insert(
+          id: 'bm-test-1',
+          title: 'Bookmark Test',
+          path: '/tmp/test.epub',
+          format: BookFormat.epub,
+          addedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      await db.into(db.bookmarks).insert(
+        BookmarksCompanion.insert(
+          id: 'bm-1',
+          bookId: 'bm-test-1',
+          chapter: 1,
+          offset: 100,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      final results = await db.getBookmarksForBook('bm-test-1');
+      expect(results.length, 1);
+      expect(results.first.id, 'bm-1');
+    });
+
+    test('deleteBookById cascades to bookmarks', () async {
+      await db.into(db.books).insert(
+        BooksCompanion.insert(
+          id: 'cascade-test',
+          title: 'Cascade Test',
+          path: '/tmp/test.epub',
+          format: BookFormat.epub,
+          addedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      await db.into(db.bookmarks).insert(
+        BookmarksCompanion.insert(
+          id: 'cascade-bm',
+          bookId: 'cascade-test',
+          chapter: 1,
+          offset: 0,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      await db.deleteBookById('cascade-test');
+
+      final bookmarks = await db.getBookmarksForBook('cascade-test');
+      expect(bookmarks, isEmpty);
     });
   });
 }
