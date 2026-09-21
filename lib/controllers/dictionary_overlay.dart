@@ -114,6 +114,7 @@ class DictionaryOverlay {
       },
     );
 
+    if (!_context.mounted) return;
     Overlay.of(_context).insert(_dictionaryButtonEntry!);
   }
 

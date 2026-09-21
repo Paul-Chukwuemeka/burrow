@@ -20,8 +20,6 @@ class PdfReaderController extends ChangeNotifier {
   List<PdfOutlineNode> pdfOutline = [];
   bool pdfLoading = true;
   bool? pdfFileExists;
-  PdfTextSearcher? pdfSearcher;
-
   Future<void> _checkFileExists() async {
     try {
       pdfFileExists = await File(book.path).exists();
@@ -75,8 +73,6 @@ class PdfReaderController extends ChangeNotifier {
 
   @override
   void dispose() {
-    pdfSearcher?.resetTextSearch();
-    pdfSearcher = null;
     super.dispose();
   }
 }

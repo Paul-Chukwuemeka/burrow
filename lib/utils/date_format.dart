@@ -43,7 +43,7 @@ String formatPublicationDate(String raw) {
     if (d.hour == 0 && d.minute == 0 && d.second == 0) {
       return '${_monthNames[d.month - 1]} ${d.day}, ${d.year}';
     }
-    return '${_monthNames[d.month - 1]} ${d.day}, ${d.year} at ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+    return '${_monthNames[d.month - 1]} ${d.day}, ${d.year} at ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
 
   // Try extracting just a 4-digit year.

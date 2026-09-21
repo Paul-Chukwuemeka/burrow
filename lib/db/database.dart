@@ -202,14 +202,14 @@ class AppDatabase extends _$AppDatabase {
           CREATE TABLE collection_books_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             collection_id TEXT NOT NULL REFERENCES collections(id),
-            book_id TEXT NOT NULL,
+            book_id TEXT NOT NULL REFERENCES books(id),
             added_at INTEGER NOT NULL,
             sort_position INTEGER DEFAULT 0,
             UNIQUE(collection_id, book_id)
           );
         ''');
         await customStatement('''
-          INSERT INTO collection_books_new (id, collection_id, book_id, added_at, sort_position)
+          INSERT OR IGNORE INTO collection_books_new (id, collection_id, book_id, added_at, sort_position)
           SELECT id, collection_id, book_id, added_at, sort_position FROM collection_books;
         ''');
         await customStatement('DROP TABLE collection_books;');
