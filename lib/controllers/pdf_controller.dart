@@ -23,8 +23,12 @@ class PdfReaderController extends ChangeNotifier {
   PdfTextSearcher? pdfSearcher;
 
   Future<void> _checkFileExists() async {
-    pdfFileExists = await File(book.path).exists();
-    if (pdfFileExists == false) notifyListeners();
+    try {
+      pdfFileExists = await File(book.path).exists();
+    } catch (_) {
+      pdfFileExists = false;
+    }
+    notifyListeners();
   }
 
   void onPdfViewChanged() {
@@ -71,7 +75,6 @@ class PdfReaderController extends ChangeNotifier {
 
   @override
   void dispose() {
-    pdfController.removeListener(onPdfViewChanged);
     pdfSearcher?.resetTextSearch();
     pdfSearcher = null;
     super.dispose();
