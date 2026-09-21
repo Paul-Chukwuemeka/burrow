@@ -59,8 +59,12 @@ assets/*.cbr
 assets/*.txt
 
 .opencode
+.superpowers/
 # Local package overrides
 vendor/
+
+# Agent work artifacts
+docs/superpowers/
 
 **/design/*.md
 PLAN.md
