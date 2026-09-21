@@ -30,6 +30,7 @@ class ComicReaderController extends ChangeNotifier {
   final Set<int> comicPagesLoading = {};
   PageController? comicPageController;
   bool comicPreviewVisible = false;
+  String? comicError;
   final ScrollController comicPreviewScrollController = ScrollController();
 
   /// Per-page keys for the vertical list. Comic pages have variable heights,
@@ -38,8 +39,21 @@ class ComicReaderController extends ChangeNotifier {
   final Map<int, GlobalKey> _verticalPageKeys = {};
 
   /// Stable key for vertical-list item [index], created on demand.
-  GlobalKey verticalPageKey(int index) =>
-      _verticalPageKeys.putIfAbsent(index, () => GlobalKey());
+  GlobalKey verticalPageKey(int index) {
+    _evictOldKeys(index);
+    return _verticalPageKeys.putIfAbsent(index, () => GlobalKey());
+  }
+
+  void _evictOldKeys(int currentPage) {
+    if (_verticalPageKeys.length > 50) {
+      final keysToRemove = _verticalPageKeys.keys
+          .where((k) => (k - currentPage).abs() > 25)
+          .toList();
+      for (final k in keysToRemove) {
+        _verticalPageKeys.remove(k);
+      }
+    }
+  }
 
   bool get isLazy => comicPageProvider != null;
 
@@ -67,6 +81,7 @@ class ComicReaderController extends ChangeNotifier {
 
   Future<void> loadComicPages({VoidCallback? onLoaded}) async {
     _verticalPageKeys.clear();
+    comicError = null;
     try {
       if (book.format == BookFormat.cbz) {
         final provider = await ComicPageProvider.open(book.path);
@@ -121,6 +136,7 @@ class ComicReaderController extends ChangeNotifier {
     } catch (e) {
       if (!_mounted) return;
       comicLoading = false;
+      comicError = e.toString();
       notifyListeners();
     }
   }
