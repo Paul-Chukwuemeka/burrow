@@ -447,12 +447,7 @@ class ReaderScreenState extends State<ReaderScreen>
     if (_flatTotal > 0 && _flatPage >= _flatTotal - 1) progress = 1.0;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 600), () {
-      widget.library.savePosition(
-        id: _book.id,
-        chapter: chapter,
-        offset: offsetInChapter,
-        progress: progress,
-      );
+      _saveCurrentPosition();
     });
   }
 
@@ -492,6 +487,10 @@ class ReaderScreenState extends State<ReaderScreen>
       offset: offset,
       progress: progress,
     );
+  }
+
+  void _saveCurrentPosition() {
+    _savePositionFor(_anchorChapter, _anchorOffset);
   }
 
   // ---------------------------------------------------------------------------
