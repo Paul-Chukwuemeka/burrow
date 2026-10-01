@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -52,7 +54,14 @@ class ReaderScreen extends StatefulWidget {
 class ReaderScreenState extends State<ReaderScreen>
     with WidgetsBindingObserver {
   ReaderSettings get _settings => widget.library.settings;
-  Book get _book => widget.book;
+  Book get _book {
+    // Resolve via library so a relink (new path) is picked up without
+    // reopening the reader. Falls back to the opening snapshot.
+    for (final b in widget.library.books) {
+      if (b.id == widget.book.id) return b;
+    }
+    return widget.book;
+  }
 
   // Reflowable state.
   ParsedDocument? _doc;
@@ -303,6 +312,9 @@ class ReaderScreenState extends State<ReaderScreen>
       // the viewport. Deriving it from a second place risks a signature that
       // disagrees with the layout and repaginating forever.
       setState(() => _doc = doc);
+    } on FileSystemException {
+      if (!mounted) return;
+      setState(() => _error = 'File not found — it was moved or deleted.');
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.message);
@@ -1342,7 +1354,12 @@ class ReaderScreenState extends State<ReaderScreen>
     final theme = _settings.colors;
     Widget body;
     if (_error != null) {
-      body = _ErrorView(message: _error!);
+      body = _ErrorView(
+        message: _error!,
+        book: _book,
+        library: widget.library,
+        onRelinked: _retryAfterRelink,
+      );
     } else if (_isPdf) {
       body = _buildPdf(theme);
     } else if (_isComic) {
@@ -1373,7 +1390,12 @@ class ReaderScreenState extends State<ReaderScreen>
 
   Widget _buildPdf(ReaderTheme theme) {
     if (_pdfCtrl.pdfFileExists == false) {
-      return const _ErrorView(message: 'File not found');
+      return _ErrorView(
+        message: 'File not found',
+        book: _book,
+        library: widget.library,
+        onRelinked: _retryAfterRelink,
+      );
     }
     final viewer = PdfViewer.file(
       _book.path,
@@ -1531,12 +1553,42 @@ class ReaderScreenState extends State<ReaderScreen>
     if (!mounted) return;
   }
 
+  /// Reloads the current document after a successful Locate (relink).
+  /// Covers reflowable, comic and PDF paths; PDF rebuilds via [_book.path].
+  Future<void> _retryAfterRelink() async {
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+      _doc = null;
+    });
+    if (_isComic) {
+      await _loadComicPages();
+    } else if (_isPdf) {
+      setState(() {});
+    } else {
+      await _loadDocument();
+    }
+  }
+
   Widget _buildComic(ReaderTheme theme) {
     if (_comicCtrl.comicLoading) {
       return Center(child: CircularProgressIndicator(color: theme.accent));
     }
+    if (_comicCtrl.comicError != null) {
+      return _ErrorView(
+        message: _comicCtrl.comicError!,
+        book: _book,
+        library: widget.library,
+        onRelinked: _retryAfterRelink,
+      );
+    }
     if (_comicCtrl.comicPages.isEmpty) {
-      return const _ErrorView(message: 'No pages found in comic');
+      return _ErrorView(
+        message: 'No pages found in comic',
+        book: _book,
+        library: widget.library,
+        onRelinked: _retryAfterRelink,
+      );
     }
     if (_settings.comicReadingMode == ComicReadingMode.vertical) {
       return _buildComicVertical(theme);
@@ -2716,9 +2768,46 @@ class _PageContent extends StatelessWidget {
 }
 
 class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message});
+  const _ErrorView({
+    required this.message,
+    required this.book,
+    required this.library,
+    this.onRelinked,
+  });
 
   final String message;
+  final Book book;
+  final LibraryService library;
+  final Future<void> Function()? onRelinked;
+
+  Future<void> _locate(BuildContext context) async {
+    final files = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['epub', 'txt', 'pdf', 'cbz', 'cbr'],
+    );
+    if (files.isEmpty) return;
+    final path = files.map((f) => f.path).whereType<String>().firstOrNull;
+    if (path == null) return;
+    final relinked = await library.relinkToPath(book.id, path);
+    if (!context.mounted) return;
+    if (relinked != null) {
+      await onRelinked?.call();
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('File re-linked')));
+      }
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not link that file')));
+    }
+  }
+
+  Future<void> _remove(BuildContext context) async {
+    await library.deleteBookWithFile(book.id);
+    if (context.mounted) Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2736,6 +2825,15 @@ class _ErrorView extends StatelessWidget {
           OutlinedButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Go back'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => _locate(context),
+            child: const Text('Locate file'),
+          ),
+          TextButton(
+            onPressed: () => _remove(context),
+            child: const Text('Remove'),
           ),
         ],
       ),

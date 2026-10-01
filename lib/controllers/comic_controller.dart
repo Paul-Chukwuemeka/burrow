@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -133,6 +134,11 @@ class ComicReaderController extends ChangeNotifier {
       if (pages.isNotEmpty) {
         unawaited(library.setCoverIfMissing(book, pages.first));
       }
+    } on FileSystemException {
+      if (!_mounted) return;
+      comicLoading = false;
+      comicError = 'File not found — it was moved or deleted.';
+      notifyListeners();
     } catch (e) {
       if (!_mounted) return;
       comicLoading = false;
