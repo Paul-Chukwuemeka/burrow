@@ -416,6 +416,9 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  bool debugHasPendingImport(String path) => _pendingImports.contains(path);
+
   // ---------------------------------------------------------------------------
   // Backup / restore
   // ---------------------------------------------------------------------------
@@ -636,7 +639,11 @@ class LibraryService extends ChangeNotifier {
         final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
         final hitId = findRelinkCandidate(size: st.size, mtimeMs: st.modified.millisecondsSinceEpoch, format: formatFromExtension(path), missing: candidates);
         if (hitId != null) {
-          return relinkToPath(hitId, path);
+          // Awaited inside try/finally so _pendingImports still covers the
+          // relink: a bare `return relinkToPath(...)` would run finally
+          // (clearing pending) before the relink completes.
+          final relinked = await relinkToPath(hitId, path);
+          return relinked;
         }
       } catch (_) {}
 
@@ -1184,7 +1191,24 @@ class LibraryService extends ChangeNotifier {
     final idx = _books.indexWhere((b) => b.id == id);
     if (idx < 0) return null;
     final old = _books[idx];
-    final st = await File(newPath).stat();
+    // Existence/type check: the relink target must be a real file. A
+    // missing path (moved away again, stale Locate pick) returns null
+    // instead of throwing; DB errors below still throw.
+    FileStat st;
+    try {
+      final type = await FileSystemEntity.type(newPath);
+      if (type == FileSystemEntityType.notFound ||
+          type == FileSystemEntityType.directory) {
+        return null;
+      }
+      st = await File(newPath).stat();
+      if (st.type == FileSystemEntityType.notFound ||
+          st.type == FileSystemEntityType.directory) {
+        return null;
+      }
+    } on FileSystemException {
+      return null;
+    }
     final updated = Book(
       id: old.id,
       title: old.title,

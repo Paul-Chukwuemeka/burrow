@@ -65,4 +65,34 @@ void main() {
     expect(lib.bookById('g1'), isNull);
     expect(lib.bookById('k1'), isNotNull);
   });
+
+  test('relinkToPath missing target returns null and stays missing', () async {
+    final lib = LibraryService();
+    lib.debugAddAll([_b('ghost', '/tmp/burrow-nope/old.epub')]);
+    lib.debugMarkMissing('ghost');
+    final result = await lib.relinkToPath('ghost', '/tmp/definitely-not-here-xyz.epub');
+    expect(result, isNull);
+    expect(lib.isMissing('ghost'), isTrue);
+    expect(lib.bookById('ghost')?.path, '/tmp/burrow-nope/old.epub');
+  });
+
+  test('pending import cleared after auto relink', () async {
+    final dir = await Directory.systemTemp.createTemp('burrow-relink-pending');
+    final f = File('${dir.path}/moved.epub')..writeAsBytesSync([7, 7, 7]);
+    final st = await f.stat();
+    final lib = LibraryService();
+    lib.debugAddAll([
+      Book(id: 'ghost', title: 'G', author: '', path: '${dir.path}/old.epub', format: BookFormat.epub, addedAt: 1, fileSize: st.size, mtimeMs: st.modified.millisecondsSinceEpoch),
+    ]);
+    await lib.reconcileMissingFiles();
+    expect(lib.isMissing('ghost'), isTrue);
+    final result = await lib.importFileFast(f.path);
+    expect(result?.id, 'ghost');
+    expect(lib.debugHasPendingImport(f.path), isFalse);
+    // Second call is answered by the library (duplicate), not stuck pending.
+    final again = await lib.importFileFast(f.path);
+    expect(again, isNull);
+    expect(lib.containsPath(f.path), isTrue);
+    expect(lib.debugHasPendingImport(f.path), isFalse);
+  });
 }
