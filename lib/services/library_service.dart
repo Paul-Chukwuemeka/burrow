@@ -53,6 +53,12 @@ class LibraryService extends ChangeNotifier {
   db.AppDatabase? _db;
   final List<Book> _books = [];
   List<Book>? _sortedCache;
+  final Set<String> _missingIds = {};
+  bool _storageUnavailable = false;
+
+  Set<String> get missingIds => Set.unmodifiable(_missingIds);
+  bool get storageUnavailable => _storageUnavailable;
+  bool isMissing(String id) => _missingIds.contains(id);
   final Set<String> _pendingImports = {};
   final List<db.Collection> _collections = [];
   ReaderSettings settings = ReaderSettings();
@@ -279,6 +285,8 @@ class LibraryService extends ChangeNotifier {
 
     notifyListeners();
 
+    unawaited(reconcileMissingFiles());
+
     // Sweep stale/orphaned parsed-document cache entries (and earlier cache
     // schema versions) in the background.
     unawaited(DocumentParser.pruneCache([for (final b in _books) b.path]));
@@ -290,6 +298,61 @@ class LibraryService extends ChangeNotifier {
         _autoOrganizeComics().then((_) => prefs.setBool(_comicsOrganizedKey, true)),
       );
     }
+  }
+
+  Future<void> reconcileMissingFiles() async {
+    _missingIds.clear();
+    _storageUnavailable = false;
+    if (_books.isEmpty) {
+      notifyListeners();
+      return;
+    }
+    var missing = 0;
+    var rootMissing = 0;
+    var checkedRoots = <String>{};
+    for (var i = 0; i < _books.length; i++) {
+      final b = _books[i];
+      bool exists = false;
+      try {
+        exists = await File(b.path).exists();
+      } catch (_) {
+        exists = false;
+      }
+      if (!exists) {
+        missing++;
+        // Parent check: if the parent dir itself is gone, count as root-missing.
+        try {
+          final parent = File(b.path).parent.path;
+          if (checkedRoots.add(parent)) {
+            if (!await Directory(parent).exists()) rootMissing++;
+          }
+        } catch (_) {}
+        _missingIds.add(b.id);
+      } else {
+        // Path-exists wins: refresh fingerprint lazily.
+        try {
+          final st = await File(b.path).stat();
+          final size = st.size;
+          final mtime = st.modified.millisecondsSinceEpoch;
+          if (b.fileSize != size || b.mtimeMs != mtime) {
+            b.fileSize = size;
+            b.mtimeMs = mtime;
+            if (_db != null) {
+              await _db!.updateBook(db.bookToCompanionForUpdate(b));
+            }
+          }
+        } catch (_) {}
+      }
+      if (i % 50 == 49) await Future<void>.delayed(Duration.zero);
+    }
+    // Mass-vanish guard: >50% missing OR any root dir gone with high missing rate.
+    if (_books.isNotEmpty &&
+        (missing / _books.length > 0.5 || (rootMissing > 0 && missing > 2))) {
+      // Verify: if every missing file's parent is gone, it's storage, not deletes.
+      _storageUnavailable = true;
+      _missingIds.clear();
+    }
+    notifyListeners();
   }
 
   Future<void> saveSettings() async {
@@ -756,6 +819,10 @@ class LibraryService extends ChangeNotifier {
       while (!_disposed) {
         final i = next++;
         if (i >= total) return;
+        if (_missingIds.contains(work[i])) {
+          completed++;
+          continue;
+        }
         final book = index[work[i]];
         if (book == null || book.metadataComplete) {
           completed++;
