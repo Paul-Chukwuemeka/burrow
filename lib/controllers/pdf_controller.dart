@@ -29,6 +29,19 @@ class PdfReaderController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-checks existence for [path] (used after a Locate/relink, since
+  /// [book] is the opening snapshot and [pdfFileExists] is cached).
+  Future<void> recheckExists(String path) async {
+    pdfFileExists = null;
+    notifyListeners();
+    try {
+      pdfFileExists = await File(path).exists();
+    } catch (_) {
+      pdfFileExists = false;
+    }
+    notifyListeners();
+  }
+
   void onPdfViewChanged() {
     if (!pdfController.isReady) return;
     final count = pdfController.pageCount;

@@ -1399,6 +1399,7 @@ class ReaderScreenState extends State<ReaderScreen>
     }
     final viewer = PdfViewer.file(
       _book.path,
+      key: ValueKey(_book.path),
       initialPageNumber: _book.lastChapter + 1 < 1 ? 1 : _book.lastChapter + 1,
       controller: _pdfCtrl.pdfController,
       params: PdfViewerParams(
@@ -1554,7 +1555,10 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   /// Reloads the current document after a successful Locate (relink).
-  /// Covers reflowable, comic and PDF paths; PDF rebuilds via [_book.path].
+  /// Covers reflowable, comic and PDF paths. PDF re-checks file existence
+  /// (cached [PdfReaderController.pdfFileExists]) and resets loading state
+  /// so the viewer rebuilds with the new [_book.path] instead of
+  /// re-rendering the same _ErrorView.
   Future<void> _retryAfterRelink() async {
     if (!mounted) return;
     setState(() {
@@ -1564,6 +1568,9 @@ class ReaderScreenState extends State<ReaderScreen>
     if (_isComic) {
       await _loadComicPages();
     } else if (_isPdf) {
+      _pdfCtrl.pdfLoading = true;
+      await _pdfCtrl.recheckExists(_book.path);
+      if (!mounted) return;
       setState(() {});
     } else {
       await _loadDocument();
@@ -2781,6 +2788,8 @@ class _ErrorView extends StatelessWidget {
   final Future<void> Function()? onRelinked;
 
   Future<void> _locate(BuildContext context) async {
+    // file_picker v12 returns List<PlatformFile> (empty on cancel), same
+    // pattern as library_screen _locateBook.
     final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['epub', 'txt', 'pdf', 'cbz', 'cbr'],
