@@ -18,6 +18,7 @@ import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
 import 'document_parser.dart';
+import 'missing_matcher.dart';
 
 /// Status event for metadata extraction.
 class MetadataStatus {
@@ -345,9 +346,14 @@ class LibraryService extends ChangeNotifier {
       }
       if (i % 50 == 49) await Future<void>.delayed(Duration.zero);
     }
-    // Mass-vanish guard: >50% missing OR any root dir gone with high missing rate.
+    // Mass-vanish guard: storage (SD card / USB) ejection removes whole
+    // directories, so only treat a mass disappearance as storage failure
+    // when at least one parent dir is itself gone. Files deleted with
+    // parents intact are real deletes/moves even at a high missing rate
+    // (e.g. a single-book library whose file was moved for re-link).
     if (_books.isNotEmpty &&
-        (missing / _books.length > 0.5 || (rootMissing > 0 && missing > 2))) {
+        rootMissing > 0 &&
+        (missing / _books.length > 0.5 || missing > 2)) {
       // Verify: if every missing file's parent is gone, it's storage, not deletes.
       _storageUnavailable = true;
       _missingIds.clear();
@@ -401,6 +407,14 @@ class LibraryService extends ChangeNotifier {
   }
 
   bool containsPath(String path) => _books.any((b) => b.path == path);
+
+  Book? bookById(String id) => _books.where((b) => b.id == id).firstOrNull;
+
+  @visibleForTesting
+  void debugMarkMissing(String id) {
+    _missingIds.add(id);
+    notifyListeners();
+  }
 
   // ---------------------------------------------------------------------------
   // Backup / restore
@@ -616,7 +630,25 @@ class LibraryService extends ChangeNotifier {
       if (containsPath(path)) return null;
 
       final format = formatFromExtension(path);
+      // Auto re-link: unknown path may be a moved file.
+      try {
+        final st = await File(path).stat();
+        final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
+        final hitId = findRelinkCandidate(size: st.size, mtimeMs: st.modified.millisecondsSinceEpoch, format: formatFromExtension(path), missing: candidates);
+        if (hitId != null) {
+          return relinkToPath(hitId, path);
+        }
+      } catch (_) {}
+
       final title = _titleFromFilename(path);
+
+      int? sz;
+      int? mt;
+      try {
+        final st = await File(path).stat();
+        sz = st.size;
+        mt = st.modified.millisecondsSinceEpoch;
+      } catch (_) {}
 
       final book = Book(
         id: _newId(),
@@ -626,6 +658,8 @@ class LibraryService extends ChangeNotifier {
         format: format,
         addedAt: DateTime.now().millisecondsSinceEpoch,
         metadataComplete: false,
+        fileSize: sz,
+        mtimeMs: mt,
       );
 
       _books.add(book);
@@ -677,6 +711,29 @@ class LibraryService extends ChangeNotifier {
         _pendingImports.add(path);
         pendingPaths.add(path);
         try {
+          // Auto re-link: unknown path may be a moved file.
+          String? hitId;
+          int? sz;
+          int? mt;
+          try {
+            final st = await File(path).stat();
+            sz = st.size;
+            mt = st.modified.millisecondsSinceEpoch;
+            final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
+            // Note: batch books are never missing, so only check existing.
+            hitId = findRelinkCandidate(
+              size: st.size,
+              mtimeMs: st.modified.millisecondsSinceEpoch,
+              format: formatFromExtension(path),
+              missing: candidates,
+            );
+          } catch (_) {}
+          // Defer relink until after loop to avoid mutating _books mid-scan?
+          // Safe to relink immediately: _books is only appended below.
+          if (hitId != null) {
+            await relinkToPath(hitId, path);
+            continue;
+          }
           batch.add(
             Book(
               id: _newId(),
@@ -686,6 +743,8 @@ class LibraryService extends ChangeNotifier {
               format: formatFromExtension(path),
               addedAt: DateTime.now().millisecondsSinceEpoch,
               metadataComplete: false,
+              fileSize: sz,
+              mtimeMs: mt,
             ),
           );
         } catch (e) {
@@ -1116,8 +1175,64 @@ class LibraryService extends ChangeNotifier {
       }
     }
     _books.remove(book);
+    _missingIds.remove(id);
     _invalidateSortCache();
     notifyListeners();
+  }
+
+  Future<Book?> relinkToPath(String id, String newPath) async {
+    final idx = _books.indexWhere((b) => b.id == id);
+    if (idx < 0) return null;
+    final old = _books[idx];
+    final st = await File(newPath).stat();
+    final updated = Book(
+      id: old.id,
+      title: old.title,
+      author: old.author,
+      path: newPath,
+      format: old.format,
+      coverPath: old.coverPath,
+      addedAt: old.addedAt,
+      lastReadAt: old.lastReadAt,
+      progress: old.progress,
+      lastChapter: old.lastChapter,
+      lastOffset: old.lastOffset,
+      description: old.description,
+      annotation: old.annotation,
+      genre: old.genre,
+      seriesName: old.seriesName,
+      seriesIndex: old.seriesIndex,
+      publisher: old.publisher,
+      isbn: old.isbn,
+      language: old.language,
+      review: old.review,
+      publicationDate: old.publicationDate,
+      rights: old.rights,
+      type: old.type,
+      source: old.source,
+      titleSort: old.titleSort,
+      authorSort: old.authorSort,
+      metadataComplete: old.metadataComplete,
+      fileSize: st.size,
+      mtimeMs: st.modified.millisecondsSinceEpoch,
+    );
+    _books[idx] = updated;
+    if (_db != null) {
+      await _db!.updateBook(db.bookToCompanionForUpdate(updated));
+    }
+    await DocumentParser.clearCacheFor(old.path);
+    _missingIds.remove(id);
+    _invalidateSortCache();
+    notifyListeners();
+    return updated;
+  }
+
+  Future<int> removeAllMissing() async {
+    final ids = _missingIds.toList();
+    for (final id in ids) {
+      await deleteBookWithFile(id, deleteFile: false);
+    }
+    return ids.length;
   }
 
   /// Updates book metadata. Pass null to leave unchanged.
