@@ -44,6 +44,8 @@ class Books extends Table {
   TextColumn? get authorSort => text().nullable()();
   BoolColumn get metadataComplete =>
       boolean().withDefault(const Constant(false))();
+  IntColumn? get fileSize => integer().nullable()();
+  IntColumn? get mtimeMs => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -131,7 +133,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   /// Returns the local-midnight epoch-ms for the day containing [ms].
   /// Two timestamps on the same calendar day (in the device's local timezone)
@@ -217,6 +219,17 @@ class AppDatabase extends _$AppDatabase {
         await customStatement('CREATE INDEX IF NOT EXISTS idx_reading_sessions_book_id ON reading_sessions (book_id);');
         await customStatement('CREATE INDEX IF NOT EXISTS idx_collection_books_collection_id ON collection_books (collection_id);');
         await customStatement('CREATE INDEX IF NOT EXISTS idx_collection_books_book_id ON collection_books (book_id);');
+      }
+      if (from < 8) {
+        if (!await hasColumn('books', 'file_size')) {
+          await m.addColumn(books, books.fileSize);
+        }
+        if (!await hasColumn('books', 'mtime_ms')) {
+          await m.addColumn(books, books.mtimeMs);
+        }
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_books_path ON books (path);',
+        );
       }
     },
   );
@@ -624,6 +637,8 @@ Book bookFromRow(BookRow row) => Book(
   titleSort: row.titleSort,
   authorSort: row.authorSort,
   metadataComplete: row.metadataComplete,
+  fileSize: row.fileSize,
+  mtimeMs: row.mtimeMs,
 );
 
 BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
@@ -654,6 +669,8 @@ BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
   titleSort: Value(book.titleSort),
   authorSort: Value(book.authorSort),
   metadataComplete: Value(book.metadataComplete),
+  fileSize: Value(book.fileSize),
+  mtimeMs: Value(book.mtimeMs),
 );
 
 BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
@@ -684,6 +701,8 @@ BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
   titleSort: Value(book.titleSort),
   authorSort: Value(book.authorSort),
   metadataComplete: Value(book.metadataComplete),
+  fileSize: Value(book.fileSize),
+  mtimeMs: Value(book.mtimeMs),
 );
 
 BooksCompanion positionToUpdate({

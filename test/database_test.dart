@@ -140,6 +140,24 @@ void main() {
       expect(all.first.lastChapter, 0); // drift default
       expect(all.first.lastOffset, 0); // drift default
     });
+
+    test('v8 stores fileSize and mtimeMs', () async {
+      // makeBook helper has no fingerprint yet — construct explicitly:
+      final withPrint = Book(
+        id: 'fp1',
+        title: 'FP',
+        author: 'A',
+        path: '/tmp/a.epub',
+        format: BookFormat.epub,
+        addedAt: 1000,
+        fileSize: 12345,
+        mtimeMs: 999000,
+      );
+      await db.insertBook(bookToCompanion(withPrint));
+      final all = await db.getAllBooks();
+      expect(all.first.fileSize, 12345);
+      expect(all.first.mtimeMs, 999000);
+    });
   });
 
   group('Bookmarks', () {

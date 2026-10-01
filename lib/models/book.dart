@@ -53,6 +53,8 @@ class Book {
     this.titleSort,
     this.authorSort,
     this.metadataComplete = false,
+    this.fileSize,
+    this.mtimeMs,
   });
 
   final String id;
@@ -99,6 +101,9 @@ class Book {
   /// Whether full metadata (author, description, cover, etc.) has been extracted.
   bool metadataComplete;
 
+  int? fileSize;
+  int? mtimeMs;
+
   bool get isStarted => lastReadAt > 0;
   bool get isFinished => progress >= 0.999;
 
@@ -130,6 +135,8 @@ class Book {
     'titleSort': titleSort,
     'authorSort': authorSort,
     'metadataComplete': metadataComplete,
+    'fileSize': fileSize,
+    'mtimeMs': mtimeMs,
   };
 
   static Book fromJson(Map<String, dynamic> json) {
@@ -171,6 +178,8 @@ class Book {
       titleSort: json['titleSort'] as String?,
       authorSort: json['authorSort'] as String?,
       metadataComplete: json['metadataComplete'] as bool? ?? false,
+      fileSize: json['fileSize'] as int?,
+      mtimeMs: json['mtimeMs'] as int?,
     );
   }
 
