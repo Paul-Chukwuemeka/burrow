@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +19,7 @@ import '../utils/date_format.dart';
 import '../utils/file_size.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/book_grid.dart';
 import '../widgets/library_filter_widgets.dart';
 import '../widgets/library_header.dart';
 import '../widgets/library_sheet_widgets.dart';
@@ -68,6 +68,7 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   List<Book>? _cachedVisibleBooks;
   String? _cacheKey;
+  bool _storageBannerDismissed = false;
 
   final _searchController = TextEditingController();
   StreamSubscription<MetadataStatus>? _metadataSubscription;
@@ -338,7 +339,12 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   Future<void> _openBook(Book book, {String? heroTag}) async {
     if (!await File(book.path).exists()) {
-      _snack('"${book.displayTitle}" is no longer on this device');
+      final missing = widget.library.isMissing(book.id);
+      _snack(
+        missing
+            ? '"${book.displayTitle}" is marked Missing — locate or remove it'
+            : '"${book.displayTitle}" is no longer on this device',
+      );
       return;
     }
     if (!mounted) return;
@@ -790,11 +796,57 @@ class _LibraryScreenState extends State<LibraryScreen>
             const Divider(indent: 16, endIndent: 16),
             DetailRow(label: 'Format', value: book.format.name.toUpperCase()),
             DetailRow(label: 'File size', value: fileSize),
+            if (widget.library.isMissing(book.id))
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 4,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'File missing — moved or deleted',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             DetailRow(label: 'Added', value: formatDate(book.addedAt)),
             if (book.lastReadAt > 0)
               DetailRow(label: 'Last read', value: formatDate(book.lastReadAt)),
             DetailRow(label: 'Progress', value: book.progressLabel),
             DetailRow(label: 'Path', value: book.path, isFile: true),
+            if (widget.library.isMissing(book.id))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(sheetContext);
+                          await _locateBook(book);
+                        },
+                        icon: const Icon(Icons.find_in_page_outlined, size: 20),
+                        label: const Text('Locate…'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _showRemoveBookSheet(book);
+                        },
+                        icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                        label: const Text('Remove'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -866,6 +918,29 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _locateBook(Book book) async {
+    final files = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['epub', 'txt', 'pdf', 'cbz', 'cbr'],
+    );
+    if (files.isEmpty) return;
+    final path = files.map((f) => f.path).whereType<String>().firstOrNull;
+    if (path == null) return;
+    final relinked = await widget.library.relinkToPath(book.id, path);
+    if (!mounted) return;
+    _snack(
+      relinked != null
+          ? 'Re-linked "${book.displayTitle}"'
+          : 'Could not link that file',
+    );
+  }
+
+  Future<void> _removeAllMissing() async {
+    final count = await widget.library.removeAllMissing();
+    if (!mounted) return;
+    _snack('Removed $count missing book${count == 1 ? '' : 's'}');
   }
 
   void _showAddToCollectionSheet(Book book) {
@@ -1071,6 +1146,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                         StatsScreen.show(context, library: widget.library),
                     onExport: _exportLibrary,
                     onImportBackup: _importLibrary,
+                    onRemoveAllMissing: _removeAllMissing,
                     onSettings: () =>
                         SettingsScreen.show(context, library: widget.library),
                     onSearch: () => setState(() {
@@ -1086,6 +1162,27 @@ class _LibraryScreenState extends State<LibraryScreen>
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                         child: _ScanningBanner(library: widget.library),
+                      ),
+                    ),
+                  if (hasLibrary &&
+                      widget.library.storageUnavailable &&
+                      !_storageBannerDismissed)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                        child: MaterialBanner(
+                          content: const Text(
+                            'Storage unavailable — missing check skipped',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => setState(
+                                () => _storageBannerDismissed = true,
+                              ),
+                              child: const Text('Dismiss'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   if (hasLibrary)
@@ -1616,32 +1713,27 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   Widget _bookGrid(double width, List<Book> books) {
-    const maxTileExtent = 300.0;
-    const crossSpacing = 12.0;
-    const mainSpacing = 14.0;
-    const cardPadding = 6.0;
-    const textBlock = 58.0;
-
-    final columns = math.max(1, (width / maxTileExtent).ceil());
-    final tileWidth = (width - crossSpacing * (columns - 1)) / columns;
-    final coverWidth = tileWidth - cardPadding * 2;
-    final mainAxisExtent =
-        cardPadding + coverWidth / Burrow.coverAspectRatio + textBlock;
-
     return SliverGrid.builder(
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: crossSpacing,
-        mainAxisSpacing: mainSpacing,
-        mainAxisExtent: mainAxisExtent,
-      ),
+      gridDelegate: bookGridDelegate(width),
       itemCount: books.length,
       itemBuilder: (context, i) {
         final book = books[i];
-        return BookCard(
+        final missing = widget.library.isMissing(book.id);
+        final card = BookCard(
           book: book,
           onTap: () => _openBookInfo(book, heroTag: 'tile-${book.id}'),
           onLongPress: () => _showBookActions(book),
+        );
+        if (!missing) return card;
+        return Stack(
+          children: [
+            Opacity(opacity: 0.55, child: card),
+            const Positioned(
+              top: 8,
+              left: 8,
+              child: Chip(label: Text('Missing')),
+            ),
+          ],
         );
       },
     );
@@ -1652,10 +1744,22 @@ class _LibraryScreenState extends State<LibraryScreen>
       itemCount: books.length,
       itemBuilder: (context, i) {
         final book = books[i];
-        return BookListCard(
+        final missing = widget.library.isMissing(book.id);
+        final card = BookListCard(
           book: book,
           onTap: () => _openBookInfo(book, heroTag: 'tile-${book.id}'),
           onLongPress: () => _showBookActions(book),
+        );
+        if (!missing) return card;
+        return Stack(
+          children: [
+            Opacity(opacity: 0.55, child: card),
+            const Positioned(
+              top: 8,
+              left: 8,
+              child: Chip(label: Text('Missing')),
+            ),
+          ],
         );
       },
     );

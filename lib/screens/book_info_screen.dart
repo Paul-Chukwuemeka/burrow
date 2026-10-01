@@ -343,6 +343,30 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                           label: 'File size',
                           value: fileSize,
                         ),
+                        if (library.isMissing(book.id))
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 18,
+                                  color: scheme.error,
+                                ),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Text(
+                                    'File missing — moved or deleted',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         _InfoRow(
                           icon: Icons.calendar_today_outlined,
                           label: 'Added',
@@ -471,10 +495,13 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                   onPressed: () async {
                     if (!await File(book.path).exists()) {
                       if (!context.mounted) return;
+                      final missing = library.isMissing(book.id);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            '"${book.displayTitle}" is no longer on this device',
+                            missing
+                                ? '"${book.displayTitle}" is marked Missing — locate or remove it'
+                                : '"${book.displayTitle}" is no longer on this device',
                           ),
                         ),
                       );

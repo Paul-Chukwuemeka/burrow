@@ -13,6 +13,7 @@ class BurrowHeader extends StatelessWidget {
     this.onStats,
     this.onExport,
     this.onImportBackup,
+    this.onRemoveAllMissing,
     this.onSettings,
     this.onSearch,
   });
@@ -24,6 +25,7 @@ class BurrowHeader extends StatelessWidget {
   final VoidCallback? onStats;
   final VoidCallback? onExport;
   final VoidCallback? onImportBackup;
+  final VoidCallback? onRemoveAllMissing;
   final VoidCallback? onSettings;
   final VoidCallback? onSearch;
 
@@ -62,6 +64,7 @@ class BurrowHeader extends StatelessWidget {
             onSelected: (key) {
               if (key == 'export') onExport!();
               if (key == 'import') onImportBackup!();
+              if (key == 'remove-missing') onRemoveAllMissing?.call();
               if (key == 'settings') onSettings?.call();
             },
             itemBuilder: (_) => const [
@@ -77,6 +80,13 @@ class BurrowHeader extends StatelessWidget {
                 child: ListTile(
                   leading: Icon(Icons.restore_rounded),
                   title: Text('Restore backup'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'remove-missing',
+                child: ListTile(
+                  leading: Icon(Icons.delete_sweep_outlined),
+                  title: Text('Remove all missing'),
                 ),
               ),
               PopupMenuItem(

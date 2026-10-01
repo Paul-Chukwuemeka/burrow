@@ -64,9 +64,14 @@ class _AuthorScreenState extends State<AuthorScreen> {
   Future<void> _openBook(Book book) async {
     if (!await File(book.path).exists()) {
       if (!mounted) return;
+      final missing = widget.library.isMissing(book.id);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('"${book.displayTitle}" is no longer on this device'),
+          content: Text(
+            missing
+                ? '"${book.displayTitle}" is marked Missing — locate or remove it'
+                : '"${book.displayTitle}" is no longer on this device',
+          ),
         ),
       );
       return;
