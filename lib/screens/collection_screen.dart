@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/book_selection.dart';
 import '../db/database.dart' as db;
 import '../models/book.dart';
 import '../services/library_service.dart';
+import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
 import '../widgets/book_card.dart';
@@ -41,14 +43,28 @@ class _CollectionScreenState extends State<CollectionScreen> {
   List<Book> _books = [];
   bool _reorderMode = false;
 
+  late final _selection = BookSelection();
+
+  void _onSelectionChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _selection.addListener(_onSelectionChanged);
     _sort = _SortMode.values[widget.collection.sortType.clamp(0, 2)];
     _layout = widget.library.libraryLayout == 'list'
         ? _LayoutMode.list
         : _LayoutMode.grid;
     _loadBooks();
+  }
+
+  @override
+  void dispose() {
+    _selection.removeListener(_onSelectionChanged);
+    _selection.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBooks() async {
@@ -90,6 +106,177 @@ class _CollectionScreenState extends State<CollectionScreen> {
       _loadBooks();
       setState(() {});
     }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Books currently selected, in visible order.
+  List<Book> get _selectedBooks {
+    final ids = _selection.selectedIds;
+    return _books.where((b) => ids.contains(b.id)).toList();
+  }
+
+  void _selectAllVisible() {
+    _selection.selectAll(_books.map((b) => b.id));
+  }
+
+  /// Contextual action bar shown while books are selected. Mirrors the
+  /// library screen pattern (Task 4); the bulk action here removes from
+  /// this collection instead of deleting.
+  Widget _selectionBar() {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = _selectedBooks;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Material(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(Burrow.shapeSm + 4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                color: scheme.onPrimaryContainer,
+                tooltip: 'Clear selection',
+                onPressed: _selection.clear,
+              ),
+              Expanded(
+                child: Text(
+                  '${_selection.count} selected',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: _selectAllVisible,
+                child: const Text('Select all'),
+              ),
+              // Exactly one book: the single-book remove sheet stays
+              // reachable.
+              if (selected.length == 1)
+                IconButton(
+                  icon: const Icon(Icons.more_vert_rounded),
+                  color: scheme.onPrimaryContainer,
+                  tooltip: 'More actions',
+                  onPressed: () => _showRemoveBook(selected.first),
+                ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded),
+                color: scheme.onPrimaryContainer,
+                tooltip: 'Remove from collection',
+                onPressed: () => _showRemoveSelectedSheet(_selectedBooks),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Batch remove-from-collection sheet: one confirm step for N books, then
+  /// a collected-errors [LibraryService.removeBookFromCollection] loop (no
+  /// new service API). Notification comes from the loop's ops.
+  void _showRemoveSelectedSheet(List<Book> books) {
+    if (books.isEmpty) return;
+    final scheme = Theme.of(context).colorScheme;
+    final ids = [for (final b in books) b.id];
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        minimum: const EdgeInsets.only(bottom: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+              child: Text(
+                books.length == 1
+                    ? 'Remove "${books.first.displayTitle}" from this collection?'
+                    : 'Remove ${books.length} books from this collection?',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: scheme.errorContainer,
+                        foregroundColor: scheme.onErrorContainer,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(sheetContext);
+                        var removed = 0;
+                        final errors = <Object>[];
+                        for (final id in ids) {
+                          try {
+                            await widget.library.removeBookFromCollection(
+                              widget.collection.id,
+                              id,
+                            );
+                            removed++;
+                          } catch (e) {
+                            errors.add(e);
+                          }
+                        }
+                        _selection.clear();
+                        await _loadBooks();
+                        if (!mounted) return;
+                        if (errors.isEmpty) {
+                          _snack(
+                            'Removed $removed book${removed == 1 ? '' : 's'} '
+                            'from "${widget.collection.name}"',
+                          );
+                        } else if (removed == 0) {
+                          _snack('${errors.length} of ${ids.length} failed');
+                        } else {
+                          _snack(
+                            'Removed $removed of ${ids.length} '
+                            '(${errors.length} failed)',
+                          );
+                        }
+                      },
+                      child: const Text('Remove'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _onReorder(int oldIndex, int newIndex) async {
@@ -166,79 +353,93 @@ class _CollectionScreenState extends State<CollectionScreen> {
     final scheme = Theme.of(context).colorScheme;
     _applySort();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.collection.name),
-            if (_books.isNotEmpty)
-              Text(
-                '${_books.length} book${_books.length == 1 ? '' : 's'}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-          ],
-        ),
-        actions: [
-          if (_sort == _SortMode.manual)
-            IconButton(
-              icon: Icon(
-                _reorderMode ? Icons.done_rounded : Icons.reorder_rounded,
-              ),
-              tooltip: _reorderMode ? 'Done' : 'Reorder',
-              onPressed: () => setState(() => _reorderMode = !_reorderMode),
-            ),
-          PillChip(
-            label: _sortLabel(_sort),
-            icon: Icons.sort_rounded,
-            onTap: () => setState(() {
-              _sort =
-                  _SortMode.values[(_sort.index + 1) % _SortMode.values.length];
-              if (_sort != _SortMode.manual) _reorderMode = false;
-            }),
+    return PopScope(
+      // Back clears the selection first instead of leaving the screen.
+      canPop: !_selection.isSelecting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _selection.isSelecting) _selection.clear();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.collection.name),
+              if (_books.isNotEmpty)
+                Text(
+                  '${_books.length} book${_books.length == 1 ? '' : 's'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(width: 8),
-          if (!_reorderMode) ...[
+          actions: [
+            if (_sort == _SortMode.manual)
+              IconButton(
+                icon: Icon(
+                  _reorderMode ? Icons.done_rounded : Icons.reorder_rounded,
+                ),
+                tooltip: _reorderMode ? 'Done' : 'Reorder',
+                onPressed: () => setState(() => _reorderMode = !_reorderMode),
+              ),
             PillChip(
-              label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
-              icon: _layout == _LayoutMode.grid
-                  ? Icons.grid_view_rounded
-                  : Icons.view_list_rounded,
-              onTap: () {
-                final next = _LayoutMode
-                    .values[(_layout.index + 1) % _LayoutMode.values.length];
-                setState(() => _layout = next);
-                widget.library.saveLibraryLayout(next.name);
-              },
+              label: _sortLabel(_sort),
+              icon: Icons.sort_rounded,
+              onTap: () => setState(() {
+                _sort = _SortMode
+                    .values[(_sort.index + 1) % _SortMode.values.length];
+                if (_sort != _SortMode.manual) _reorderMode = false;
+              }),
             ),
             const SizedBox(width: 8),
-          ],
-        ],
-      ),
-      body: _books.isEmpty
-          ? Center(
-              child: Text(
-                'No books in this collection',
-                style: TextStyle(color: scheme.onSurfaceVariant),
+            if (!_reorderMode) ...[
+              PillChip(
+                label: _layout == _LayoutMode.grid ? 'Grid' : 'List',
+                icon: _layout == _LayoutMode.grid
+                    ? Icons.grid_view_rounded
+                    : Icons.view_list_rounded,
+                onTap: () {
+                  final next = _LayoutMode
+                      .values[(_layout.index + 1) % _LayoutMode.values.length];
+                  setState(() => _layout = next);
+                  widget.library.saveLibraryLayout(next.name);
+                },
               ),
-            )
-          : _reorderMode
-          ? _reorderableList(context)
-          : _layout == _LayoutMode.grid
-          ? _bookGrid(context)
-          : _bookList(),
+              const SizedBox(width: 8),
+            ],
+          ],
+        ),
+        body: _books.isEmpty
+            ? Center(
+                child: Text(
+                  'No books in this collection',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              )
+            : Column(
+                children: [
+                  if (_selection.isSelecting) _selectionBar(),
+                  Expanded(
+                    child: _reorderMode
+                        ? _reorderableList(context)
+                        : _layout == _LayoutMode.grid
+                        ? _bookGrid(context)
+                        : _bookList(),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 
   List<_BookGroup> get _groupedBooks {
-    final comics = _books.where(
-      (b) => b.format == BookFormat.cbz || b.format == BookFormat.cbr,
-    ).toList();
-    final others = _books.where(
-      (b) => b.format != BookFormat.cbz && b.format != BookFormat.cbr,
-    ).toList();
+    final comics = _books
+        .where((b) => b.format == BookFormat.cbz || b.format == BookFormat.cbr)
+        .toList();
+    final others = _books
+        .where((b) => b.format != BookFormat.cbz && b.format != BookFormat.cbr)
+        .toList();
 
     if (comics.isEmpty) {
       return [if (_books.isNotEmpty) _BookGroup(null, _books)];
@@ -299,8 +500,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
             final book = books[i];
             return BookCard(
               book: book,
-              onTap: () => _openBookInfo(book),
-              onLongPress: () => _showRemoveBook(book),
+              selected: _selection.selectedIds.contains(book.id),
+              onTap: () => _selection.isSelecting
+                  ? _selection.toggle(book.id)
+                  : _openBookInfo(book),
+              onLongPress: () => _selection.isSelecting
+                  ? _selection.toggle(book.id)
+                  : _selection.enter(book.id),
             );
           },
         );
@@ -331,7 +537,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
                     ),
                   ),
                 GridView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: kBookGridPadding),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kBookGridPadding,
+                  ),
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: bookGridDelegate(width),
@@ -340,8 +548,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
                     final book = group.books[i];
                     return BookCard(
                       book: book,
-                      onTap: () => _openBookInfo(book),
-                      onLongPress: () => _showRemoveBook(book),
+                      selected: _selection.selectedIds.contains(book.id),
+                      onTap: () => _selection.isSelecting
+                          ? _selection.toggle(book.id)
+                          : _openBookInfo(book),
+                      onLongPress: () => _selection.isSelecting
+                          ? _selection.toggle(book.id)
+                          : _selection.enter(book.id),
                     );
                   },
                 ),
@@ -369,8 +582,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
         final book = books[i];
         return BookListCard(
           book: book,
-          onTap: () => _openBookInfo(book),
-          onLongPress: () => _showRemoveBook(book),
+          selected: _selection.selectedIds.contains(book.id),
+          onTap: () => _selection.isSelecting
+              ? _selection.toggle(book.id)
+              : _openBookInfo(book),
+          onLongPress: () => _selection.isSelecting
+              ? _selection.toggle(book.id)
+              : _selection.enter(book.id),
         );
       },
     );
@@ -390,16 +608,21 @@ class _CollectionScreenState extends State<CollectionScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
                 child: Text(
                   group.name!,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
             for (final book in group.books)
               BookListCard(
                 book: book,
-                onTap: () => _openBookInfo(book),
-                onLongPress: () => _showRemoveBook(book),
+                selected: _selection.selectedIds.contains(book.id),
+                onTap: () => _selection.isSelecting
+                    ? _selection.toggle(book.id)
+                    : _openBookInfo(book),
+                onLongPress: () => _selection.isSelecting
+                    ? _selection.toggle(book.id)
+                    : _selection.enter(book.id),
               ),
           ],
         );
