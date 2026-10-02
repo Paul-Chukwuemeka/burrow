@@ -249,6 +249,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                             errors.add(e);
                           }
                         }
+                        if (!mounted) return;
                         _selection.clear();
                         await _loadBooks();
                         if (!mounted) return;

@@ -261,8 +261,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
                           Navigator.pop(sheetContext);
                           final (deleted, errors) = await widget.library
                               .deleteBooks(ids, deleteFile: deleteFile);
-                          _selection.clear();
                           if (!mounted) return;
+                          _selection.clear();
                           if (errors.isEmpty) {
                             _snack(
                               'Deleted $deleted book${deleted == 1 ? '' : 's'}',
@@ -341,8 +341,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
                         .addBooksToCollection(c.id, [
                           for (final b in books) b.id,
                         ]);
-                    _selection.clear();
                     if (!mounted) return;
+                    _selection.clear();
                     if (errors.isEmpty) {
                       _snack(
                         'Added $added book${added == 1 ? '' : 's'} to "${c.name}"',
@@ -423,9 +423,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     for (final b in books) b.id,
                   ]);
                 }
-                _selection.clear();
                 if (sheetContext.mounted) Navigator.pop(sheetContext);
-                if (mounted) _snack('Added ${books.length} books to "$name"');
+                if (!mounted) return;
+                _selection.clear();
+                _snack('Added ${books.length} books to "$name"');
               },
             ),
             const SizedBox(height: 20),
@@ -450,10 +451,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
                           for (final b in books) b.id,
                         ]);
                       }
+                      if (!mounted) return;
                       _selection.clear();
-                      if (mounted) {
-                        _snack('Added ${books.length} books to "$name"');
-                      }
+                      _snack('Added ${books.length} books to "$name"');
                     },
                     child: const Text('Create & add'),
                   ),

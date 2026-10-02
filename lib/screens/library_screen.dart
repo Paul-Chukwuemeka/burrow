@@ -251,6 +251,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         formatFilters: _formatFilters,
         books: widget.library.books,
         onStatusChanged: (s) {
+          if (_selection.isSelecting) _selection.clear();
           setState(() {
             _statusFilter = switch (s) {
               ReadingStatus.all => _ReadingStatus.all,
@@ -262,18 +263,22 @@ class _LibraryScreenState extends State<LibraryScreen>
           _saveFilters();
         },
         onGenreChanged: (g) {
+          if (_selection.isSelecting) _selection.clear();
           setState(() => _genreFilter = g);
           _saveFilters();
         },
         onSeriesChanged: (s) {
+          if (_selection.isSelecting) _selection.clear();
           setState(() => _seriesFilter = s);
           _saveFilters();
         },
         onFormatsChanged: (f) {
+          if (_selection.isSelecting) _selection.clear();
           setState(() => _formatFilters = Set.of(f));
           _saveFilters();
         },
         onClearAll: () {
+          if (_selection.isSelecting) _selection.clear();
           setState(() {
             _statusFilter = _ReadingStatus.all;
             _genreFilter = null;
@@ -1076,8 +1081,8 @@ class _LibraryScreenState extends State<LibraryScreen>
                           Navigator.pop(sheetContext);
                           final (deleted, errors) = await widget.library
                               .deleteBooks(ids, deleteFile: deleteFile);
-                          _selection.clear();
                           if (!mounted) return;
+                          _selection.clear();
                           if (errors.isEmpty) {
                             _snack(
                               'Deleted $deleted book${deleted == 1 ? '' : 's'}',
@@ -1156,8 +1161,8 @@ class _LibraryScreenState extends State<LibraryScreen>
                         .addBooksToCollection(c.id, [
                           for (final b in books) b.id,
                         ]);
-                    _selection.clear();
                     if (!mounted) return;
+                    _selection.clear();
                     if (errors.isEmpty) {
                       _snack(
                         'Added $added book${added == 1 ? '' : 's'} to "${c.name}"',
@@ -1238,9 +1243,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                     for (final b in books) b.id,
                   ]);
                 }
-                _selection.clear();
                 if (sheetContext.mounted) Navigator.pop(sheetContext);
-                if (mounted) _snack('Added ${books.length} books to "$name"');
+                if (!mounted) return;
+                _selection.clear();
+                _snack('Added ${books.length} books to "$name"');
               },
             ),
             const SizedBox(height: 20),
@@ -1265,10 +1271,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                           for (final b in books) b.id,
                         ]);
                       }
+                      if (!mounted) return;
                       _selection.clear();
-                      if (mounted) {
-                        _snack('Added ${books.length} books to "$name"');
-                      }
+                      _snack('Added ${books.length} books to "$name"');
                     },
                     child: const Text('Create & add'),
                   ),
@@ -1501,12 +1506,15 @@ class _LibraryScreenState extends State<LibraryScreen>
                 slivers: [
                   BurrowHeader(
                     tab: _tab,
-                    onTabChanged: (tab) => setState(() {
-                      _tab = tab;
-                      _query = '';
-                      _searchController.clear();
-                      _searchOpen = false;
-                    }),
+                    onTabChanged: (tab) {
+                      if (_selection.isSelecting) _selection.clear();
+                      setState(() {
+                        _tab = tab;
+                        _query = '';
+                        _searchController.clear();
+                        _searchOpen = false;
+                      });
+                    },
                     activeFilterCount: _activeFilterCount,
                     onFilterTap: () => _showFilterSheet(context),
                     onStats: () =>
@@ -2105,7 +2113,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           children: [
             Opacity(opacity: 0.55, child: card),
             Positioned(
-              top: 8,
+              top: 36,
               left: 8,
               child: Chip(
                 label: const Text('Missing'),
@@ -2146,7 +2154,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           children: [
             Opacity(opacity: 0.55, child: card),
             Positioned(
-              top: 8,
+              top: 36,
               left: 8,
               child: Chip(
                 label: const Text('Missing'),
