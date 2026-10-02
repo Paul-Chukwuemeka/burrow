@@ -27,9 +27,10 @@ void main() {
 
   test('mass vanish means storage unavailable, not missing', () async {
     final lib = LibraryService();
+    final goneRoot = '${Directory.systemTemp.path}/burrow-nope';
     lib.debugAddAll([
-      _b('a', '/tmp/burrow-nope/a.epub'),
-      _b('b', '/tmp/burrow-nope/b.epub'),
+      _b('a', '$goneRoot/a.epub'),
+      _b('b', '$goneRoot/b.epub'),
     ]);
     await lib.reconcileMissingFiles();
     // Both parents missing + 100% missing -> guard trips.
@@ -74,6 +75,37 @@ void main() {
     expect(result, isNull);
     expect(lib.isMissing('ghost'), isTrue);
     expect(lib.bookById('ghost')?.path, '/tmp/burrow-nope/old.epub');
+  });
+
+  test('relinkToPath occupied path returns null, originals unchanged', () async {
+    final dir = await Directory.systemTemp.createTemp('burrow-relink-clash');
+    final owner = File('${dir.path}/owner.epub')..writeAsBytesSync([1, 2, 3]);
+    final lib = LibraryService();
+    lib.debugAddAll([
+      _b('owner', owner.path),
+      _b('ghost', '${dir.path}/old.epub'),
+    ]);
+    lib.debugMarkMissing('ghost');
+    final result = await lib.relinkToPath('ghost', owner.path);
+    expect(result, isNull);
+    expect(lib.isMissing('ghost'), isTrue);
+    expect(lib.bookById('ghost')?.path, '${dir.path}/old.epub');
+    expect(lib.bookById('owner')?.path, owner.path);
+  });
+
+  test('relinkToPath across formats updates format', () async {
+    final dir = await Directory.systemTemp.createTemp('burrow-relink-format');
+    final pdf = File('${dir.path}/moved.pdf')..writeAsBytesSync([4, 5, 6]);
+    final lib = LibraryService();
+    lib.debugAddAll([
+      _b('ghost', '${dir.path}/old.epub'),
+    ]);
+    lib.debugMarkMissing('ghost');
+    final result = await lib.relinkToPath('ghost', pdf.path);
+    expect(result, isNotNull);
+    expect(result?.format, BookFormat.pdf);
+    expect(lib.bookById('ghost')?.format, BookFormat.pdf);
+    expect(lib.isMissing('ghost'), isFalse);
   });
 
   test('pending import cleared after auto relink', () async {

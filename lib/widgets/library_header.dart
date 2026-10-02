@@ -14,6 +14,7 @@ class BurrowHeader extends StatelessWidget {
     this.onExport,
     this.onImportBackup,
     this.onRemoveAllMissing,
+    this.missingCount = 0,
     this.onSettings,
     this.onSearch,
   });
@@ -26,6 +27,7 @@ class BurrowHeader extends StatelessWidget {
   final VoidCallback? onExport;
   final VoidCallback? onImportBackup;
   final VoidCallback? onRemoveAllMissing;
+  final int missingCount;
   final VoidCallback? onSettings;
   final VoidCallback? onSearch;
 
@@ -64,18 +66,20 @@ class BurrowHeader extends StatelessWidget {
             onSelected: (key) {
               if (key == 'export') onExport!();
               if (key == 'import') onImportBackup!();
-              if (key == 'remove-missing') onRemoveAllMissing?.call();
+              if (key == 'remove-missing' && missingCount > 0) {
+                onRemoveAllMissing?.call();
+              }
               if (key == 'settings') onSettings?.call();
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
+            itemBuilder: (_) => [
+              const PopupMenuItem(
                 value: 'export',
                 child: ListTile(
                   leading: Icon(Icons.ios_share_rounded),
                   title: Text('Export library'),
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'import',
                 child: ListTile(
                   leading: Icon(Icons.restore_rounded),
@@ -84,12 +88,17 @@ class BurrowHeader extends StatelessWidget {
               ),
               PopupMenuItem(
                 value: 'remove-missing',
+                enabled: missingCount > 0,
                 child: ListTile(
-                  leading: Icon(Icons.delete_sweep_outlined),
-                  title: Text('Remove all missing'),
+                  leading: const Icon(Icons.delete_sweep_outlined),
+                  title: Text(
+                    missingCount > 0
+                        ? 'Remove all missing ($missingCount)'
+                        : 'Remove all missing',
+                  ),
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'settings',
                 child: ListTile(
                   leading: Icon(Icons.settings_outlined),

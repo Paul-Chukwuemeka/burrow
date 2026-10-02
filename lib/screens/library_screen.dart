@@ -69,6 +69,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   List<Book>? _cachedVisibleBooks;
   String? _cacheKey;
   bool _storageBannerDismissed = false;
+  bool _wasStorageUnavailable = false;
 
   final _searchController = TextEditingController();
   StreamSubscription<MetadataStatus>? _metadataSubscription;
@@ -124,6 +125,13 @@ class _LibraryScreenState extends State<LibraryScreen>
     final saved = widget.library.libraryLayout;
     final newLayout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     _cacheKey = null;
+    // Storage just dropped (false→true): re-arm the banner so a previous
+    // dismissal doesn't hide the new outage.
+    final unavailable = widget.library.storageUnavailable;
+    if (unavailable && !_wasStorageUnavailable) {
+      _storageBannerDismissed = false;
+    }
+    _wasStorageUnavailable = unavailable;
     setState(() => _layout = newLayout);
   }
 
@@ -1147,6 +1155,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                     onExport: _exportLibrary,
                     onImportBackup: _importLibrary,
                     onRemoveAllMissing: _removeAllMissing,
+                    missingCount: widget.library.missingIds.length,
                     onSettings: () =>
                         SettingsScreen.show(context, library: widget.library),
                     onSearch: () => setState(() {
@@ -1725,13 +1734,23 @@ class _LibraryScreenState extends State<LibraryScreen>
           onLongPress: () => _showBookActions(book),
         );
         if (!missing) return card;
+        final scheme = Theme.of(context).colorScheme;
         return Stack(
           children: [
             Opacity(opacity: 0.55, child: card),
-            const Positioned(
+            Positioned(
               top: 8,
               left: 8,
-              child: Chip(label: Text('Missing')),
+              child: Chip(
+                label: const Text('Missing'),
+                backgroundColor: scheme.errorContainer,
+                labelStyle: TextStyle(
+                  color: scheme.onErrorContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+                side: BorderSide.none,
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ],
         );
@@ -1751,13 +1770,23 @@ class _LibraryScreenState extends State<LibraryScreen>
           onLongPress: () => _showBookActions(book),
         );
         if (!missing) return card;
+        final scheme = Theme.of(context).colorScheme;
         return Stack(
           children: [
             Opacity(opacity: 0.55, child: card),
-            const Positioned(
+            Positioned(
               top: 8,
               left: 8,
-              child: Chip(label: Text('Missing')),
+              child: Chip(
+                label: const Text('Missing'),
+                backgroundColor: scheme.errorContainer,
+                labelStyle: TextStyle(
+                  color: scheme.onErrorContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+                side: BorderSide.none,
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ],
         );

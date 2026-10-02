@@ -349,14 +349,12 @@ class LibraryService extends ChangeNotifier {
       if (i % 50 == 49) await Future<void>.delayed(Duration.zero);
     }
     // Mass-vanish guard: storage (SD card / USB) ejection removes whole
-    // directories, so only treat a mass disappearance as storage failure
-    // when at least one parent dir is itself gone. Files deleted with
-    // parents intact are real deletes/moves even at a high missing rate
-    // (e.g. a single-book library whose file was moved for re-link).
+    // directories, so a mass disappearance counts as storage failure only
+    // when at least one parent dir is itself gone AND the missing share is
+    // large (ratio > 0.5) or absolute (more than 2 files).
     if (_books.isNotEmpty &&
         rootMissing > 0 &&
         (missing / _books.length > 0.5 || missing > 2)) {
-      // Verify: if every missing file's parent is gone, it's storage, not deletes.
       _storageUnavailable = true;
       _missingIds.clear();
     }
@@ -1207,6 +1205,10 @@ class LibraryService extends ChangeNotifier {
     final idx = _books.indexWhere((b) => b.id == id);
     if (idx < 0) return null;
     final old = _books[idx];
+    // Occupied-path guard: another book already owns newPath — refuse so
+    // two entries never point at the same file.
+    final ownerIdx = _books.indexWhere((b) => b.path == newPath);
+    if (ownerIdx >= 0 && _books[ownerIdx].id != id) return null;
     // Existence/type check: the relink target must be a real file. A
     // missing path (moved away again, stale Locate pick) returns null
     // instead of throwing; DB errors below still throw. Sync variants:
@@ -1231,7 +1233,9 @@ class LibraryService extends ChangeNotifier {
       title: old.title,
       author: old.author,
       path: newPath,
-      format: old.format,
+      // Entry follows the file: a cross-format relink (epub→pdf) updates
+      // format so the reader picks the correct parser.
+      format: formatFromExtension(newPath),
       coverPath: old.coverPath,
       addedAt: old.addedAt,
       lastReadAt: old.lastReadAt,

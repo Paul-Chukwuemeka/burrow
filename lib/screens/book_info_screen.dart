@@ -354,12 +354,12 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                                   color: scheme.error,
                                 ),
                                 const SizedBox(width: 12),
-                                const Expanded(
+                                Expanded(
                                   child: Text(
                                     'File missing — moved or deleted',
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: Colors.red,
+                                      color: scheme.error,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
