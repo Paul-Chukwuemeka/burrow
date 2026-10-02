@@ -1157,8 +1157,18 @@ class LibraryService extends ChangeNotifier {
   /// loss). If the transaction throws, no file is touched and the book stays
   /// in the library.
   Future<void> deleteBookWithFile(String id, {bool deleteFile = false}) async {
+    if (await _deleteBookInternal(id, deleteFile: deleteFile)) {
+      notifyListeners();
+    }
+  }
+
+  /// Deletes one book without notifying. Returns true if a book was removed.
+  ///
+  /// Unknown ids are a silent no-op (mirrors [deleteBookWithFile]'s early
+  /// return). Throws only on DB failure, in which case no file is touched.
+  Future<bool> _deleteBookInternal(String id, {bool deleteFile = false}) async {
     final book = _books.where((b) => b.id == id).firstOrNull;
-    if (book == null) return;
+    if (book == null) return false;
     if (_db != null) {
       await _db!.transaction(() async {
         await _db!.customStatement('DELETE FROM bookmarks WHERE book_id = ?', [
@@ -1198,7 +1208,7 @@ class LibraryService extends ChangeNotifier {
     _books.remove(book);
     _missingIds.remove(id);
     _invalidateSortCache();
-    notifyListeners();
+    return true;
   }
 
   Future<Book?> relinkToPath(String id, String newPath) async {
@@ -1278,6 +1288,50 @@ class LibraryService extends ChangeNotifier {
       await deleteBookWithFile(id, deleteFile: false);
     }
     return ids.length;
+  }
+
+  /// Deletes every book in [ids], collecting per-item failures instead of
+  /// throwing mid-batch. Unknown ids are a silent no-op mirroring
+  /// [deleteBookWithFile]. Notifies exactly once at the end.
+  Future<(int deleted, List<Object> errors)> deleteBooks(
+    Iterable<String> ids, {
+    bool deleteFile = false,
+  }) async {
+    var deleted = 0;
+    final errors = <Object>[];
+    for (final id in ids.toList()) {
+      try {
+        if (await _deleteBookInternal(id, deleteFile: deleteFile)) deleted++;
+      } catch (e) {
+        errors.add(e);
+      }
+    }
+    notifyListeners();
+    return (deleted, errors);
+  }
+
+  /// Adds every book in [ids] to [collectionId], collecting per-item failures
+  /// instead of throwing mid-batch. Duplicate adds fail with a UNIQUE
+  /// constraint from the store and land in [errors]. Notifies exactly once
+  /// at the end.
+  Future<(int added, List<Object> errors)> addBooksToCollection(
+    String collectionId,
+    Iterable<String> ids,
+  ) async {
+    var added = 0;
+    final errors = <Object>[];
+    for (final id in ids.toList()) {
+      try {
+        // Mirror single-op no-op when no database is attached.
+        if (_db == null) continue;
+        await _db!.addBookToCollection(collectionId, id);
+        added++;
+      } catch (e) {
+        errors.add(e);
+      }
+    }
+    notifyListeners();
+    return (added, errors);
   }
 
   /// Updates book metadata. Pass null to leave unchanged.
