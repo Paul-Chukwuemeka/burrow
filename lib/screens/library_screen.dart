@@ -1243,10 +1243,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                     for (final b in books) b.id,
                   ]);
                 }
-                if (sheetContext.mounted) Navigator.pop(sheetContext);
                 if (!mounted) return;
                 _selection.clear();
                 _snack('Added ${books.length} books to "$name"');
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
               },
             ),
             const SizedBox(height: 20),
@@ -2217,7 +2217,12 @@ class _LibraryScreenState extends State<LibraryScreen>
                             child: TextField(
                               controller: _searchController,
                               autofocus: true,
-                              onChanged: (v) => setState(() => _query = v),
+                              onChanged: (v) {
+                                if (_selection.isSelecting) {
+                                  _selection.clear();
+                                }
+                                setState(() => _query = v);
+                              },
                               style: Theme.of(context).textTheme.bodyLarge,
                               decoration: InputDecoration(
                                 hintText: 'Search your burrow',

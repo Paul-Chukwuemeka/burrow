@@ -413,10 +413,10 @@ class _AuthorScreenState extends State<AuthorScreen> {
                     for (final b in books) b.id,
                   ]);
                 }
-                if (sheetContext.mounted) Navigator.pop(sheetContext);
                 if (!mounted) return;
                 _selection.clear();
                 _snack('Added ${books.length} books to "$name"');
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
               },
             ),
             const SizedBox(height: 20),
