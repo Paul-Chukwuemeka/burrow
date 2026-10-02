@@ -13,6 +13,20 @@ void main() {
     await t.pumpWidget(MaterialApp(home: _BadgeProbe(isMissing: lib.isMissing('m'))));
     expect(find.text('Missing'), findsOneWidget);
   });
+
+  testWidgets('importFileFast completes for a nonexistent path', (t) async {
+    // Regression: await File(path).stat() never completes inside the
+    // testWidgets FakeAsync zone, so this hung pre-fix (outer timeout).
+    // .txt short-circuits metadata extraction (no disk IO) — the import
+    // itself must complete and add exactly 1 book with null fingerprint.
+    final lib = LibraryService();
+    addTearDown(lib.dispose);
+    final book = await lib.importFileFast('/tmp/burrow-nope/ghost-note.txt');
+    expect(book, isNotNull);
+    expect(lib.books.length, 1);
+    expect(book!.fileSize, isNull);
+    expect(book.mtimeMs, isNull);
+  });
 }
 
 class _BadgeProbe extends StatelessWidget {

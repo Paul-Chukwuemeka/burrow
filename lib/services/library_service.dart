@@ -315,7 +315,9 @@ class LibraryService extends ChangeNotifier {
       final b = _books[i];
       bool exists = false;
       try {
-        exists = await File(b.path).exists();
+        // Sync: async exists() never completes inside a testWidgets
+        // FakeAsync zone and would hang widget tests / onboarding scans.
+        exists = File(b.path).existsSync();
       } catch (_) {
         exists = false;
       }
@@ -325,14 +327,14 @@ class LibraryService extends ChangeNotifier {
         try {
           final parent = File(b.path).parent.path;
           if (checkedRoots.add(parent)) {
-            if (!await Directory(parent).exists()) rootMissing++;
+            if (!Directory(parent).existsSync()) rootMissing++;
           }
         } catch (_) {}
         _missingIds.add(b.id);
       } else {
         // Path-exists wins: refresh fingerprint lazily.
         try {
-          final st = await File(b.path).stat();
+          final st = FileStat.statSync(b.path);
           final size = st.size;
           final mtime = st.modified.millisecondsSinceEpoch;
           if (b.fileSize != size || b.mtimeMs != mtime) {
@@ -633,11 +635,25 @@ class LibraryService extends ChangeNotifier {
       if (containsPath(path)) return null;
 
       final format = formatFromExtension(path);
-      // Auto re-link: unknown path may be a moved file.
+      // Single sync probe: FileStat.statSync throws (caught below) for a
+      // missing path, and async stat never completes inside a testWidgets
+      // FakeAsync zone. Reuse the result for the relink probe + backfill.
+      FileStat? probe;
       try {
-        final st = await File(path).stat();
+        final st = FileStat.statSync(path);
+        // statSync returns (rather than throws) notFound/directory on some
+        // platforms — treat those as missing so the fingerprint stays null.
+        if (st.type != FileSystemEntityType.notFound &&
+            st.type != FileSystemEntityType.directory) {
+          probe = st;
+        }
+      } catch (_) {
+        probe = null;
+      }
+      if (probe != null) {
+        // Auto re-link: unknown path may be a moved file.
         final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
-        final hitId = findRelinkCandidate(size: st.size, mtimeMs: st.modified.millisecondsSinceEpoch, format: formatFromExtension(path), missing: candidates);
+        final hitId = findRelinkCandidate(size: probe.size, mtimeMs: probe.modified.millisecondsSinceEpoch, format: formatFromExtension(path), missing: candidates);
         if (hitId != null) {
           // Awaited inside try/finally so _pendingImports still covers the
           // relink: a bare `return relinkToPath(...)` would run finally
@@ -645,17 +661,12 @@ class LibraryService extends ChangeNotifier {
           final relinked = await relinkToPath(hitId, path);
           return relinked;
         }
-      } catch (_) {}
+      }
 
       final title = _titleFromFilename(path);
 
-      int? sz;
-      int? mt;
-      try {
-        final st = await File(path).stat();
-        sz = st.size;
-        mt = st.modified.millisecondsSinceEpoch;
-      } catch (_) {}
+      final int? sz = probe?.size;
+      final int? mt = probe?.modified.millisecondsSinceEpoch;
 
       final book = Book(
         id: _newId(),
@@ -718,22 +729,27 @@ class LibraryService extends ChangeNotifier {
         _pendingImports.add(path);
         pendingPaths.add(path);
         try {
-          // Auto re-link: unknown path may be a moved file.
+          // Auto re-link: unknown path may be a moved file. Single sync
+          // probe: async stat never completes inside a testWidgets
+          // FakeAsync zone; statSync throws (caught below) for missing.
           String? hitId;
           int? sz;
           int? mt;
           try {
-            final st = await File(path).stat();
-            sz = st.size;
-            mt = st.modified.millisecondsSinceEpoch;
-            final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
-            // Note: batch books are never missing, so only check existing.
-            hitId = findRelinkCandidate(
-              size: st.size,
-              mtimeMs: st.modified.millisecondsSinceEpoch,
-              format: formatFromExtension(path),
-              missing: candidates,
-            );
+            final st = FileStat.statSync(path);
+            if (st.type != FileSystemEntityType.notFound &&
+                st.type != FileSystemEntityType.directory) {
+              sz = st.size;
+              mt = st.modified.millisecondsSinceEpoch;
+              final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
+              // Note: batch books are never missing, so only check existing.
+              hitId = findRelinkCandidate(
+                size: st.size,
+                mtimeMs: st.modified.millisecondsSinceEpoch,
+                format: formatFromExtension(path),
+                missing: candidates,
+              );
+            }
           } catch (_) {}
           // Defer relink until after loop to avoid mutating _books mid-scan?
           // Safe to relink immediately: _books is only appended below.
@@ -1193,15 +1209,16 @@ class LibraryService extends ChangeNotifier {
     final old = _books[idx];
     // Existence/type check: the relink target must be a real file. A
     // missing path (moved away again, stale Locate pick) returns null
-    // instead of throwing; DB errors below still throw.
+    // instead of throwing; DB errors below still throw. Sync variants:
+    // async disk calls never complete inside a testWidgets FakeAsync zone.
     FileStat st;
     try {
-      final type = await FileSystemEntity.type(newPath);
+      final type = FileSystemEntity.typeSync(newPath);
       if (type == FileSystemEntityType.notFound ||
           type == FileSystemEntityType.directory) {
         return null;
       }
-      st = await File(newPath).stat();
+      st = FileStat.statSync(newPath);
       if (st.type == FileSystemEntityType.notFound ||
           st.type == FileSystemEntityType.directory) {
         return null;
