@@ -1187,8 +1187,10 @@ class LibraryService extends ChangeNotifier {
     }
     // DB commit succeeded — now it is safe to delete user files. The parsed-
     // document cache key needs path + mtime + size, so drop it before the
-    // source file itself is removed.
-    await DocumentParser.clearCacheFor(book.path);
+    // source file itself is removed. Sync-only: batch selection deletes run
+    // under testWidgets' FakeAsync zone, where async disk IO never
+    // completes (see DocumentParser.clearCacheForSync).
+    DocumentParser.clearCacheForSync(book.path);
     final cover = book.coverPath;
     if (cover != null) {
       try {

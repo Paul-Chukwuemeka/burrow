@@ -2243,13 +2243,18 @@ class DocumentParser {
   // Disk cache for parsed documents.
   // --------------------------------------------------------------------------
 
+  /// Memoized cache dir from [_resolveCacheDirPath]. Lets selection-speed
+  /// paths clear entries without awaiting async disk IO (which never
+  /// completes inside a testWidgets FakeAsync zone).
+  static String? _cacheDirPathCache;
+
   /// Resolves (and creates) the cache directory, or throws when the platform
   /// directory is unavailable. Must be called on the main isolate.
   static Future<String> _resolveCacheDirPath() async {
     final tmp = await getTemporaryDirectory();
     final dir = Directory('${tmp.path}/burrow_doc_cache');
     if (!dir.existsSync()) await dir.create(recursive: true);
-    return dir.path;
+    return _cacheDirPathCache = dir.path;
   }
 
   /// Main-isolate-safe resolver used by [parse]: returns null when the cache
@@ -2468,6 +2473,18 @@ class DocumentParser {
   /// Deletes the cache entry for [path], if one exists.
   static Future<void> clearCacheFor(String path) async {
     final dirPath = await _safeCacheDirPath();
+    if (dirPath != null) _deleteCacheFile(path, dirPath);
+  }
+
+  /// Synchronous best-effort twin of [clearCacheFor] for code paths that
+  /// must never await async disk IO — notably batch selection deletes,
+  /// which widget tests drive inside a FakeAsync zone where method-channel
+  /// and async file calls never complete. Uses the memoized cache dir and
+  /// is a no-op when the dir was never resolved this session; orphaned
+  /// entries are swept by [pruneCache], and the cache key folds in
+  /// path + mtime + size so a stale entry can never serve wrong content.
+  static void clearCacheForSync(String path) {
+    final dirPath = _cacheDirPathCache;
     if (dirPath != null) _deleteCacheFile(path, dirPath);
   }
 
