@@ -14,11 +14,15 @@ class BookCard extends StatelessWidget {
     required this.onTap,
     this.onLongPress,
     this.subtitle,
+    this.selected = false,
   });
 
   final Book book;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+
+  /// Whether the card shows the multi-select checkbox overlay.
+  final bool selected;
 
   /// Optional override for the text below the title (e.g. "#3" for series).
   final String? subtitle;
@@ -57,7 +61,7 @@ class BookCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: _CoverArea(book: book)),
+                    Expanded(child: _CoverArea(book: book, selected: selected)),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
                       child: MediaQuery(
@@ -119,11 +123,15 @@ class BookListCard extends StatelessWidget {
     required this.book,
     required this.onTap,
     this.onLongPress,
+    this.selected = false,
   });
 
   final Book book;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+
+  /// Whether the card shows the multi-select checkbox overlay.
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +183,11 @@ class BookListCard extends StatelessWidget {
                       SizedBox(
                         width: 88,
                         height: 132,
-                        child: _CoverArea(book: book, showProgress: false),
+                        child: _CoverArea(
+                          book: book,
+                          showProgress: false,
+                          selected: selected,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -242,10 +254,15 @@ class BookListCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _CoverArea extends StatelessWidget {
-  const _CoverArea({required this.book, this.showProgress = true});
+  const _CoverArea({
+    required this.book,
+    this.showProgress = true,
+    this.selected = false,
+  });
 
   final Book book;
   final bool showProgress;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -276,6 +293,26 @@ class _CoverArea extends StatelessWidget {
                     Colors.black.withValues(alpha: 0.5),
                   ],
                 ),
+              ),
+            ),
+          ),
+        if (selected)
+          Positioned(
+            top: 8,
+            left: 8,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: scheme.onPrimaryContainer.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Icon(
+                Icons.check_box_rounded,
+                size: 18,
+                color: scheme.onPrimaryContainer,
               ),
             ),
           ),
