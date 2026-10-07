@@ -89,4 +89,63 @@ void main() {
     expect(o.dx, closeTo(5, 1e-9));
     expect(o.dy, closeTo(5, 1e-9));
   });
+
+  test('clampOffset prevents blank space at edges', () {
+    const viewport = Size(400, 800);
+    const content = Size(1000, 1500);
+    const scale = 1.0; // scaled content 1000x1500 larger than viewport
+    // too far right (>0) clamps to 0
+    expect(
+      ZoomMath.clampOffset(
+        offset: const Offset(50, 0),
+        scale: scale,
+        viewport: viewport,
+        content: content,
+      ),
+      const Offset(0, 0),
+    );
+    // too far left clamps to viewport - scaledContent
+    expect(
+      ZoomMath.clampOffset(
+        offset: const Offset(-900, 0),
+        scale: scale,
+        viewport: viewport,
+        content: content,
+      ),
+      const Offset(-600, 0),
+    );
+  });
+
+  test('clampOffset centers an axis smaller than the viewport', () {
+    final o = ZoomMath.clampOffset(
+      offset: const Offset(100, 100),
+      scale: 0.5,
+      viewport: const Size(400, 800),
+      content: const Size(400, 800),
+    );
+    // scaled content 200x400 -> centered on both axes
+    expect(o.dx, closeTo(100, 1e-9));
+    expect(o.dy, closeTo(200, 1e-9));
+  });
+
+  test('clampOffset allows overscroll during a drag', () {
+    final o = ZoomMath.clampOffset(
+      offset: const Offset(30, 0),
+      scale: 1.0,
+      viewport: const Size(400, 800),
+      content: const Size(1000, 1500),
+      overscroll: 48,
+    );
+    expect(o.dx, closeTo(30, 1e-9));
+  });
+
+  test('centeredOffset centers both axes', () {
+    final o = ZoomMath.centeredOffset(
+      scale: 0.5,
+      viewport: const Size(400, 800),
+      content: const Size(400, 800),
+    );
+    expect(o.dx, closeTo(100, 1e-9));
+    expect(o.dy, closeTo(200, 1e-9));
+  });
 }

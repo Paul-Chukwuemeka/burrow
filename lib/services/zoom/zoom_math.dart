@@ -38,4 +38,50 @@ class ZoomMath {
     final ratio = newScale / startScale;
     return focal - (focal - startOffset) * ratio;
   }
+
+  /// Offset [scale] would produce for [content] centered in [viewport].
+  static Offset centeredOffset({
+    required double scale,
+    required Size viewport,
+    required Size content,
+  }) => Offset(
+    (viewport.width - content.width * scale) / 2,
+    (viewport.height - content.height * scale) / 2,
+  );
+
+  /// Clamps [offset] so content edges stay within [viewport], centering any
+  /// axis whose scaled content is smaller than the viewport. [overscroll]
+  /// widens the allowed range by that many pixels during an active drag.
+  static Offset clampOffset({
+    required Offset offset,
+    required double scale,
+    required Size viewport,
+    required Size content,
+    double overscroll = 0,
+  }) {
+    final scaledW = content.width * scale;
+    final scaledH = content.height * scale;
+
+    final double x;
+    if (scaledW <= viewport.width) {
+      x = (viewport.width - scaledW) / 2;
+    } else {
+      x = offset.dx.clamp(
+        viewport.width - scaledW - overscroll,
+        overscroll,
+      );
+    }
+
+    final double y;
+    if (scaledH <= viewport.height) {
+      y = (viewport.height - scaledH) / 2;
+    } else {
+      y = offset.dy.clamp(
+        viewport.height - scaledH - overscroll,
+        overscroll,
+      );
+    }
+
+    return Offset(x, y);
+  }
 }
