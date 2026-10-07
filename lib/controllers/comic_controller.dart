@@ -67,6 +67,12 @@ class ComicReaderController extends ChangeNotifier {
     return best;
   }
 
+  final Map<int, TransformationController> _verticalTransformers = {};
+
+  /// Transformation controller for vertical page [index], created on demand.
+  TransformationController verticalTransformer(int index) =>
+      _verticalTransformers.putIfAbsent(index, TransformationController.new);
+
   void _evictOldKeys(int currentPage) {
     if (_verticalPageKeys.length > 50) {
       final keysToRemove = _verticalPageKeys.keys
@@ -321,6 +327,10 @@ class ComicReaderController extends ChangeNotifier {
     comicPageProvider?.dispose();
     comicPageProvider = null;
     comicPreviewScrollController.dispose();
+    for (final t in _verticalTransformers.values) {
+      t.dispose();
+    }
+    _verticalTransformers.clear();
     super.dispose();
   }
 }

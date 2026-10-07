@@ -435,14 +435,22 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   void _applyComicZoom() {
-    final tc = _comicTransformationController;
-    if (tc == null) return;
-    final currentScale = tc.value.getMaxScaleOnAxis();
-    if ((currentScale - _zoomLevel).abs() > 0.01) {
-      // Build a new matrix at the desired scale, centered
-      final matrix = Matrix4.diagonal3Values(_zoomLevel, _zoomLevel, 1.0);
-      tc.value = matrix;
-    }
+    final tc = _isComic
+        ? _comicCtrl.verticalTransformer(_comicCtrl.comicPage)
+        : null;
+    final controller =
+        _zoomMode && _settings.comicReadingMode == ComicReadingMode.vertical
+        ? tc
+        : _comicTransformationController;
+    if (controller == null) return;
+    final currentScale = controller.value.getMaxScaleOnAxis();
+    if ((currentScale - _zoomLevel).abs() <= 0.01) return;
+    final size = MediaQuery.sizeOf(context);
+    final center = Offset(size.width / 2, size.height / 2);
+    controller.value = Matrix4.identity()
+      ..translateByDouble(center.dx, center.dy, 0, 1)
+      ..scaleByDouble(_zoomLevel, _zoomLevel, 1, 1)
+      ..translateByDouble(-center.dx, -center.dy, 0, 1);
   }
 
   // ---------------------------------------------------------------------------
@@ -1726,7 +1734,7 @@ class ReaderScreenState extends State<ReaderScreen>
             itemBuilder: (context, i) => InteractiveViewer(
               key: _comicCtrl.verticalPageKey(i),
               transformationController: _zoomMode
-                  ? _comicTransformationController
+                  ? _comicCtrl.verticalTransformer(i)
                   : null,
               minScale: 1.0,
               maxScale: _zoomMode ? _zoomMax : 1.0,

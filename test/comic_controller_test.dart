@@ -45,6 +45,17 @@ void main() {
     ctrl.dispose();
   });
 
+  test('vertical zoom controllers are per-page and disposed', () {
+    final ctrl = ComicReaderController(
+      book: _comic(),
+      settings: ReaderSettings(),
+      library: LibraryService(),
+    );
+    expect(identical(ctrl.verticalTransformer(0), ctrl.verticalTransformer(0)), isTrue);
+    expect(identical(ctrl.verticalTransformer(0), ctrl.verticalTransformer(1)), isFalse);
+    ctrl.dispose();
+  });
+
   test('prefetch swallows a failing page and does not wedge the loading set',
       () async {
     final ctrl = ComicReaderController(
