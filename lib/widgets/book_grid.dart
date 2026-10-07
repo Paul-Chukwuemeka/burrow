@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../theme/burrow_tokens.dart';
 
-const double kBookGridMaxTileExtent = 300.0;
+const double kBookGridMaxTileExtent = 170.0;
 const double kBookGridCrossSpacing = 12.0;
 const double kBookGridMainSpacing = 14.0;
 const double kBookGridCardPadding = 6.0;
