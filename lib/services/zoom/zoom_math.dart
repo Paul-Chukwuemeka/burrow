@@ -25,4 +25,17 @@ class ZoomMath {
 
   static double clampScale(double scale, double min, double max) =>
       scale.clamp(min, max);
+
+  /// Offset that keeps the content point under [focal] fixed while the scale
+  /// changes from [startScale] to [newScale].
+  static Offset focalZoomOffset({
+    required Offset startOffset,
+    required double startScale,
+    required double newScale,
+    required Offset focal,
+  }) {
+    if (startScale <= 0) return startOffset;
+    final ratio = newScale / startScale;
+    return focal - (focal - startOffset) * ratio;
+  }
 }
