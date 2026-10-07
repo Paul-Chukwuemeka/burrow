@@ -50,6 +50,7 @@ class LibraryService extends ChangeNotifier {
   static const _onboardingKey = 'burrow.onboarding.complete.v1';
   static const _filtersKey = 'burrow.library.filters.v1';
   static const _comicsOrganizedKey = 'burrow.comics.organized.v1';
+  static const _seriesCleanupKey = 'burrow.comics.seriesCleanup.v1';
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
@@ -292,11 +293,24 @@ class LibraryService extends ChangeNotifier {
     // schema versions) in the background.
     unawaited(DocumentParser.pruneCache([for (final b in _books) b.path]));
 
-    // One-time migration: group existing comics into per-series collections
-    // now that series names can be inferred from filenames.
+    // One-time migration: group existing comics into the "Comics"
+    // collection now that series names can be inferred from filenames.
+    // Series themselves are visual groups inside the Comics screen
+    // (CollectionScreen._groupedBooks) — no per-series collections.
     if (!(prefs.getBool(_comicsOrganizedKey) ?? false)) {
       unawaited(
         _autoOrganizeComics().then((_) => prefs.setBool(_comicsOrganizedKey, true)),
+      );
+    }
+
+    // One-time cleanup: remove auto-created per-series top-level collections
+    // from earlier versions, keeping only "Comics". Manual collections
+    // (mixed content or extra books) are left alone.
+    if (!(prefs.getBool(_seriesCleanupKey) ?? false)) {
+      unawaited(
+        _cleanupAutoSeriesCollections().then(
+          (_) => prefs.setBool(_seriesCleanupKey, true),
+        ),
       );
     }
   }
@@ -1069,8 +1083,9 @@ class LibraryService extends ChangeNotifier {
 
   /// Automatically organizes comics into collections after metadata extraction.
   ///
-  /// Creates a "Comics" collection containing all CBZ/CBR books, plus a
-  /// collection for each unique series name among comics that have one.
+  /// Creates a "Comics" collection containing all CBZ/CBR books. Series
+  /// (e.g. "Batman") are visual groups inside the Comics collection screen,
+  /// not separate collections.
   Future<void> _autoOrganizeComics() async {
     if (_db == null) return;
 
@@ -1095,35 +1110,32 @@ class LibraryService extends ChangeNotifier {
       }
     }
 
-    // Group comics by series name, inferred from the filename when the file
-    // carries no embedded series metadata.
-    final seriesGroups = <String, List<Book>>{};
-    for (final book in comics) {
-      final series = book.effectiveSeriesName;
-      if (series != null && series.isNotEmpty) {
-        seriesGroups.putIfAbsent(series, () => []).add(book);
-      }
-    }
-
-    for (final entry in seriesGroups.entries) {
-      // Find or create collection for this series.
-      var collection = _collections.where(
-        (c) => c.name == entry.key,
-      ).firstOrNull;
-      if (collection == null) {
-        final id = await createCollection(entry.key);
-        if (id.isEmpty) continue;
-        collection = _collections.where((c) => c.id == id).firstOrNull;
-      }
-      if (collection == null) continue;
-      for (final book in entry.value) {
-        if (!await _db!.isBookInCollection(collection.id, book.id)) {
-          await _db!.addBookToCollection(collection.id, book.id);
-        }
-      }
-    }
-
     notifyListeners();
+  }
+
+  /// Removes auto-created per-series top-level collections from earlier
+  /// versions (one collection per series name, containing only that series'
+  /// comics). Manual collections — any non-comic, mixed series, extra books,
+  /// or empty — are left alone.
+  Future<void> _cleanupAutoSeriesCollections() async {
+    if (_db == null) return;
+    for (final collection in List.of(_collections)) {
+      if (collection.name == 'Comics') continue;
+      final books = await getBooksForCollection(collection.id);
+      if (books.isEmpty) continue;
+      if (books.any(
+        (b) => b.format != BookFormat.cbz && b.format != BookFormat.cbr,
+      )) {
+        continue;
+      }
+      final seriesNames = {
+        for (final b in books) b.effectiveSeriesName,
+      };
+      if (seriesNames.length == 1 &&
+          seriesNames.single == collection.name) {
+        await deleteCollection(collection.id);
+      }
+    }
   }
 
   /// Renders the first page of a PDF as its library thumbnail. The book is
