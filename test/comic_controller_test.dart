@@ -33,6 +33,18 @@ void main() {
     ctrl.dispose();
   });
 
+  test('nearestPageIndex falls back to current page when no keys are laid out',
+      () {
+    final ctrl = ComicReaderController(
+      book: _comic(),
+      settings: ReaderSettings(),
+      library: LibraryService(),
+    );
+    ctrl.comicPage = 4;
+    expect(ctrl.nearestPageIndex(0), 4);
+    ctrl.dispose();
+  });
+
   test('prefetch swallows a failing page and does not wedge the loading set',
       () async {
     final ctrl = ComicReaderController(

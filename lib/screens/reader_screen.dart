@@ -1698,11 +1698,8 @@ class ReaderScreenState extends State<ReaderScreen>
         if (!mounted) return;
         final count = _comicCtrl.comicPageCount;
         if (count == 0) return;
-        final viewportHeight = MediaQuery.sizeOf(context).height;
-        if (viewportHeight <= 0) return;
-        final newIndex = (controller.offset / viewportHeight).round().clamp(
-          0,
-          count - 1,
+        final newIndex = _comicCtrl.nearestPageIndex(
+          MediaQuery.paddingOf(context).top,
         );
         if (newIndex != _comicCtrl.comicPage) {
           _comicCtrl.notePageChanged(newIndex);

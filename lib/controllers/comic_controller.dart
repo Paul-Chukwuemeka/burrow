@@ -47,6 +47,26 @@ class ComicReaderController extends ChangeNotifier {
     return _verticalPageKeys.putIfAbsent(index, () => GlobalKey());
   }
 
+  /// Index of the page whose top edge is nearest [viewportTop], using the
+  /// per-page keys. Falls back to [comicPage] before items are laid out.
+  int nearestPageIndex(double viewportTop) {
+    var best = comicPage;
+    var bestDistance = double.infinity;
+    for (final entry in _verticalPageKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+      final top = box.localToGlobal(Offset.zero).dy;
+      final d = (top - viewportTop).abs();
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = entry.key;
+      }
+    }
+    return best;
+  }
+
   void _evictOldKeys(int currentPage) {
     if (_verticalPageKeys.length > 50) {
       final keysToRemove = _verticalPageKeys.keys
@@ -150,16 +170,33 @@ class ComicReaderController extends ChangeNotifier {
   }
 
   void restoreComicPosition() {
-    if (_isVertical) {
-      comicVerticalScrollController ??= ScrollController();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_mounted || comicVerticalScrollController == null) return;
-        final offset = book.lastOffset;
-        if (offset > 0) {
-          comicVerticalScrollController!.jumpTo(offset.toDouble());
+    if (!_isVertical) return;
+    comicVerticalScrollController ??= ScrollController();
+    final offset = book.lastOffset;
+    if (offset <= 0) return;
+    // Retry across a few frames: the list may not have laid out enough
+    // extent on the first frame, which would clamp the jump to 0.
+    var attempts = 0;
+    void tryRestore() {
+      if (!_mounted) return;
+      final c = comicVerticalScrollController;
+      if (c == null || !c.hasClients) {
+        if (attempts++ < 10) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => tryRestore());
         }
-      });
+        return;
+      }
+      final target = offset.toDouble().clamp(0.0, c.position.maxScrollExtent);
+      if (target <= 0 && c.position.maxScrollExtent > 0) {
+        if (attempts++ < 10) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => tryRestore());
+        }
+        return;
+      }
+      c.jumpTo(target);
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => tryRestore());
   }
 
   Future<void> prefetchComicPages(int center) async {
