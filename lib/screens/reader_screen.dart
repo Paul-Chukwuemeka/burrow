@@ -1548,7 +1548,7 @@ class ReaderScreenState extends State<ReaderScreen>
       onLoaded: () {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          _comicCtrl.prefetchComicPages(_comicCtrl.comicPage);
+          _prefetchComicPages(_comicCtrl.comicPage);
           _comicCtrl.restoreComicPosition();
         });
       },
@@ -1773,8 +1773,9 @@ class ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  /// Prefetch pages within ±5 of [center] and evict those further out.
-  void _prefetchComicPages(int center) => _comicCtrl.prefetchComicPages(center);
+  /// Prefetch pages within ±3 of [center] and evict those further out.
+  void _prefetchComicPages(int center) =>
+      unawaited(_comicCtrl.prefetchComicPages(center));
 
   void _scrollToPreviewPage(int page) => _comicCtrl.scrollToPreviewPage(page);
 

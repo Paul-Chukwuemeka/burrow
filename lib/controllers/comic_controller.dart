@@ -162,20 +162,27 @@ class ComicReaderController extends ChangeNotifier {
     }
   }
 
-  void prefetchComicPages(int center) {
+  Future<void> prefetchComicPages(int center) async {
     final provider = comicPageProvider;
     if (provider == null) return;
-    const buffer = 5;
+    const buffer = 3;
+    final futures = <Future<void>>[];
     for (var i = center - buffer; i <= center + buffer; i++) {
       if (i < 0 || i >= provider.pageCount) continue;
       if (provider.isCached(i) || comicPagesLoading.contains(i)) continue;
       comicPagesLoading.add(i);
-      provider.loadPage(i).then((_) {
-        comicPagesLoading.remove(i);
-        if (_mounted) notifyListeners();
-      });
+      futures.add(
+        provider.loadPage(i).then((_) {
+          if (_mounted) notifyListeners();
+        }).whenComplete(() {
+          comicPagesLoading.remove(i);
+        }).catchError((Object e) {
+          debugPrint('Comic prefetch failed for page $i: $e');
+        }),
+      );
     }
-    provider.evictOutside(center, margin: 10);
+    provider.evictOutside(center, margin: 3);
+    await Future.wait(futures);
   }
 
   void scrollToPreviewPage(int page) {
