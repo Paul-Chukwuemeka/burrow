@@ -482,8 +482,11 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   Widget _bookGrid(BuildContext context) {
+    if (_shouldShowSeriesFolders) return _seriesFolderGrid(context);
     final groups = _groupedBooks;
-    if (groups.length == 1 && groups.first.name == null) {
+    if (groups.length == 1) {
+      // Single group — no header, even when it has a series name.
+      // Avoids the redundant "Series / 1 book" view.
       return _flatGrid(context, groups.first.books);
     }
     return _groupedGrid(context, groups);
@@ -568,8 +571,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   Widget _bookList() {
+    if (_shouldShowSeriesFolders) return _seriesFolderList();
     final groups = _groupedBooks;
-    if (groups.length == 1 && groups.first.name == null) {
+    if (groups.length == 1) {
       return _flatList(groups.first.books);
     }
     return _groupedList(groups);
@@ -631,6 +635,128 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
   }
 
+  /// Named comic-series groups (virtual folders). Single-series collections
+  /// with no loose books skip folders and show books directly.
+  List<_BookGroup> get _seriesFolders {
+    final groups = _groupedBooks;
+    return groups.where((g) => g.name != null).toList();
+  }
+
+  List<Book> get _looseBooks {
+    final groups = _groupedBooks;
+    return [for (final g in groups.where((g) => g.name == null)) ...g.books];
+  }
+
+  bool get _shouldShowSeriesFolders {
+    final folders = _seriesFolders;
+    if (folders.isEmpty) return false;
+    if (folders.length >= 2) return true;
+    // One series plus loose books: folder + loose section.
+    return _looseBooks.isNotEmpty;
+  }
+
+  void _openSeries(String name, List<Book> books) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _SeriesBooksScreen(
+          title: name,
+          books: books,
+          library: widget.library,
+          layout: _layout,
+        ),
+      ),
+    );
+  }
+
+  Widget _seriesFolderGrid(BuildContext context) {
+    final folders = _seriesFolders;
+    final loose = _looseBooks;
+    final itemCount = folders.length + (loose.isNotEmpty ? 1 : 0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth - kBookGridPadding * 2;
+        return GridView.builder(
+          padding: const EdgeInsets.all(kBookGridPadding),
+          gridDelegate: bookGridDelegate(width),
+          itemCount: itemCount,
+          itemBuilder: (context, i) {
+            if (i < folders.length) {
+              final folder = folders[i];
+              return _SeriesFolderCard(
+                name: folder.name!,
+                books: folder.books,
+                onTap: () => _openSeries(folder.name!, folder.books),
+              );
+            }
+            return _SeriesFolderCard(
+              name: 'Ungrouped',
+              books: loose,
+              onTap: () => _openSeries('Ungrouped', loose),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _seriesFolderList() {
+    final folders = _seriesFolders;
+    final loose = _looseBooks;
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: folders.length + (loose.isNotEmpty ? 1 : 0),
+      itemBuilder: (context, i) {
+        if (i < folders.length) {
+          final folder = folders[i];
+          return _seriesFolderTile(
+            context,
+            folder.name!,
+            folder.books,
+            () => _openSeries(folder.name!, folder.books),
+          );
+        }
+        return _seriesFolderTile(
+          context,
+          'Ungrouped',
+          loose,
+          () => _openSeries('Ungrouped', loose),
+        );
+      },
+    );
+  }
+
+  Widget _seriesFolderTile(
+    BuildContext context,
+    String name,
+    List<Book> books,
+    VoidCallback onTap,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: SizedBox(
+          width: 36,
+          height: 54,
+          child: BookCover(book: books.first, borderRadius: 6, spine: false),
+        ),
+        title: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          '${books.length} book${books.length == 1 ? '' : 's'}',
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: onTap,
+      ),
+    );
+  }
+
   Widget _reorderableList(BuildContext context) {
     return ReorderableListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -672,6 +798,176 @@ class _CollectionScreenState extends State<CollectionScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Folder tile for a virtual comic series: lead cover + name + count.
+class _SeriesFolderCard extends StatelessWidget {
+  const _SeriesFolderCard({
+    required this.name,
+    required this.books,
+    required this.onTap,
+  });
+
+  final String name;
+  final List<Book> books;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  BookCover(
+                    book: books.first,
+                    borderRadius: 0,
+                    spine: false,
+                    enforceAspect: false,
+                  ),
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.scrim.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.folder_rounded,
+                            size: 14,
+                            color: scheme.surface,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${books.length}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.surface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Text(
+                '${books.length} book${books.length == 1 ? '' : 's'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Drill-in view for one virtual series folder: flat books, no sub-groups.
+class _SeriesBooksScreen extends StatelessWidget {
+  const _SeriesBooksScreen({
+    required this.title,
+    required this.books,
+    required this.library,
+    required this.layout,
+  });
+
+  final String title;
+  final List<Book> books;
+  final LibraryService library;
+  final _LayoutMode layout;
+
+  Future<void> _openBookInfo(BuildContext context, Book book) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BookInfoScreen(book: book, library: library),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title),
+            Text(
+              '${books.length} book${books.length == 1 ? '' : 's'}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+      body: layout == _LayoutMode.grid
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth - kBookGridPadding * 2;
+                return GridView.builder(
+                  padding: const EdgeInsets.all(kBookGridPadding),
+                  gridDelegate: bookGridDelegate(width),
+                  itemCount: books.length,
+                  itemBuilder: (context, i) {
+                    final book = books[i];
+                    return BookCard(
+                      book: book,
+                      onTap: () => _openBookInfo(context, book),
+                    );
+                  },
+                );
+              },
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: books.length,
+              itemBuilder: (context, i) {
+                final book = books[i];
+                return BookListCard(
+                  book: book,
+                  onTap: () => _openBookInfo(context, book),
+                );
+              },
+            ),
     );
   }
 }
