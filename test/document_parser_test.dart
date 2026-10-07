@@ -971,6 +971,19 @@ More text.''';
     });
   });
 
+  group('assertDecompressedTotal', () {
+    test('assertDecompressedTotal throws past the 512 MB budget', () {
+      expect(
+        () => DocumentParser.assertDecompressedTotal([100, 200]),
+        returnsNormally,
+      );
+      expect(
+        () => DocumentParser.assertDecompressedTotal([600 * 1024 * 1024]),
+        throwsFormatException,
+      );
+    });
+  });
+
   group('parseHtmlDocument images', () {
     test('resolves an SVG <image xlink:href>', () {
       final (_, _, _, images) = DocumentParser.parseHtmlDocument(

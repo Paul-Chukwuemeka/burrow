@@ -196,16 +196,21 @@ class DocumentParser {
   /// OOM guard.
   static const int maxComicCompressedBytes = 500 * 1024 * 1024;
 
-  static void _assertDecompressedSize(Archive archive) {
+  /// Public so the CBR path (which has no [Archive]) can reuse the same budget.
+  static void assertDecompressedTotal(Iterable<int> sizes) {
     var total = 0;
-    for (final f in archive.files) {
-      total += f.size;
+    for (final s in sizes) {
+      total += s;
       if (total > maxDecompressedBytes) {
         throw const FormatException(
           'Archive decompressed size exceeds 512 MB',
         );
       }
     }
+  }
+
+  static void _assertDecompressedSize(Archive archive) {
+    assertDecompressedTotal(archive.files.map((f) => f.size));
   }
 
   /// Parses a document into chapters. Heavy work runs in a background isolate.
@@ -1511,6 +1516,12 @@ class DocumentParser {
         if (!extracted.existsSync()) {
           throw const FormatException('Not a valid CBR/RAR archive');
         }
+        final sizes = <int>[];
+        for (final name in entryNames) {
+          final f = _findExtractedFile(extracted, name);
+          if (f != null) sizes.add(f.lengthSync());
+        }
+        assertDecompressedTotal(sizes);
         cbrTempDir = extracted;
         readEntry = (name) {
           // Reject path traversal and absolute paths in member names.
