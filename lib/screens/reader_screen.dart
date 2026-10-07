@@ -26,6 +26,7 @@ import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/page_spans.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/comic_image.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/toc_sheet.dart';
 
@@ -1648,8 +1649,8 @@ class ReaderScreenState extends State<ReaderScreen>
                       pageIndex: i,
                       fit: _comicCtrl.boxFit,
                     )
-                  : Image.memory(
-                      _comicCtrl.comicPages[i],
+                  : ComicImage(
+                      bytes: _comicCtrl.comicPages[i],
                       fit: _comicCtrl.boxFit,
                     );
               if (_zoomMode) {
@@ -1740,8 +1741,8 @@ class ReaderScreenState extends State<ReaderScreen>
                         pageIndex: i,
                         fit: _comicCtrl.boxFit,
                       )
-                    : Image.memory(
-                        _comicCtrl.comicPages[i],
+                    : ComicImage(
+                        bytes: _comicCtrl.comicPages[i],
                         fit: _comicCtrl.boxFit,
                       ),
               ),
@@ -2460,9 +2461,10 @@ class ReaderScreenState extends State<ReaderScreen>
                               fit: BoxFit.cover,
                             )
                           : (i < _comicCtrl.comicPages.length
-                                ? Image.memory(
-                                    _comicCtrl.comicPages[i],
+                                ? ComicImage(
+                                    bytes: _comicCtrl.comicPages[i],
                                     fit: BoxFit.cover,
+                                    cacheWidth: 104,
                                   )
                                 : Container(
                                     color: theme.muted.withValues(alpha: 0.2),
@@ -2541,7 +2543,7 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
   @override
   Widget build(BuildContext context) {
     if (_bytes != null) {
-      return Image.memory(_bytes!, fit: widget.fit);
+      return ComicImage(bytes: _bytes!, fit: widget.fit);
     }
     final meta = widget.provider.pages[widget.pageIndex];
     final screenW = MediaQuery.sizeOf(context).width;
