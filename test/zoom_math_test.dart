@@ -148,4 +148,31 @@ void main() {
     expect(o.dx, closeTo(100, 1e-9));
     expect(o.dy, closeTo(200, 1e-9));
   });
+
+  test('rubberBand passes through in-range scale unchanged', () {
+    expect(ZoomMath.rubberBand(2.0, 1.0, 5.0, 0.35), 2.0);
+  });
+
+  test('rubberBand damps below-min and above-max scale', () {
+    expect(ZoomMath.rubberBand(0.5, 1.0, 5.0, 0.35), closeTo(0.825, 1e-9));
+    expect(ZoomMath.rubberBand(6.0, 1.0, 5.0, 0.35), closeTo(5.35, 1e-9));
+  });
+
+  test('reanchorOffset keeps the center content point fixed', () {
+    const offset = Offset(-100, -200);
+    const oldViewport = Size(400, 800);
+    const newViewport = Size(800, 400);
+    final o = ZoomMath.reanchorOffset(
+      offset: offset,
+      oldViewport: oldViewport,
+      newViewport: newViewport,
+    );
+    // content point at old center:
+    const scale = 1.0;
+    final c = (Offset(200, 400) - offset) / scale;
+    // its viewport position after re-anchor:
+    final after = o + c * scale;
+    expect(after.dx, closeTo(400, 1e-6));
+    expect(after.dy, closeTo(200, 1e-6));
+  });
 }

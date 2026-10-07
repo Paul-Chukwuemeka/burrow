@@ -84,4 +84,28 @@ class ZoomMath {
 
     return Offset(x, y);
   }
+
+  /// Damped value when [scale] is outside [min]..[max]; unchanged inside.
+  static double rubberBand(
+    double scale,
+    double min,
+    double max,
+    double resistance,
+  ) {
+    if (scale < min) return min - (min - scale) * resistance;
+    if (scale > max) return max + (scale - max) * resistance;
+    return scale;
+  }
+
+  /// New offset that keeps the content point at the old viewport center at the
+  /// new viewport center after a viewport size change.
+  static Offset reanchorOffset({
+    required Offset offset,
+    required Size oldViewport,
+    required Size newViewport,
+  }) {
+    final oldCenter = Offset(oldViewport.width / 2, oldViewport.height / 2);
+    final newCenter = Offset(newViewport.width / 2, newViewport.height / 2);
+    return offset + (newCenter - oldCenter);
+  }
 }
