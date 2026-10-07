@@ -30,6 +30,23 @@ void main() {
     expect(s, closeTo(0.4, 1e-9));
   });
 
+  test('fitScale page mode uses the constraining (height) axis', () {
+    final s = ZoomMath.fitScale(
+      viewport: const Size(400, 800),
+      content: const Size(1000, 4000),
+    );
+    expect(s, closeTo(0.2, 1e-9));
+  });
+
+  test('fitScale widthOnly ignores the height constraint', () {
+    final s = ZoomMath.fitScale(
+      viewport: const Size(400, 800),
+      content: const Size(1000, 4000),
+      widthOnly: true,
+    );
+    expect(s, closeTo(0.4, 1e-9));
+  });
+
   test('fitScale returns 1 for empty content', () {
     expect(
       ZoomMath.fitScale(viewport: const Size(400, 800), content: Size.zero),
