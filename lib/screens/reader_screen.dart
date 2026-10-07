@@ -251,6 +251,7 @@ class ReaderScreenState extends State<ReaderScreen>
       book: _book,
       settings: _settings,
       library: widget.library,
+      onPageFlipped: _sessionCtrl.onPageFlipped,
     );
     _comicCtrl.addListener(() {
       if (mounted) setState(() {});
@@ -1628,7 +1629,7 @@ class ReaderScreenState extends State<ReaderScreen>
             controller: _comicCtrl.comicPageController!,
             itemCount: _comicCtrl.comicPageCount,
             onPageChanged: (i) {
-              setState(() => _comicCtrl.comicPage = i);
+              _comicCtrl.notePageChanged(i);
               widget.library.savePosition(
                 id: _book.id,
                 chapter: i,
@@ -1703,7 +1704,7 @@ class ReaderScreenState extends State<ReaderScreen>
           count - 1,
         );
         if (newIndex != _comicCtrl.comicPage) {
-          setState(() => _comicCtrl.comicPage = newIndex);
+          _comicCtrl.notePageChanged(newIndex);
           widget.library.savePosition(
             id: _book.id,
             chapter: newIndex,

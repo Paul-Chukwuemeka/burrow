@@ -16,11 +16,13 @@ class ComicReaderController extends ChangeNotifier {
     required this.book,
     required this.settings,
     required this.library,
+    this.onPageFlipped,
   });
 
   final Book book;
   final ReaderSettings settings;
   final LibraryService library;
+  final VoidCallback? onPageFlipped;
 
   List<Uint8List> comicPages = [];
   int comicPage = 0;
@@ -205,6 +207,14 @@ class ComicReaderController extends ChangeNotifier {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  /// Records that the reader settled on [index], counting it as a page flip
+  /// for the active reading session.
+  void notePageChanged(int index) {
+    comicPage = index;
+    onPageFlipped?.call();
+    notifyListeners();
   }
 
   void jumpToPage(int page, {double? verticalViewportHeight}) {
