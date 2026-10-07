@@ -1041,6 +1041,15 @@ class ReaderScreenState extends State<ReaderScreen>
   @visibleForTesting
   bool get debugHasController => _pageController != null;
 
+  @visibleForTesting
+  int get debugComicPage => _comicCtrl.comicPage;
+
+  @visibleForTesting
+  double get debugComicPreviewOffset =>
+      _comicCtrl.comicPreviewScrollController.hasClients
+      ? _comicCtrl.comicPreviewScrollController.offset
+      : 0;
+
   /// Coalesces settings persistence: a slider drag commits once, but the
   /// debounce net or a quick run of discrete tweaks shouldn't hit disk each
   /// time.
@@ -2254,10 +2263,19 @@ class ReaderScreenState extends State<ReaderScreen>
                               ? theme.accent
                               : theme.text,
                         ),
-                        onPressed: () => setState(
-                          () => _comicCtrl.comicPreviewVisible =
-                              !_comicCtrl.comicPreviewVisible,
-                        ),
+                        onPressed: () {
+                          setState(
+                            () => _comicCtrl.comicPreviewVisible =
+                                !_comicCtrl.comicPreviewVisible,
+                          );
+                          if (_comicCtrl.comicPreviewVisible) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) {
+                                _scrollToPreviewPage(_comicCtrl.comicPage);
+                              }
+                            });
+                          }
+                        },
                       ),
                     if (_supportsZoom) ...[
                       if (_zoomMode)

@@ -63,7 +63,7 @@ void main() {
       resetBrightness: () async {},
     );
     tmp = await Directory.systemTemp.createTemp('burrow_comic');
-    final path = await _writeCbz(tmp, 5);
+    final path = await _writeCbz(tmp, 20);
     database = db.AppDatabase.forTesting(NativeDatabase.memory());
     book = Book(
       id: 'c1',
@@ -122,7 +122,7 @@ void main() {
     expect(sessions.first.pages, greaterThanOrEqualTo(2));
   });
 
-  testWidgets('opening the preview strip does not throw and shows thumbnails',
+  testWidgets('opening the preview strip centers on the current page',
       (tester) async {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(412, 915);
@@ -139,13 +139,25 @@ void main() {
       await tester.pump();
     }
 
+    // Flip forward so the current page is not the first.
+    for (var i = 0; i < 2; i++) {
+      await tester.tapAt(const Offset(380, 450));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    final state = tester.state<ReaderScreenState>(find.byType(ReaderScreen));
+    expect(state.debugComicPage, greaterThan(0));
+
     // Reveal chrome, then toggle the preview strip.
     await tester.tapAt(const Offset(206, 450));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byIcon(Icons.view_carousel_outlined));
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(tester.takeException(), isNull);
     expect(find.byType(ComicImage), findsWidgets);
+    expect(state.debugComicPreviewOffset, greaterThan(0));
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
