@@ -36,4 +36,28 @@ void main() {
     expect(v.y, closeTo(c.offset.dy, 1e-6));
     c.dispose();
   });
+
+  test('toggleDoubleTap zooms to doubleTapScale then back to fit', () {
+    final c = ZoomController(vsync: const TestVSync())..disableAnimations = true;
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.toggleDoubleTap(const Offset(200, 400));
+    expect(c.scale, closeTo(c.config.doubleTapScale, 1e-9));
+    expect(c.isZoomed, isTrue);
+    c.toggleDoubleTap(const Offset(200, 400));
+    expect(c.scale, closeTo(c.minScale, 1e-9));
+    expect(c.isZoomed, isFalse);
+    c.dispose();
+  });
+
+  test('toggleDoubleTap centers the tap point', () {
+    final c = ZoomController(vsync: const TestVSync())..disableAnimations = true;
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    const focal = Offset(120, 300);
+    final before = (focal - c.offset) / c.scale;
+    c.toggleDoubleTap(focal);
+    final after = c.offset + before * c.scale;
+    expect(after.dx, closeTo(focal.dx, 1e-3));
+    expect(after.dy, closeTo(focal.dy, 1e-3));
+    c.dispose();
+  });
 }

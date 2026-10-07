@@ -1,7 +1,5 @@
-import 'dart:ui';
-
+import 'package:flutter/animation.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart';
 
 import 'zoom_config.dart';
@@ -15,7 +13,6 @@ class ZoomController extends ChangeNotifier {
   }) : _vsync = vsync;
 
   final ZoomConfig config;
-  // ignore: unused_field
   final TickerProvider _vsync;
 
   double _scale = 1.0;
@@ -83,26 +80,69 @@ class ZoomController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // zoomTo is completed in Task 7; declared here so the matrix test compiles.
+  late final AnimationController _anim = AnimationController(
+    vsync: _vsync,
+    duration: config.animation,
+  );
+
+  bool disableAnimations = false;
+
+  void _apply({required double scale, required Offset offset}) {
+    _scale = scale;
+    _offset = offset;
+    notifyListeners();
+  }
+
+  void _animateTo({required double scale, required Offset offset}) {
+    _anim.stop();
+    final beginScale = _scale;
+    final beginOffset = _offset;
+    void tick() {
+      final t = config.animationCurve.transform(_anim.value);
+      _apply(
+        scale: beginScale + (scale - beginScale) * t,
+        offset: Offset.lerp(beginOffset, offset, t)!,
+      );
+    }
+
+    _anim
+      ..reset()
+      ..addListener(tick);
+    _anim.forward().whenComplete(() {
+      _anim.removeListener(tick);
+      _apply(scale: scale, offset: offset);
+    });
+  }
+
   void zoomTo({
     required double scale,
     required Offset focal,
     bool animate = true,
   }) {
     final target = ZoomMath.clampScale(scale, minScale, maxScale);
-    final newOffset = ZoomMath.focalZoomOffset(
-      startOffset: _offset,
-      startScale: _scale,
-      newScale: target,
-      focal: focal,
-    );
-    _scale = target;
-    _offset = ZoomMath.clampOffset(
-      offset: newOffset,
+    final newOffset = ZoomMath.clampOffset(
+      offset: ZoomMath.focalZoomOffset(
+        startOffset: _offset,
+        startScale: _scale,
+        newScale: target,
+        focal: focal,
+      ),
       scale: target,
       viewport: _viewport,
       content: _content,
     );
-    notifyListeners();
+    if (animate && !disableAnimations) {
+      _animateTo(scale: target, offset: newOffset);
+    } else {
+      _apply(scale: target, offset: newOffset);
+    }
+  }
+
+  void toggleDoubleTap(Offset focal) {
+    if (isZoomed) {
+      reset();
+    } else {
+      zoomTo(scale: config.doubleTapScale, focal: focal);
+    }
   }
 }
