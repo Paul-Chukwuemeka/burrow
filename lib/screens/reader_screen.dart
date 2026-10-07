@@ -2420,10 +2420,6 @@ class ReaderScreenState extends State<ReaderScreen>
   Widget _buildComicPreviewStrip(ReaderTheme theme) {
     final count = _comicCtrl.comicPageCount;
     if (count == 0) return const SizedBox.shrink();
-    // Scroll to center the current page when the strip first appears.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToPreviewPage(_comicCtrl.comicPage);
-    });
     return SizedBox(
       height: 80,
       child: ListView.builder(
@@ -2465,6 +2461,7 @@ class ReaderScreenState extends State<ReaderScreen>
                               provider: _comicCtrl.comicPageProvider!,
                               pageIndex: i,
                               fit: BoxFit.cover,
+                              cacheWidth: 104,
                             )
                           : (i < _comicCtrl.comicPages.length
                                 ? ComicImage(
@@ -2505,11 +2502,13 @@ class _LazyComicPageWidget extends StatefulWidget {
     required this.provider,
     required this.pageIndex,
     required this.fit,
+    this.cacheWidth,
   });
 
   final ComicPageSource provider;
   final int pageIndex;
   final BoxFit fit;
+  final int? cacheWidth;
 
   @override
   State<_LazyComicPageWidget> createState() => _LazyComicPageWidgetState();
@@ -2549,7 +2548,11 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
   @override
   Widget build(BuildContext context) {
     if (_bytes != null) {
-      return ComicImage(bytes: _bytes!, fit: widget.fit);
+      return ComicImage(
+        bytes: _bytes!,
+        fit: widget.fit,
+        cacheWidth: widget.cacheWidth,
+      );
     }
     final meta = widget.provider.pages[widget.pageIndex];
     final screenW = MediaQuery.sizeOf(context).width;

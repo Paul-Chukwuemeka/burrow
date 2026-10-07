@@ -7,6 +7,7 @@ import 'package:burrow/models/book.dart';
 import 'package:burrow/screens/reader_screen.dart';
 import 'package:burrow/services/brightness_controller.dart';
 import 'package:burrow/services/library_service.dart';
+import 'package:burrow/widgets/comic_image.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -119,5 +120,34 @@ void main() {
     final sessions = await database.getSessionsForBook('c1');
     expect(sessions, isNotEmpty);
     expect(sessions.first.pages, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('opening the preview strip does not throw and shows thumbnails',
+      (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(home: ReaderScreen(book: book, library: library)),
+    );
+    for (var i = 0; i < 100; i++) {
+      if (find.byType(PageView).evaluate().isNotEmpty) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+
+    // Reveal chrome, then toggle the preview strip.
+    await tester.tapAt(const Offset(206, 450));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byIcon(Icons.view_carousel_outlined));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ComicImage), findsWidgets);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
   });
 }
