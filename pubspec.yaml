@@ -52,6 +52,7 @@ dependencies:
   cascadia: ^0.8.0
   crypto: ^3.0.3
   html: ^0.15.6
+  vector_math: ^2.2.0
 
 dependency_overrides:
   lexicor:
