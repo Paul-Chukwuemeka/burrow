@@ -27,7 +27,7 @@ class ComicReaderController extends ChangeNotifier {
   bool comicLoading = true;
   ScrollController? comicVerticalScrollController;
   bool comicVerticalListenerAttached = false;
-  ComicPageProvider? comicPageProvider;
+  ComicPageSource? comicPageProvider;
   final Set<int> comicPagesLoading = {};
   PageController? comicPageController;
   bool comicPreviewVisible = false;

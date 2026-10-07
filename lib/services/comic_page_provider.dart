@@ -6,6 +6,18 @@ import 'package:archive/archive.dart';
 
 import 'document_parser.dart';
 
+/// Read access to comic page bytes, decoupled from how they are fetched so
+/// the reader controller can be tested with an in-memory fake.
+abstract interface class ComicPageSource {
+  int get pageCount;
+  List<ComicPageMeta> get pages;
+  Future<Uint8List> loadPage(int index);
+  Uint8List? peekPage(int index);
+  bool isCached(int index);
+  void evictOutside(int center, {int margin = 5});
+  void dispose();
+}
+
 /// Lazy provider for comic book pages from a CBZ archive.
 ///
 /// Memory model: `ZipDecoder().decodeBytes()` decompresses all entries into
@@ -15,15 +27,19 @@ import 'document_parser.dart';
 /// doubling memory pressure. A full fix requires switching to a ZIP library
 /// that supports random-access reads (e.g. reading the central directory
 /// without decompressing all entries).
-class ComicPageProvider {
+class ComicPageProvider implements ComicPageSource {
   ComicPageProvider._({
     required this.pageCount,
     required this.pages,
     required Archive archive,
   }) : _archive = archive;
 
+  @override
   final int pageCount;
+
+  @override
   final List<ComicPageMeta> pages;
+
   final Archive _archive;
 
   /// Small cache: the archive already holds all decompressed data, so this
@@ -112,6 +128,7 @@ class ComicPageProvider {
   }
 
   /// Returns cached page bytes, or loads and caches them.
+  @override
   Future<Uint8List> loadPage(int index) async {
     final cached = _cache.remove(index);
     if (cached != null) {
@@ -132,9 +149,11 @@ class ComicPageProvider {
   }
 
   /// Returns page bytes synchronously if cached, null otherwise.
+  @override
   Uint8List? peekPage(int index) => _cache[index];
 
   /// Whether the given page is currently in the in-memory cache.
+  @override
   bool isCached(int index) => _cache.containsKey(index);
 
   void _put(int index, Uint8List bytes) {
@@ -145,6 +164,7 @@ class ComicPageProvider {
   }
 
   /// Evicts pages outside [center ± margin] from the cache.
+  @override
   void evictOutside(int center, {int margin = 5}) {
     final keep = <int>{
       for (var i = center - margin; i <= center + margin; i++) i,
@@ -152,6 +172,7 @@ class ComicPageProvider {
     _cache.removeWhere((key, _) => !keep.contains(key));
   }
 
+  @override
   void dispose() {
     _cache.clear();
   }

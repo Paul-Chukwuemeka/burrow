@@ -2489,7 +2489,7 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 }
 
-/// Displays a single comic page from a [ComicPageProvider], loading the
+/// Displays a single comic page from a [ComicPageSource], loading the
 /// image bytes on demand and showing a sized placeholder while loading.
 class _LazyComicPageWidget extends StatefulWidget {
   const _LazyComicPageWidget({
@@ -2498,7 +2498,7 @@ class _LazyComicPageWidget extends StatefulWidget {
     required this.fit,
   });
 
-  final ComicPageProvider provider;
+  final ComicPageSource provider;
   final int pageIndex;
   final BoxFit fit;
 
