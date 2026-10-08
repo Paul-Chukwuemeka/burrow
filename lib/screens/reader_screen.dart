@@ -2566,6 +2566,7 @@ class _LazyComicPageWidget extends StatefulWidget {
 class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
   Uint8List? _bytes;
   bool _loading = false;
+  Object? _error;
 
   @override
   void initState() {
@@ -2579,6 +2580,7 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pageIndex != widget.pageIndex) {
       _bytes = widget.provider.peekPage(widget.pageIndex);
+      _error = null;
       if (_bytes == null && !_loading) _load();
     }
   }
@@ -2586,12 +2588,21 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
   Future<void> _load() async {
     if (_loading) return;
     _loading = true;
-    final bytes = await widget.provider.loadPage(widget.pageIndex);
-    if (!mounted) return;
-    setState(() {
-      _bytes = bytes;
-      _loading = false;
-    });
+    try {
+      final bytes = await widget.provider.loadPage(widget.pageIndex);
+      if (!mounted) return;
+      setState(() {
+        _bytes = bytes;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('Failed to load comic page ${widget.pageIndex}: $e');
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -2603,6 +2614,9 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
         cacheWidth: widget.cacheWidth,
       );
     }
+    if (_error != null) {
+      return const _ComicPageError();
+    }
     final meta = widget.provider.pages[widget.pageIndex];
     final screenW = MediaQuery.sizeOf(context).width;
     final aspect = meta.intrinsicHeight > 0
@@ -2610,6 +2624,35 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
         : 0.67;
     final h = screenW / aspect;
     return Container(width: screenW, height: h, color: const Color(0xFF1A1A2E));
+  }
+}
+
+/// Graceful fallback for a comic page whose bytes could not be loaded,
+/// matching the key and copy used by [ComicImage]'s decode-error tile.
+class _ComicPageError extends StatelessWidget {
+  const _ComicPageError();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('comic-image-error'),
+      alignment: Alignment.center,
+      color: scheme.surfaceContainerHighest,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.broken_image_outlined, color: scheme.onSurfaceVariant),
+          const SizedBox(height: 8),
+          Text(
+            'Page could not be displayed',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        ],
+      ),
+    );
   }
 }
 

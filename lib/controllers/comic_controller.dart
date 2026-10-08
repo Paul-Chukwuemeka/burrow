@@ -170,7 +170,9 @@ class ComicReaderController extends ChangeNotifier {
     } on FormatException catch (e) {
       if (!_mounted) return;
       comicLoading = false;
-      comicError = e.message;
+      comicError = e.message.trim().isEmpty
+          ? 'Could not open this comic.'
+          : e.message;
       notifyListeners();
     } catch (e) {
       if (!_mounted) return;

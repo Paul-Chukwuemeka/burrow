@@ -1913,7 +1913,8 @@ Implemented (review item → plan task → commit):
 - **#2** Corrupt comic page paints a red error box → Task 3 (`ComicImage`) — `aac90ee`
 - **#3** CBR had no decompressed-size guard → Task 8 — `6cff103`
 - **#4** Shared vertical zoom transformer, origin-based zoom → Task 6 — `20b68a2`
-  (per-page transformers now further superseded by the merged zoom engine)
+  (per-page transformers for the vertical list; the merged zoom engine would
+  replace them, but it is **not yet wired into the reader** — see below)
 - **#5 / #7 / #14** Prefetch errors unhandled; depth exceeded cache; mid-load
   cancellation → Task 4 — `534810e`
 - **#8** Preview strip re-centered every frame; full-res thumbnails → Task 7 —
@@ -1922,10 +1923,25 @@ Implemented (review item → plan task → commit):
   variable-height pages → Task 5 (`nearestPageIndex`) — `f5811b5`
 - **#13 / #16** Raw exception text surfaced; vertical scroll wrote the DB every
   tick → Task 9 — `da97cfb` (exit flush `f629d03`)
-- **#15 / Task 10** Separate comic/PDF zoom persistence — **DROPPED**: superseded
-  by the merged zoom engine (`lib/services/zoom/*`, merge `6f02651`)
 - Testability foundation: `ComicPageSource` interface → Task 1 — `a6d161a`
 - Cleanup: dead `ReaderChrome` widget removed → Task 11 — `bb2742c`
+
+Re-opened / pending zoom integration:
+
+A zoom engine exists under `lib/services/zoom/*` (merge `6f02651`) but it is
+**not wired into the reader**: `reader_screen.dart` still reads and writes the
+shared `_settings.lastZoomLevel` for both PDF and comics, and nothing under
+`lib/` imports `lib/services/zoom/*`. The items below are therefore **not**
+resolved by that engine; they stay open pending the zoom integration
+(zoom plans 2–3), which is where the shared `lastZoomLevel` gets replaced by
+per-format/per-book zoom state.
+
+- **#15 / Task 10** Separate comic/PDF zoom persistence — **RE-OPENED, PENDING
+  ZOOM INTEGRATION**: the comic/PDF zoom bleed is still live because both
+  formats share `_settings.lastZoomLevel`. Not "done/superseded".
+- **#12 Pinch-to-zoom without toggling zoom mode** — **PENDING ZOOM
+  INTEGRATION**: there is still no pinch path in `reader_screen.dart`; the
+  engine provides the math but is not connected, so this remains a UX gap.
 
 Deferred:
 
@@ -1934,8 +1950,6 @@ Deferred:
   retained.
 - **#11 Landscape / two-page reading** — orientation stays portrait-locked for
   all formats. Future feature.
-- **#12 Pinch-to-zoom without toggling zoom mode** — now handled by the merged
-  zoom track (`lib/services/zoom/*`), so no longer a correctness gap.
 
 Verification (2026-10-08): `flutter analyze` — 0 errors in `lib/`/`test/`
 (only info/warning, all pre-existing and outside this branch's changed files;
