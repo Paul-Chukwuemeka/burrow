@@ -31,9 +31,10 @@ void main() {
     final c = ZoomController(vsync: const TestVSync());
     c.setViewport(const Size(400, 800), const Size(1000, 1500));
     c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
-    final v = c.matrix.transform3(Vector3(0, 0, 0));
-    expect(v.x, closeTo(c.offset.dx, 1e-6));
-    expect(v.y, closeTo(c.offset.dy, 1e-6));
+    final p = Offset(c.content.width / 2, c.content.height / 2);
+    final v = c.matrix.transform3(Vector3(p.dx, p.dy, 0));
+    expect(v.x, closeTo(c.offset.dx + c.scale * p.dx, 1e-6));
+    expect(v.y, closeTo(c.offset.dy + c.scale * p.dy, 1e-6));
     c.dispose();
   });
 
@@ -73,15 +74,20 @@ void main() {
     c.dispose();
   });
 
-  test('stopMomentum halts an in-flight fling', () {
+  testWidgets('stopMomentum halts an in-flight fling', (tester) async {
     final c = ZoomController(vsync: const TestVSync());
     c.setViewport(const Size(400, 800), const Size(1000, 1500));
     c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
+    final start = c.offset.dx;
     c.panEnd(const Velocity(pixelsPerSecond: Offset(-2000, 0)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+    final moved = c.offset.dx;
+    expect(moved, isNot(closeTo(start, 1e-6)));
     c.stopMomentum();
-    final dx = c.offset.dx;
-    c.stopMomentum();
-    expect(c.offset.dx, closeTo(dx, 1e-6));
+    final stopped = c.offset.dx;
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(c.offset.dx, closeTo(stopped, 1e-9));
     c.dispose();
   });
 
@@ -94,6 +100,40 @@ void main() {
     final after = c.offset + center * c.scale;
     expect(after.dx, closeTo(400, 1e-3));
     expect(after.dy, closeTo(200, 1e-3));
+    c.dispose();
+  });
+
+  test('reanchor raises scale to the new min and keeps the center content point', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(
+      const Size(400, 800),
+      const Size(1000, 1500),
+      widthOnly: true,
+    );
+    c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
+    final contentPoint = (const Offset(200, 400) - c.offset) / c.scale;
+    c.setViewport(
+      const Size(2400, 600),
+      const Size(1000, 1500),
+      widthOnly: true,
+    );
+    expect(c.scale, closeTo(2.4, 1e-9));
+    final after = c.offset + contentPoint * c.scale;
+    expect(after.dx, closeTo(1200, 1e-3));
+    expect(after.dy, closeTo(300, 1e-3));
+    c.dispose();
+  });
+
+  testWidgets('toggleDoubleTap animates back to fit when zoomed', (tester) async {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.toggleDoubleTap(const Offset(200, 400));
+    await tester.pumpAndSettle();
+    expect(c.isZoomed, isTrue);
+    c.toggleDoubleTap(const Offset(200, 400));
+    expect(c.scale, closeTo(c.config.doubleTapScale, 1e-9));
+    await tester.pumpAndSettle();
+    expect(c.scale, closeTo(c.minScale, 1e-6));
     c.dispose();
   });
 }
