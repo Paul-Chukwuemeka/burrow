@@ -73,6 +73,26 @@ void main() {
     expect(source.loads, greaterThan(0));
     ctrl.dispose();
   });
+
+  test('comicError strips the exception type prefix', () async {
+    final ctrl = ComicReaderController(
+      book: Book(
+        id: 'c1',
+        title: 'Comic',
+        author: '',
+        path: '/definitely/missing.cbz',
+        format: BookFormat.cbz,
+        addedAt: 1,
+      ),
+      settings: ReaderSettings(),
+      library: LibraryService(),
+    );
+    await ctrl.loadComicPages();
+    expect(ctrl.comicError, isNotNull);
+    expect(ctrl.comicError, isNot(contains('FormatException')));
+    expect(ctrl.comicError, isNot(contains('Exception')));
+    ctrl.dispose();
+  });
 }
 
 class _FakeSource implements ComicPageSource {

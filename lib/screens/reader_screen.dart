@@ -467,6 +467,18 @@ class ReaderScreenState extends State<ReaderScreen>
     });
   }
 
+  void _saveComicPosition(int page, int offset, double progress) {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 300), () {
+      widget.library.savePosition(
+        id: _book.id,
+        chapter: page,
+        offset: offset,
+        progress: progress,
+      );
+    });
+  }
+
   void _flushSave() {
     if (_isPdf) {
       if (_pdfCtrl.pdfPageCount > 0) {
@@ -1720,11 +1732,10 @@ class ReaderScreenState extends State<ReaderScreen>
         );
         if (newIndex != _comicCtrl.comicPage) {
           _comicCtrl.notePageChanged(newIndex);
-          widget.library.savePosition(
-            id: _book.id,
-            chapter: newIndex,
-            offset: controller.offset.toInt(),
-            progress: (newIndex + 1) / count,
+          _saveComicPosition(
+            newIndex,
+            controller.offset.toInt(),
+            (newIndex + 1) / count,
           );
           if (_comicCtrl.isLazy) _prefetchComicPages(newIndex);
           if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(newIndex);

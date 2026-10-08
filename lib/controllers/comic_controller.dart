@@ -167,10 +167,16 @@ class ComicReaderController extends ChangeNotifier {
       comicLoading = false;
       comicError = 'File not found — it was moved or deleted.';
       notifyListeners();
+    } on FormatException catch (e) {
+      if (!_mounted) return;
+      comicLoading = false;
+      comicError = e.message;
+      notifyListeners();
     } catch (e) {
       if (!_mounted) return;
       comicLoading = false;
-      comicError = e.toString();
+      debugPrint('Failed to open comic: $e');
+      comicError = 'Could not open this comic.';
       notifyListeners();
     }
   }
