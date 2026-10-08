@@ -1,6 +1,4 @@
-import 'package:flutter/animation.dart';
-import 'package:flutter/foundation.dart';
-import 'package:vector_math/vector_math_64.dart';
+import 'package:flutter/widgets.dart';
 
 import 'zoom_config.dart';
 import 'zoom_math.dart';
@@ -45,6 +43,7 @@ class ZoomController extends ChangeNotifier {
 
   void setViewport(Size viewport, Size content, {bool widthOnly = false}) {
     final first = _viewport == Size.zero;
+    final old = _viewport;
     _viewport = viewport;
     _content = content;
     _widthOnly = widthOnly;
@@ -56,8 +55,9 @@ class ZoomController extends ChangeNotifier {
         content: content,
       );
       notifyListeners();
+    } else {
+      reanchor(old, viewport);
     }
-    // Subsequent calls (resize/rotation) re-anchor in Task 8.
   }
 
   void setSourcePixelWidth(int px) {
@@ -144,5 +144,98 @@ class ZoomController extends ChangeNotifier {
     } else {
       zoomTo(scale: config.doubleTapScale, focal: focal);
     }
+  }
+
+  late final AnimationController _mom = AnimationController.unbounded(
+    vsync: _vsync,
+  );
+
+  Offset _momentumStart = Offset.zero;
+
+  void panUpdate(Offset delta) {
+    stopMomentum();
+    _offset = ZoomMath.clampOffset(
+      offset: _offset + delta,
+      scale: _scale,
+      viewport: _viewport,
+      content: _content,
+      overscroll: config.overscroll,
+    );
+    notifyListeners();
+  }
+
+  void panEnd(Velocity velocity) {
+    final speed = velocity.pixelsPerSecond.distance;
+    if (speed < 1) {
+      _offset = ZoomMath.clampOffset(
+        offset: _offset,
+        scale: _scale,
+        viewport: _viewport,
+        content: _content,
+      );
+      notifyListeners();
+      return;
+    }
+    stopMomentum();
+    _momentumStart = _offset;
+    final dir = velocity.pixelsPerSecond / speed;
+    final sim = ClampingScrollSimulation(
+      position: 0,
+      velocity: speed,
+      friction: config.friction,
+    );
+    _mom
+      ..reset()
+      ..addListener(() {
+        _offset = ZoomMath.clampOffset(
+          offset: _momentumStart + dir * _mom.value,
+          scale: _scale,
+          viewport: _viewport,
+          content: _content,
+        );
+        notifyListeners();
+      });
+    _mom.animateWith(sim);
+  }
+
+  void stopMomentum() {
+    if (_mom.isAnimating) _mom.stop();
+  }
+
+  bool canPanHorizontal(double dx) {
+    if (!isZoomed) return false;
+    final min = _viewport.width - _content.width * _scale;
+    if (dx < 0) return _offset.dx > min + 0.5;
+    return _offset.dx < -0.5;
+  }
+
+  bool canPanVertical(double dy) {
+    if (!isZoomed) return false;
+    final min = _viewport.height - _content.height * _scale;
+    if (dy < 0) return _offset.dy > min + 0.5;
+    return _offset.dy < -0.5;
+  }
+
+  void reanchor(Size oldViewport, Size newViewport) {
+    _offset = ZoomMath.reanchorOffset(
+      offset: _offset,
+      oldViewport: oldViewport,
+      newViewport: newViewport,
+    );
+    if (_scale < minScale) _scale = minScale;
+    _offset = ZoomMath.clampOffset(
+      offset: _offset,
+      scale: _scale,
+      viewport: _viewport,
+      content: _content,
+    );
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    _mom.dispose();
+    super.dispose();
   }
 }

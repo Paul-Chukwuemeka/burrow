@@ -1,11 +1,11 @@
-import 'dart:ui';
-
 import 'package:burrow/services/zoom/zoom_controller.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('setViewport fits and centers content', () {
     final c = ZoomController(vsync: const TestVSync());
     c.setViewport(const Size(400, 800), const Size(1000, 1500));
@@ -58,6 +58,42 @@ void main() {
     final after = c.offset + before * c.scale;
     expect(after.dx, closeTo(focal.dx, 1e-3));
     expect(after.dy, closeTo(focal.dy, 1e-3));
+    c.dispose();
+  });
+
+  test('panUpdate clamps and canPan reports edges', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
+    final minLeft = 400.0 - 1000 * 2.0 - c.config.overscroll; // -1648
+    c.panUpdate(const Offset(-10000, 0));
+    expect(c.offset.dx, closeTo(minLeft, 1e-6));
+    expect(c.canPanHorizontal(-10), isFalse);
+    expect(c.canPanHorizontal(10), isTrue);
+    c.dispose();
+  });
+
+  test('stopMomentum halts an in-flight fling', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
+    c.panEnd(const Velocity(pixelsPerSecond: Offset(-2000, 0)));
+    c.stopMomentum();
+    final dx = c.offset.dx;
+    c.stopMomentum();
+    expect(c.offset.dx, closeTo(dx, 1e-6));
+    c.dispose();
+  });
+
+  test('reanchor keeps the center content point after resize', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
+    final center = (Offset(200, 400) - c.offset) / c.scale;
+    c.setViewport(const Size(800, 400), const Size(1000, 1500));
+    final after = c.offset + center * c.scale;
+    expect(after.dx, closeTo(400, 1e-3));
+    expect(after.dy, closeTo(200, 1e-3));
     c.dispose();
   });
 }
