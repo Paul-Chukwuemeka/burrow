@@ -1898,3 +1898,48 @@ WhatsApp / file-manager shares and "Open with" now land in the library:
   `settings_sheet.dart`, `reader_repagination_test.dart`, plus a
   non-compiling `_LayoutMode` reference in `library_screen.dart` which this
   change repaired to `LayoutMode`); all left untouched except the last.
+
+---
+
+## Comic reader correctness — completed (2026-10-08)
+
+Branch: `fix/comic-reader-correctness`. Plan:
+`docs/superpowers/plans/2026-10-07-comic-reader-correctness.md`. Covers review
+items #1–#16 (bugs #1–5, issues #6–16) from the comic-reader code review.
+
+Implemented (review item → plan task → commit):
+
+- **#1** Comic page flips never counted in reading sessions → Task 2 — `be2e588`
+- **#2** Corrupt comic page paints a red error box → Task 3 (`ComicImage`) — `aac90ee`
+- **#3** CBR had no decompressed-size guard → Task 8 — `6cff103`
+- **#4** Shared vertical zoom transformer, origin-based zoom → Task 6 — `20b68a2`
+  (per-page transformers now further superseded by the merged zoom engine)
+- **#5 / #7 / #14** Prefetch errors unhandled; depth exceeded cache; mid-load
+  cancellation → Task 4 — `534810e`
+- **#8** Preview strip re-centered every frame; full-res thumbnails → Task 7 —
+  `6347be0` + `3584f23`
+- **#9 / #10** Vertical position restore fired before layout; index drifted on
+  variable-height pages → Task 5 (`nearestPageIndex`) — `f5811b5`
+- **#13 / #16** Raw exception text surfaced; vertical scroll wrote the DB every
+  tick → Task 9 — `da97cfb` (exit flush `f629d03`)
+- **#15 / Task 10** Separate comic/PDF zoom persistence — **DROPPED**: superseded
+  by the merged zoom engine (`lib/services/zoom/*`, merge `6f02651`)
+- Testability foundation: `ComicPageSource` interface → Task 1 — `a6d161a`
+- Cleanup: dead `ReaderChrome` widget removed → Task 11 — `bb2742c`
+
+Deferred:
+
+- **#6 Whole-archive decode** — `ComicPageProvider.open` still inflates the full
+  CBZ; needs a random-access ZIP reader. The 512 MB decompressed guard is
+  retained.
+- **#11 Landscape / two-page reading** — orientation stays portrait-locked for
+  all formats. Future feature.
+- **#12 Pinch-to-zoom without toggling zoom mode** — now handled by the merged
+  zoom track (`lib/services/zoom/*`), so no longer a correctness gap.
+
+Verification (2026-10-08): `flutter analyze` — 0 errors in `lib/`/`test/`
+(only info/warning, all pre-existing and outside this branch's changed files;
+the 317 reported issues are all in `vendor/lexicor`). `flutter test` — 377/377
+pass. Manual device checks (real CBZ/CBR: Stats "pages read" increment, corrupt
+page tile, vertical restore offset, single-page centered zoom, preview-strip
+scrolling) were **not performed** in this environment.
