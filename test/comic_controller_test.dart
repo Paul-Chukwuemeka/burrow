@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:burrow/controllers/comic_controller.dart';
 import 'package:burrow/models/book.dart';
 import 'package:burrow/models/reader_settings.dart';
@@ -92,6 +94,34 @@ void main() {
     expect(ctrl.comicError, isNot(contains('FormatException')));
     expect(ctrl.comicError, isNot(contains('Exception')));
     ctrl.dispose();
+  });
+
+  test('comicError surfaces the friendly FormatException message', () async {
+    final archive = Archive()
+      ..addFile(ArchiveFile('readme.txt', 5, [104, 101, 108, 108, 111]));
+    final bytes = ZipEncoder().encode(archive);
+    final tmp = await Directory.systemTemp.createTemp('comic_ctrl_test');
+    final file = File('${tmp.path}/no_images.cbz');
+    await file.writeAsBytes(bytes);
+
+    final ctrl = ComicReaderController(
+      book: Book(
+        id: 'c2',
+        title: 'Comic',
+        author: '',
+        path: file.path,
+        format: BookFormat.cbz,
+        addedAt: 1,
+      ),
+      settings: ReaderSettings(),
+      library: LibraryService(),
+    );
+    await ctrl.loadComicPages();
+    expect(ctrl.comicError, 'No images found in comic archive');
+    expect(ctrl.comicError, isNot(contains('FormatException')));
+    expect(ctrl.comicError, isNot(contains('Exception')));
+    ctrl.dispose();
+    tmp.deleteSync(recursive: true);
   });
 }
 

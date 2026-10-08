@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:burrow/db/database.dart' as db;
 import 'package:burrow/models/book.dart';
+import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/screens/reader_screen.dart';
 import 'package:burrow/services/brightness_controller.dart';
 import 'package:burrow/services/library_service.dart';
@@ -161,5 +162,46 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
+  });
+
+  testWidgets('exiting immediately flushes a pending vertical comic position',
+      (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+
+    library.settings.comicReadingMode = ComicReadingMode.vertical;
+
+    await tester.pumpWidget(
+      MaterialApp(home: ReaderScreen(book: book, library: library)),
+    );
+    for (var i = 0; i < 100; i++) {
+      if (find.byType(InteractiveViewer).evaluate().isNotEmpty) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pump();
+
+    // Scrolling starts the 300 ms debounce but we fire the flush first.
+    for (var i = 0; i < 10; i++) {
+      await tester.drag(find.byType(ListView).first, const Offset(0, -150));
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final state = tester.state<ReaderScreenState>(find.byType(ReaderScreen));
+    final page = state.debugComicPage;
+    expect(page, greaterThan(0));
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+
+    expect(library.bookById('c1')!.lastChapter, page);
+    expect(library.bookById('c1')!.lastChapter, greaterThan(0));
   });
 }

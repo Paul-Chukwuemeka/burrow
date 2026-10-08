@@ -334,6 +334,7 @@ class ReaderScreenState extends State<ReaderScreen>
     _bookmarkCtrl.dispose();
     _saveDebounce?.cancel();
     _flushSave();
+    _flushComicPosition();
     _settingsSaveDebounce?.cancel();
     widget.library.saveSettings();
     _pageController?.dispose();
@@ -477,6 +478,25 @@ class ReaderScreenState extends State<ReaderScreen>
         progress: progress,
       );
     });
+  }
+
+  void _flushComicPosition() {
+    _saveDebounce?.cancel();
+    if (!_isComic) return;
+    final count = _comicCtrl.comicPageCount;
+    if (count == 0) return;
+    final vertical =
+        _settings.comicReadingMode == ComicReadingMode.vertical;
+    final scroll = _comicCtrl.comicVerticalScrollController;
+    final offset = vertical && scroll != null && scroll.hasClients
+        ? scroll.offset.toInt()
+        : 0;
+    widget.library.savePosition(
+      id: _book.id,
+      chapter: _comicCtrl.comicPage,
+      offset: offset,
+      progress: (_comicCtrl.comicPage + 1) / count,
+    );
   }
 
   void _flushSave() {
