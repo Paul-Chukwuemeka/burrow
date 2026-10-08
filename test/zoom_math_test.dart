@@ -166,12 +166,35 @@ void main() {
       offset: offset,
       oldViewport: oldViewport,
       newViewport: newViewport,
+      oldScale: 1.0,
+      newScale: 1.0,
     );
     // content point at old center:
     const scale = 1.0;
     final c = (Offset(200, 400) - offset) / scale;
     // its viewport position after re-anchor:
     final after = o + c * scale;
+    expect(after.dx, closeTo(400, 1e-6));
+    expect(after.dy, closeTo(200, 1e-6));
+  });
+
+  test('reanchorOffset keeps the center content point fixed across scale change', () {
+    const offset = Offset(-100, -200);
+    const oldViewport = Size(400, 800);
+    const newViewport = Size(800, 400);
+    const oldScale = 1.0;
+    const newScale = 2.0;
+    final o = ZoomMath.reanchorOffset(
+      offset: offset,
+      oldViewport: oldViewport,
+      newViewport: newViewport,
+      oldScale: oldScale,
+      newScale: newScale,
+    );
+    // content point at the old center, using the old scale:
+    final c = (Offset(200, 400) - offset) / oldScale;
+    // its viewport position after re-anchor, using the new scale:
+    final after = o + c * newScale;
     expect(after.dx, closeTo(400, 1e-6));
     expect(after.dy, closeTo(200, 1e-6));
   });

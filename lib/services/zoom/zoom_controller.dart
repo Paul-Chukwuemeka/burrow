@@ -36,10 +36,11 @@ class ZoomController extends ChangeNotifier {
     final src = _sourcePixelWidth;
     if (src == null || _content.width <= 0) return configMax;
     final cap = src / _content.width;
-    return cap < configMax ? cap : configMax;
+    final m = cap < configMax ? cap : configMax;
+    return m < minScale ? minScale : m;
   }
 
-  bool get isZoomed => _scale > minScale * 1.01;
+  bool get isZoomed => _scale > minScale + 0.01;
 
   void setViewport(Size viewport, Size content, {bool widthOnly = false}) {
     final first = _viewport == Size.zero;
@@ -49,11 +50,13 @@ class ZoomController extends ChangeNotifier {
     _widthOnly = widthOnly;
     if (first) {
       _scale = minScale;
-      _offset = ZoomMath.centeredOffset(
-        scale: _scale,
-        viewport: viewport,
-        content: content,
-      );
+      _offset = _widthOnly
+          ? Offset((viewport.width - content.width * _scale) / 2, 0)
+          : ZoomMath.centeredOffset(
+              scale: _scale,
+              viewport: viewport,
+              content: content,
+            );
       notifyListeners();
     } else {
       reanchor(old, viewport);
@@ -82,11 +85,13 @@ class ZoomController extends ChangeNotifier {
 
   void reset({bool animate = true}) {
     final targetScale = minScale;
-    final targetOffset = ZoomMath.centeredOffset(
-      scale: targetScale,
-      viewport: _viewport,
-      content: _content,
-    );
+    final targetOffset = _widthOnly
+        ? Offset((_viewport.width - _content.width * targetScale) / 2, 0)
+        : ZoomMath.centeredOffset(
+            scale: targetScale,
+            viewport: _viewport,
+            content: _content,
+          );
     if (animate && !disableAnimations) {
       _animateTo(scale: targetScale, offset: targetOffset);
     } else {
@@ -111,6 +116,7 @@ class ZoomController extends ChangeNotifier {
   }
 
   void _animateTo({required double scale, required Offset offset}) {
+    _stopSnap();
     _anim.stop();
     if (_animTick != null) {
       _anim.removeListener(_animTick!);
@@ -177,11 +183,18 @@ class ZoomController extends ChangeNotifier {
     vsync: _vsync,
   );
 
+  late final AnimationController _snap = AnimationController(
+    vsync: _vsync,
+    duration: config.snapBackDuration,
+  );
+
   Offset _momentumStart = Offset.zero;
   VoidCallback? _momTick;
+  VoidCallback? _snapTick;
 
   void panUpdate(Offset delta) {
     stopMomentum();
+    _stopSnap();
     _offset = ZoomMath.clampOffset(
       offset: _offset + delta,
       scale: _scale,
@@ -194,10 +207,10 @@ class ZoomController extends ChangeNotifier {
 
   void panEnd(Velocity velocity) {
     stopMomentum();
+    _stopSnap();
     final speed = velocity.pixelsPerSecond.distance;
     if (speed < 1) {
-      _offset = clampOffset(_offset);
-      notifyListeners();
+      _snapBack();
       return;
     }
     _momentumStart = _offset;
@@ -213,6 +226,7 @@ class ZoomController extends ChangeNotifier {
         scale: _scale,
         viewport: _viewport,
         content: _content,
+        overscroll: config.overscroll,
       );
       notifyListeners();
     }
@@ -221,7 +235,53 @@ class ZoomController extends ChangeNotifier {
     _mom
       ..reset()
       ..addListener(tick);
-    _mom.animateWith(sim);
+    _mom.animateWith(sim).whenComplete(() {
+      if (_momTick != tick) return;
+      _mom.removeListener(tick);
+      _momTick = null;
+      _snapBack();
+    });
+  }
+
+  void _snapBack() {
+    final target = clampOffset(_offset);
+    if (target == _offset) return;
+    if (disableAnimations || config.snapBackDuration == Duration.zero) {
+      _offset = target;
+      notifyListeners();
+      return;
+    }
+    _animateOffsetTo(target);
+  }
+
+  void _animateOffsetTo(Offset target) {
+    _stopSnap();
+    final begin = _offset;
+    void tick() {
+      final t = config.animationCurve.transform(_snap.value);
+      _offset = Offset.lerp(begin, target, t)!;
+      notifyListeners();
+    }
+
+    _snapTick = tick;
+    _snap
+      ..reset()
+      ..addListener(tick);
+    _snap.forward().whenComplete(() {
+      if (_snapTick != tick) return;
+      _snap.removeListener(tick);
+      _snapTick = null;
+      _offset = target;
+      notifyListeners();
+    });
+  }
+
+  void _stopSnap() {
+    if (_snap.isAnimating) _snap.stop();
+    if (_snapTick != null) {
+      _snap.removeListener(_snapTick!);
+      _snapTick = null;
+    }
   }
 
   void stopMomentum() {
@@ -250,14 +310,16 @@ class ZoomController extends ChangeNotifier {
       _reanchor(oldViewport, newViewport, _scale);
 
   void _reanchor(Size oldViewport, Size newViewport, double oldScale) {
-    final newMin = minScale;
-    final newScale = _scale < newMin ? newMin : _scale;
-    final oldCenter = Offset(oldViewport.width / 2, oldViewport.height / 2);
-    final newCenter = Offset(newViewport.width / 2, newViewport.height / 2);
-    final contentPoint = (oldCenter - _offset) / oldScale;
+    final newScale = ZoomMath.clampScale(_scale, minScale, maxScale);
     _scale = newScale;
     _offset = ZoomMath.clampOffset(
-      offset: newCenter - contentPoint * newScale,
+      offset: ZoomMath.reanchorOffset(
+        offset: _offset,
+        oldViewport: oldViewport,
+        newViewport: newViewport,
+        oldScale: oldScale,
+        newScale: newScale,
+      ),
       scale: newScale,
       viewport: _viewport,
       content: _content,
@@ -275,8 +337,13 @@ class ZoomController extends ChangeNotifier {
       _mom.removeListener(_momTick!);
       _momTick = null;
     }
+    if (_snapTick != null) {
+      _snap.removeListener(_snapTick!);
+      _snapTick = null;
+    }
     _anim.dispose();
     _mom.dispose();
+    _snap.dispose();
     super.dispose();
   }
 }

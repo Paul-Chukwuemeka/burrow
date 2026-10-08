@@ -23,8 +23,10 @@ class ZoomMath {
     return math.min(byWidth, byHeight);
   }
 
-  static double clampScale(double scale, double min, double max) =>
-      scale.clamp(min, max);
+  static double clampScale(double scale, double min, double max) {
+    if (min > max) return min;
+    return scale.clamp(min, max);
+  }
 
   /// Offset that keeps the content point under [focal] fixed while the scale
   /// changes from [startScale] to [newScale].
@@ -98,14 +100,18 @@ class ZoomMath {
   }
 
   /// New offset that keeps the content point at the old viewport center at the
-  /// new viewport center after a viewport size change.
+  /// new viewport center after a viewport size or scale change.
   static Offset reanchorOffset({
     required Offset offset,
     required Size oldViewport,
     required Size newViewport,
+    required double oldScale,
+    required double newScale,
   }) {
+    if (oldScale <= 0) return offset;
     final oldCenter = Offset(oldViewport.width / 2, oldViewport.height / 2);
     final newCenter = Offset(newViewport.width / 2, newViewport.height / 2);
-    return offset + (newCenter - oldCenter);
+    final contentPoint = (oldCenter - offset) / oldScale;
+    return newCenter - contentPoint * newScale;
   }
 }
