@@ -136,4 +136,67 @@ void main() {
     expect(c.scale, closeTo(c.minScale, 1e-6));
     c.dispose();
   });
+
+  test('maxScale never falls below minScale for tiny sources', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.setSourcePixelWidth(200);
+    expect(c.maxScale, greaterThanOrEqualTo(c.minScale));
+    expect(() => c.zoomTo(scale: 2.0, focal: const Offset(200, 400)), returnsNormally);
+    expect(c.scale, greaterThanOrEqualTo(c.minScale));
+    expect(c.scale, lessThanOrEqualTo(c.maxScale));
+    expect(() => c.setSourcePixelWidth(100), returnsNormally);
+    expect(c.scale, greaterThanOrEqualTo(c.minScale));
+    expect(c.scale, lessThanOrEqualTo(c.maxScale));
+    c.dispose();
+  });
+
+  testWidgets('overscroll springs back to the clamp on release', (tester) async {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(const Size(400, 800), const Size(1000, 1500));
+    c.zoomTo(scale: 2.0, focal: const Offset(200, 400), animate: false);
+    c.panUpdate(const Offset(10000, 0));
+    expect(c.offset.dx, closeTo(c.config.overscroll, 1e-6));
+    final target = c.clampOffset(c.offset);
+    expect(c.offset.dx, greaterThan(target.dx));
+    c.panEnd(Velocity.zero);
+    await tester.pumpAndSettle();
+    expect(c.offset.dx, closeTo(target.dx, 1e-6));
+    expect(c.offset.dy, closeTo(target.dy, 1e-6));
+    c.dispose();
+  });
+
+  test('reanchor raises scale when the new viewport min exceeds the old scale', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(
+      const Size(400, 800),
+      const Size(1000, 1500),
+      widthOnly: true,
+    );
+    expect(c.scale, closeTo(0.4, 1e-9));
+    final contentPoint = (const Offset(200, 400) - c.offset) / c.scale;
+    c.setViewport(
+      const Size(2400, 600),
+      const Size(1000, 1500),
+      widthOnly: true,
+    );
+    expect(c.scale, closeTo(2.4, 1e-9));
+    final after = c.offset + contentPoint * c.scale;
+    expect(after.dx, closeTo(1200, 1e-3));
+    expect(after.dy, closeTo(300, 1e-3));
+    c.dispose();
+  });
+
+  test('widthOnly first fit top-aligns vertically', () {
+    final c = ZoomController(vsync: const TestVSync());
+    c.setViewport(
+      const Size(400, 800),
+      const Size(1000, 1500),
+      widthOnly: true,
+    );
+    expect(c.scale, closeTo(0.4, 1e-9));
+    expect(c.offset.dx, closeTo(0, 1e-9));
+    expect(c.offset.dy, closeTo(0, 1e-9));
+    c.dispose();
+  });
 }
