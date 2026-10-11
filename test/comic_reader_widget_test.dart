@@ -204,4 +204,34 @@ void main() {
     expect(library.bookById('c1')!.lastChapter, page);
     expect(library.bookById('c1')!.lastChapter, greaterThan(0));
   });
+
+  testWidgets('chrome page label shows numbers, not an object dump',
+      (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(home: ReaderScreen(book: book, library: library)),
+    );
+    for (var i = 0; i < 100; i++) {
+      if (find.byType(PageView).evaluate().isNotEmpty) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pump();
+
+    // Tap the center tap zone to reveal the reader chrome.
+    await tester.tapAt(const Offset(206, 450));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Page 1 of 20'), findsOneWidget);
+    expect(find.textContaining('Instance of'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
 }

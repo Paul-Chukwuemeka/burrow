@@ -1570,7 +1570,7 @@ class ReaderScreenState extends State<ReaderScreen>
           child: _chrome(
             centerLabel: _pdfCtrl.pdfPageCount == 0
                 ? '-/-'
-                : 'Page $_pdfCtrl.pdfPage of $_pdfCtrl.pdfPageCount',
+                : 'Page ${_pdfCtrl.pdfPage} of ${_pdfCtrl.pdfPageCount}',
             sliderMax: _pdfCtrl.pdfPageCount > 1 ? _pdfCtrl.pdfPageCount : 1,
             sliderValue: _pdfCtrl.pdfPage.clamp(
               1,
@@ -1718,7 +1718,7 @@ class ReaderScreenState extends State<ReaderScreen>
           ignoring: !_chromeVisible,
           child: _chrome(
             centerLabel:
-                'Page ${_comicCtrl.comicPage + 1} of $_comicCtrl.comicPageCount',
+                'Page ${_comicCtrl.comicPage + 1} of ${_comicCtrl.comicPageCount}',
             sliderMax: _comicCtrl.comicPageCount > 1
                 ? _comicCtrl.comicPageCount
                 : 1,
@@ -1798,7 +1798,7 @@ class ReaderScreenState extends State<ReaderScreen>
           ignoring: !_chromeVisible,
           child: _chrome(
             centerLabel:
-                'Page ${_comicCtrl.comicPage + 1} of $_comicCtrl.comicPageCount',
+                'Page ${_comicCtrl.comicPage + 1} of ${_comicCtrl.comicPageCount}',
             sliderMax: _comicCtrl.comicPageCount > 1
                 ? _comicCtrl.comicPageCount
                 : 1,
