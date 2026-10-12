@@ -362,7 +362,7 @@ void main() {
     test('portrait image is capped and wrapped in Center', () {
       final img = ImageRun(
         offset: 2,
-        bytes: Uint8List(0),
+        bytes: Uint8List.fromList(const [1, 2, 3, 4]),
         intrinsicWidth: 800,
         intrinsicHeight: 1200,
       );
@@ -395,7 +395,7 @@ void main() {
     test('image without explicit maxHeight still gets fixed 150px cap', () {
       final img = ImageRun(
         offset: 2,
-        bytes: Uint8List(0),
+        bytes: Uint8List.fromList(const [1, 2, 3, 4]),
         intrinsicWidth: 400,
         intrinsicHeight: 300,
       );
@@ -419,6 +419,40 @@ void main() {
       // 400×300 at 370px → natural 277.5 → capped at 150, width 200.
       expect(image.height, closeTo(150.0, 1));
       expect(image.width, closeTo(200.0, 1));
+    });
+
+    testWidgets('an image with deferred bytes renders a sized placeholder', (
+      tester,
+    ) async {
+      final img = ImageRun(
+        offset: 1,
+        bytes: Uint8List(0),
+        intrinsicWidth: 400,
+        intrinsicHeight: 300,
+        sourceKey: 'OEBPS/cover.jpg',
+      );
+
+      final spans = buildPageSpans(
+        text: 'A\uFFFCB',
+        start: 0,
+        end: 3,
+        base: style,
+        theme: theme,
+        settings: ReaderSettings(),
+        images: [img],
+        renderWidth: 370,
+      );
+
+      // An empty-bytes image must not attempt to decode: no Image widget, but
+      // the space is still reserved so the page layout is unchanged.
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: RichText(text: wrapSpans(spans)),
+        ),
+      );
+      expect(find.byType(Image), findsNothing);
+      expect(spans.whereType<WidgetSpan>(), isNotEmpty);
     });
   });
 }

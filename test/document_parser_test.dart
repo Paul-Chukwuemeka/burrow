@@ -10,6 +10,18 @@ import 'package:image/image.dart' as img;
 import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/document_parser.dart';
+// ignore: depend_on_referenced_packages
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+
+/// Makes `getTemporaryDirectory()` resolve so [DocumentParser] uses its disk
+/// cache under test.
+class _FakeTempPathProvider extends PathProviderPlatform {
+  _FakeTempPathProvider(this.tempPath);
+  final String tempPath;
+
+  @override
+  Future<String?> getTemporaryPath() async => tempPath;
+}
 
 void main() {
   group('chapterizeTxt', () {
@@ -804,7 +816,11 @@ More text.''';
       expect(DocumentParser.prepareCover(small), equals(small));
     });
 
-    test('parsing twice preserves inline image bytes and source key', () async {
+    test('parsing twice defers inline image bytes to the cache-hit path', () async {
+      final cacheRoot = Directory.systemTemp.createTempSync('defer_img_cache');
+      final previous = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = _FakeTempPathProvider(cacheRoot.path);
+
       final dir = Directory.systemTemp.createTempSync('cache_round');
       final file = File('${dir.path}/book.epub');
       await file.writeAsBytes(_buildEpubWithCover(_tinyJpeg()));
@@ -814,18 +830,28 @@ More text.''';
         final firstImage = first.chapters
             .expand((c) => c.images)
             .firstWhere((i) => i.sourceKey != null);
+        // The first (uncached) parse still carries image bytes.
+        expect(firstImage.bytes, isNotEmpty);
 
-        // Second parse may hit the v3 cache and rehydrate from the EPUB.
+        // The second parse hits the disk cache: the reference is kept, the
+        // bytes are deferred so the open path does not inflate or copy them.
         final second = await DocumentParser.parse(file.path);
         final secondImage = second.chapters
             .expand((c) => c.images)
             .firstWhere((i) => i.sourceKey != null);
-
         expect(secondImage.sourceKey, firstImage.sourceKey);
-        expect(secondImage.bytes, equals(firstImage.bytes));
-        expect(secondImage.bytes, isNotEmpty);
+        expect(secondImage.bytes, isEmpty);
+
+        // Hydration (off the open path) fills them back in.
+        final hydrated = await DocumentParser.hydrateImages(second, file.path);
+        final hydratedImage = hydrated.chapters
+            .expand((c) => c.images)
+            .firstWhere((i) => i.sourceKey != null);
+        expect(hydratedImage.bytes, equals(firstImage.bytes));
       } finally {
+        PathProviderPlatform.instance = previous;
         dir.deleteSync(recursive: true);
+        cacheRoot.deleteSync(recursive: true);
       }
     });
   });

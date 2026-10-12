@@ -2581,48 +2581,22 @@ class DocumentParser {
     } catch (_) {}
   }
 
-  /// Returns a copy of [doc] with image/font bytes re-read from the source
-  /// EPUB, or null when the source is missing/unreadable or a referenced image
-  /// entry is gone (the caller then falls back to a full parse).
+  /// Rehydrates a document loaded from the disk cache.
+  ///
+  /// Font bytes are restored (line metrics depend on them). Inline-image bytes
+  /// are deliberately left empty: pagination needs only the stored dimensions,
+  /// and [hydrateImages] fills the bytes later so the open path never inflates
+  /// or copies them. Returns null when the source is missing/unreadable (the
+  /// caller then falls back to a full parse).
   static ParsedDocument? _hydrateAssets(ParsedDocument doc, String path) {
-    if (!_docNeedsHydration(doc)) return doc;
-    final file = File(path);
-    if (!file.existsSync()) return null;
-
-    final Archive archive;
-    try {
-      archive = ZipDecoder().decodeBytes(file.readAsBytesSync());
-    } catch (_) {
-      return null;
-    }
-    final entries = <String, ArchiveFile>{
-      for (final f in archive.files)
-        _safeDecode(f.name.toLowerCase()): f,
-    };
+    if (!_docNeedsFontHydration(doc)) return doc;
+    final entries = _openArchiveEntries(path);
+    if (entries == null) return null;
     Uint8List? read(String key) {
       final entry = entries[key.toLowerCase()];
       if (entry == null) return null;
       final bytes = entry.content;
       return bytes.isEmpty ? null : bytes;
-    }
-
-    final chapters = <Chapter>[];
-    for (final ch in doc.chapters) {
-      if (ch.images.isEmpty) {
-        chapters.add(ch);
-        continue;
-      }
-      final images = <ImageRun>[];
-      for (final img in ch.images) {
-        if (img.bytes.isNotEmpty || img.sourceKey == null) {
-          images.add(img);
-          continue;
-        }
-        final bytes = read(img.sourceKey!);
-        if (bytes == null) return null;
-        images.add(img.copyWith(bytes: bytes));
-      }
-      chapters.add(Chapter(ch.title, ch.body, ch.runs, images));
     }
 
     final fontFaces = <String, FontFaceInfo>{};
@@ -2639,35 +2613,119 @@ class DocumentParser {
       );
     }
 
-    return ParsedDocument(
-      title: doc.title,
-      author: doc.author,
-      chapters: chapters,
-      coverBytes: doc.coverBytes,
-      description: doc.description,
-      annotation: doc.annotation,
-      genre: doc.genre,
-      seriesName: doc.seriesName,
-      seriesIndex: doc.seriesIndex,
-      publisher: doc.publisher,
-      isbn: doc.isbn,
-      language: doc.language,
-      publicationDate: doc.publicationDate,
-      rights: doc.rights,
-      type: doc.type,
-      source: doc.source,
-      titleSort: doc.titleSort,
-      authorSort: doc.authorSort,
-      fontFaces: fontFaces,
-    );
+    return _rebuildDoc(doc, fontFaces: fontFaces);
   }
 
-  static bool _docNeedsHydration(ParsedDocument doc) {
+  /// Fills deferred inline-image bytes from the source EPUB.
+  ///
+  /// Runs off the open path (after the first paint). A missing entry leaves that
+  /// image's bytes empty — the renderer shows a sized placeholder — so a moved
+  /// or damaged source degrades one image instead of failing the whole open.
+  /// Never throws; returns [doc] unchanged when nothing is deferred or the file
+  /// cannot be read.
+  static Future<ParsedDocument> hydrateImages(
+    ParsedDocument doc,
+    String path,
+  ) async {
+    final keys = <String>{};
     for (final ch in doc.chapters) {
       for (final img in ch.images) {
-        if (img.bytes.isEmpty && img.sourceKey != null) return true;
+        if (img.bytes.isEmpty && img.sourceKey != null) keys.add(img.sourceKey!);
       }
     }
+    if (keys.isEmpty) return doc;
+
+    // Read the archive entries in an isolate: the file read and zip inflate
+    // must not touch the UI thread, even off the open path.
+    final Map<String, Uint8List> bytes;
+    try {
+      bytes = await compute(_readImageEntries, (path, keys.toList()));
+    } catch (_) {
+      return doc;
+    }
+    if (bytes.isEmpty) return doc;
+
+    final chapters = <Chapter>[];
+    for (final ch in doc.chapters) {
+      if (ch.images.isEmpty) {
+        chapters.add(ch);
+        continue;
+      }
+      final images = <ImageRun>[];
+      for (final img in ch.images) {
+        if (img.bytes.isNotEmpty || img.sourceKey == null) {
+          images.add(img);
+          continue;
+        }
+        images.add(img.copyWith(bytes: bytes[img.sourceKey]));
+      }
+      chapters.add(Chapter(ch.title, ch.body, ch.runs, images));
+    }
+    return _rebuildDoc(doc, chapters: chapters);
+  }
+
+  /// Isolate entry point for [hydrateImages]: reads the named entries from
+  /// [path]'s EPUB and returns them keyed by the requested name.
+  static Map<String, Uint8List> _readImageEntries(
+    (String, List<String>) args,
+  ) {
+    final (path, keys) = args;
+    final entries = _openArchiveEntries(path);
+    if (entries == null) return const {};
+    final out = <String, Uint8List>{};
+    for (final key in keys) {
+      final entry = entries[key.toLowerCase()];
+      if (entry == null) continue;
+      final data = entry.content;
+      if (data.isNotEmpty) out[key] = data;
+    }
+    return out;
+  }
+
+  /// The EPUB's entries keyed by lowercase decoded name, or null when the file
+  /// is missing or not a readable zip.
+  static Map<String, ArchiveFile>? _openArchiveEntries(String path) {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    try {
+      final archive = ZipDecoder().decodeBytes(file.readAsBytesSync());
+      return <String, ArchiveFile>{
+        for (final f in archive.files) _safeDecode(f.name.toLowerCase()): f,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Copy of [doc] with [chapters]/[fontFaces] replaced.
+  static ParsedDocument _rebuildDoc(
+    ParsedDocument doc, {
+    List<Chapter>? chapters,
+    Map<String, FontFaceInfo>? fontFaces,
+  }) => ParsedDocument(
+    title: doc.title,
+    author: doc.author,
+    chapters: chapters ?? doc.chapters,
+    coverBytes: doc.coverBytes,
+    description: doc.description,
+    annotation: doc.annotation,
+    genre: doc.genre,
+    seriesName: doc.seriesName,
+    seriesIndex: doc.seriesIndex,
+    publisher: doc.publisher,
+    isbn: doc.isbn,
+    language: doc.language,
+    publicationDate: doc.publicationDate,
+    rights: doc.rights,
+    type: doc.type,
+    source: doc.source,
+    titleSort: doc.titleSort,
+    authorSort: doc.authorSort,
+    fontFaces: fontFaces ?? doc.fontFaces,
+  );
+
+  /// Whether [doc] still needs its font bytes read from the source EPUB.
+  static bool _docNeedsFontHydration(ParsedDocument doc) {
     for (final info in doc.fontFaces.values) {
       if (info.bytes == null && info.src.isNotEmpty) return true;
     }

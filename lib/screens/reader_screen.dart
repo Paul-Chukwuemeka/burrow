@@ -336,6 +336,14 @@ class ReaderScreenState extends State<ReaderScreen>
       // the viewport. Deriving it from a second place risks a signature that
       // disagrees with the layout and repaginating forever.
       setState(() => _doc = doc);
+      // The cache-hit path defers inline-image bytes; hydrate them after the
+      // first paint so the open never waits on them. Only swap if the reader
+      // is still showing this same document.
+      unawaited(
+        DocumentParser.hydrateImages(doc, _book.path).then((hydrated) {
+          if (mounted && identical(_doc, doc)) setState(() => _doc = hydrated);
+        }),
+      );
     } on FileSystemException {
       if (!mounted) return;
       setState(() => _error = 'File not found — it was moved or deleted.');

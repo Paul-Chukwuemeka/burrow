@@ -89,35 +89,46 @@ List<InlineSpan> buildPageSpans({
     if (segEnd == segStart + 1 && imageMap.containsKey(segStart)) {
       final img = imageMap[segStart]!;
       final size = img.renderedSize(renderWidth, maxHeight: maxHeight);
-      Widget imageWidget = Image.memory(
-        img.bytes,
-        width: size.width,
-        height: size.height,
-        // Decode at display resolution (physical pixels) instead of the
-        // source's full size, which can be many times larger.
-        cacheWidth: (size.width * devicePixelRatio).round().clamp(1, 1 << 14),
-        cacheHeight: (size.height * devicePixelRatio).round().clamp(1, 1 << 14),
-        fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => Container(
+      Widget imageWidget;
+      if (img.bytes.isEmpty) {
+        // Deferred (not yet hydrated) or unreadable image: reserve the exact
+        // space without asking the engine to decode empty bytes.
+        imageWidget = SizedBox(width: size.width, height: size.height);
+      } else {
+        imageWidget = Image.memory(
+          img.bytes,
           width: size.width,
-          height: 48,
-          decoration: BoxDecoration(
-            color: theme.muted.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(4),
+          height: size.height,
+          // Decode at display resolution (physical pixels) instead of the
+          // source's full size, which can be many times larger.
+          cacheWidth: (size.width * devicePixelRatio).round().clamp(1, 1 << 14),
+          cacheHeight: (size.height * devicePixelRatio)
+              .round()
+              .clamp(1, 1 << 14),
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => Container(
+            width: size.width,
+            height: size.height,
+            decoration: BoxDecoration(
+              color: theme.muted.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: theme.muted,
+              size: 24,
+            ),
           ),
-          child: Icon(
-            Icons.broken_image_outlined,
-            color: theme.muted,
-            size: 24,
-          ),
-        ),
-      );
-      if (img.onTap != null) {
-        imageWidget = GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: img.onTap,
-          child: imageWidget,
         );
+        // A tap on a not-yet-hydrated image must not open the popup with no
+        // bytes to show.
+        if (img.onTap != null) {
+          imageWidget = GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: img.onTap,
+            child: imageWidget,
+          );
+        }
       }
       children.add(
         WidgetSpan(
