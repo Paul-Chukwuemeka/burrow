@@ -24,6 +24,7 @@ import '../services/document_parser.dart';
 import '../services/epub_css_parser.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
+import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/comic_image.dart';
@@ -297,10 +298,14 @@ class ReaderScreenState extends State<ReaderScreen>
 
   Future<void> _loadDocument() async {
     try {
+      final sw = Stopwatch()..start();
       final doc = await DocumentParser.parse(_book.path);
+      OpenTrace.span('parse', sw.elapsed);
       // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
       if (doc.fontFaces.isNotEmpty) {
+        sw.reset();
         await EpubCssParser.loadEmbeddedFonts(doc.fontFaces);
+        OpenTrace.span('fonts', sw.elapsed);
       }
       var cumulative = 0;
       _charsBefore.clear();
@@ -721,6 +726,7 @@ class ReaderScreenState extends State<ReaderScreen>
   if (next < n) _paginateChapterSync(next, viewport, style, scaler);
   _recomputeFlatIndexes();
   _setControllerToAnchor(recreate: true);
+  OpenTrace.dump();
 
   // Show the progress view only when there is truly nothing to show yet
   // (the builder checks the controller); otherwise keep it for the
