@@ -57,6 +57,8 @@ dependencies:
 dependency_overrides:
   lexicor:
     path: vendor/lexicor
+  rar:
+    path: vendor/rar
 
 dev_dependencies:
   flutter_test:
