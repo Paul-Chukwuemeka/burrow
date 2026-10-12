@@ -715,15 +715,14 @@ class ReaderScreenState extends State<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
   }
 
-  // Lay out the chapter being opened (and the next) synchronously so the
-  // first paint doesn't wait for the whole book. The remaining chapters
-  // fill in through the background pass below and swap atomically when
-  // done, so the scrubber never shows a half-built layout as final.
-  // `_paginationRunning` stays true until that swap, but the builder shows
-  // content as soon as the controller below exists.
+  // Lay out the chapter being opened synchronously so the first paint doesn't
+  // wait for the whole book — or even the next chapter, which navigation lays
+  // out on demand (see _ensureChapterReady). The remaining chapters fill in
+  // through the background pass below and swap atomically when done, so the
+  // scrubber never shows a half-built layout as final. `_paginationRunning`
+  // stays true until that swap, but the builder shows content as soon as the
+  // controller below exists.
   _paginateChapterSync(_anchorChapter, viewport, style, scaler);
-  final next = _anchorChapter + 1;
-  if (next < n) _paginateChapterSync(next, viewport, style, scaler);
   _recomputeFlatIndexes();
   _setControllerToAnchor(recreate: true);
   OpenTrace.dump();
@@ -734,12 +733,11 @@ class ReaderScreenState extends State<ReaderScreen>
   _paginationRunning = true;
 
   // Build every remaining chapter into the reflow buffer and swap when done.
-  // Seeded from the live set so the anchor/next layouts are reused, not redone.
+  // Seeded from the live set so the anchor layout is reused, not redone.
   _reflowPages = List.of(_paginators);
   _reflowStyles = List.of(_chapterStyles);
   _reflowReady = List.filled(n, false);
   _reflowReady[_anchorChapter] = true;
-  if (next < n) _reflowReady[next] = true;
   _reflowNext = 0;
   _reflowSignature = signature;
   _reflowGeneration++;
@@ -810,11 +808,9 @@ class ReaderScreenState extends State<ReaderScreen>
     _anchorChapter = anchor.$1.clamp(0, n - 1);
     _anchorOffset = anchor.$2;
 
-    // Re-layout the visible chapter (and the next) now so the new style shows
-    // immediately and forward paging is already correct.
+    // Re-layout the visible chapter now so the new style shows immediately;
+    // navigation lays out further chapters on demand.
     _paginateChapterSync(_anchorChapter, viewport, style, scaler);
-    final next = _anchorChapter + 1;
-    if (next < n) _paginateChapterSync(next, viewport, style, scaler);
     _recomputeFlatIndexes();
     _setControllerToAnchor(recreate: true);
 
@@ -823,7 +819,6 @@ class ReaderScreenState extends State<ReaderScreen>
     _reflowStyles = List.of(_chapterStyles);
     _reflowReady = List.filled(n, false);
     _reflowReady[_anchorChapter] = true;
-    if (next < n) _reflowReady[next] = true;
     _reflowNext = 0;
     _reflowSignature = signature;
     _reflowGeneration++;
@@ -1076,6 +1071,8 @@ class ReaderScreenState extends State<ReaderScreen>
   int get debugFlatPageCount => _flatPageCount;
   @visibleForTesting
   bool get debugAllReady => _allPaginatorsReady;
+  @visibleForTesting
+  int get debugReadyCount => _paginationReady.where((r) => r).length;
   @visibleForTesting
   bool get debugHasController => _pageController != null;
 
@@ -1926,6 +1923,10 @@ class ReaderScreenState extends State<ReaderScreen>
                 // reader was on before they navigated.
                 if (!programmatic && ref != null) {
                   final c = ref.$1;
+                  // A swipe can land on a chapter the background pass has not
+                  // laid out yet; lay it out so the page shows text, not a
+                  // placeholder.
+                  _ensureChapterReady(c);
                   _onPositionChanged(c, _paginators[c].pages[ref.$2].start);
                 }
                 _bookmarkCtrl.checkBookmarkState();
@@ -2007,7 +2008,11 @@ class ReaderScreenState extends State<ReaderScreen>
                 sliderValue: _flatPage.clamp(0, itemCount - 1),
                 sliderLabel: _progressPercent(),
                 onSliderChanged: (v) {
-                  if (v != _flatPage) controller.jumpToPage(v);
+                  if (v != _flatPage) {
+                    final ref = _refAt(v);
+                    if (ref != null) _ensureChapterReady(ref.$1);
+                    controller.jumpToPage(v);
+                  }
                 },
               ),
             ),
@@ -2061,6 +2066,8 @@ class ReaderScreenState extends State<ReaderScreen>
     if (controller == null) return;
     final target = _flatPage + direction;
     if (target < 0 || target >= _flatPageCount) return;
+    final ref = _refAt(target);
+    if (ref != null) _ensureChapterReady(ref.$1);
     controller.animateToPage(
       target,
       duration: const Duration(milliseconds: 220),
