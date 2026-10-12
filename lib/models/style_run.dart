@@ -351,6 +351,11 @@ TextStyle styleForRun(
 /// [settings] is supplied, CSS-derived typography is applied too (via
 /// [styleForRun]) so the spans measure exactly as they will render. Omitting it
 /// keeps the emphasis-only behavior used by lightweight callers.
+///
+/// [runs] must be sorted by [StyleRun.start]. [fromIndex] skips runs that end
+/// at or before [start] — the paginator passes a running index so laying a
+/// chapter out paragraph by paragraph does not rescan the whole run list per
+/// paragraph.
 List<TextSpan> buildStyledSpans(
   String text,
   List<StyleRun> runs,
@@ -359,6 +364,7 @@ List<TextSpan> buildStyledSpans(
   int end, {
   Color? quoteColor,
   ReaderSettings? settings,
+  int fromIndex = 0,
 }) {
   if (runs.isEmpty || start >= end) {
     return [TextSpan(text: text.substring(start, math.max(start, end)))];
@@ -366,7 +372,9 @@ List<TextSpan> buildStyledSpans(
 
   final spans = <TextSpan>[];
   var cursor = start;
-  for (final run in runs) {
+  for (var i = fromIndex; i < runs.length; i++) {
+    final run = runs[i];
+    if (run.start >= end) break;
     final rs = math.max(run.start, start);
     final re = math.min(run.end, end);
     if (re <= rs) continue;

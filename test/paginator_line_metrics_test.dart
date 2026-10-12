@@ -259,5 +259,35 @@ void main() {
       expect(inset.pages.length, greaterThanOrEqualTo(plain.pages.length));
       expectNoOverflow(inset, text);
     });
+
+    test('laid-out chapters visit runs O(paragraphs + runs), not O(n*m)', () {
+      // Fixed-length paragraphs so run offsets line up exactly: one run per
+      // paragraph. A per-paragraph rescan of the whole run list is ~P*R visits;
+      // a running index is ~R.
+      const paragraphs = 200;
+      final buf = StringBuffer();
+      final runs = <StyleRun>[];
+      for (var i = 0; i < paragraphs; i++) {
+        final start = buf.length;
+        buf.write('p' * 40);
+        buf.write('\n');
+        runs.add(StyleRun(start, start + 4, bold: true));
+      }
+      final text = buf.toString();
+
+      final driver = ChapterPaginationDriver(
+        text: text,
+        style: style,
+        maxWidth: viewport.width,
+        maxHeight: viewport.height,
+        direction: TextDirection.ltr,
+        runs: runs,
+      );
+      while (!driver.isDone) {
+        driver.nextChunk(4);
+      }
+      expect(driver.debugRunVisits, lessThan(runs.length * 4));
+      driver.dispose();
+    });
   });
 }

@@ -100,6 +100,15 @@ class ChapterPaginationDriver {
 
   /// Next source offset whose paragraph has not been laid out yet.
   int _cursor = 0;
+
+  /// Index into [_runs] of the first run at or after [_cursor]. Advanced as
+  /// paragraphs are laid out so per-paragraph span building does not rescan the
+  /// whole run list from zero.
+  int _runStart = 0;
+
+  /// Test-only: how many style runs were examined across all paragraphs.
+  @visibleForTesting
+  int debugRunVisits = 0;
   bool _exhausted = false;
   bool _isFirst = true;
   bool _done = false;
@@ -273,6 +282,14 @@ class ChapterPaginationDriver {
   /// line layout. The actual size comes from [_placeholdersIn]; the dummy child
   /// is never built by [TextPainter].
   List<InlineSpan> _measureChildren(int start, int end) {
+    // Advance past runs that end before this paragraph so each run is examined
+    // ~once across the chapter, not once per paragraph.
+    while (_runStart < _runs.length && _runs[_runStart].end <= start) {
+      _runStart++;
+    }
+    for (var i = _runStart; i < _runs.length && _runs[i].start < end; i++) {
+      debugRunVisits++;
+    }
     final source = buildStyledSpans(
       _text,
       _runs,
@@ -281,6 +298,7 @@ class ChapterPaginationDriver {
       end,
       quoteColor: _theme?.muted,
       settings: _settings,
+      fromIndex: _runStart,
     );
     final children = <InlineSpan>[];
     for (final span in source) {
