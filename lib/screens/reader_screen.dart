@@ -862,6 +862,7 @@ class ReaderScreenState extends State<ReaderScreen>
     int generation,
   ) {
     if (!mounted || _doc == null) return;
+    if (debugSuspendBackgroundFill) return;
     if (generation != _reflowGeneration) return;
     final pages = _reflowPages;
     final styles = _reflowStyles;
@@ -949,6 +950,7 @@ class ReaderScreenState extends State<ReaderScreen>
     TextStyle style,
     TextScaler scaler,
   ) {
+    debugSyncLayouts++;
     _paginators[chapter] = Paginator.paginate(
       text: _doc!.chapters[chapter].body,
       style: style,
@@ -966,38 +968,31 @@ class ReaderScreenState extends State<ReaderScreen>
     _paginationReady[chapter] = true;
   }
 
-  /// Lays out [chapter] (and the next) on demand when a jump lands ahead of
-  /// the background initial pass, so navigation never shows a blank page.
-  /// Mirrors the result into the in-flight reflow buffer when one exists so
-  /// the atomic swap can't regress it back to a placeholder.
+  /// True when `_paginators[chapter]` is a real layout, not a placeholder.
+  bool _isChapterReady(int chapter) =>
+      chapter >= 0 &&
+      chapter < _paginationReady.length &&
+      _paginationReady[chapter];
+
+  /// Lays out [chapter] on demand when a jump lands ahead of the background
+  /// pass, so navigation never shows a blank page. Only the requested chapter
+  /// is laid out — the pass fills forward from the anchor on its own — and an
+  /// already-laid-out chapter is left alone. Mirrors the result into the
+  /// in-flight reflow buffer when one exists so the atomic swap can't regress
+  /// it back to a placeholder.
   void _ensureChapterReady(int chapter) {
     final viewport = _lastViewport;
     if (_doc == null || viewport == null) return;
     if (chapter < 0 || chapter >= _paginators.length) return;
-    if (_paginationReady.length == _paginators.length &&
-        _paginationReady[chapter]) {
-      final after = chapter + 1;
-      if (after >= _paginators.length || _paginationReady[after]) return;
-    }
+    if (_isChapterReady(chapter)) return;
     final style = _settings.textStyle(context);
     const scaler = TextScaler.noScaling;
     _paginateChapterSync(chapter, viewport, style, scaler);
-    final next = chapter + 1;
-    if (next < _paginators.length) {
-      _paginateChapterSync(next, viewport, style, scaler);
-    }
     _recomputeFlatIndexes();
-    if (_reflowActive) {
-      if (chapter < _reflowPages!.length) {
-        _reflowPages![chapter] = _paginators[chapter];
-        _reflowStyles![chapter] = _chapterStyles[chapter];
-        _reflowReady[chapter] = true;
-      }
-      if (next < _reflowPages!.length) {
-        _reflowPages![next] = _paginators[next];
-        _reflowStyles![next] = _chapterStyles[next];
-        _reflowReady[next] = true;
-      }
+    if (_reflowActive && chapter < _reflowPages!.length) {
+      _reflowPages![chapter] = _paginators[chapter];
+      _reflowStyles![chapter] = _chapterStyles[chapter];
+      _reflowReady[chapter] = true;
     }
     if (mounted) setState(() {});
   }
@@ -1101,6 +1096,15 @@ class ReaderScreenState extends State<ReaderScreen>
   bool get debugAllReady => _allPaginatorsReady;
   @visibleForTesting
   int get debugReadyCount => _paginationReady.where((r) => r).length;
+
+  /// Test-only: suspends the background layout pass so a test can observe the
+  /// first-paint state deterministically instead of racing the frame budget.
+  @visibleForTesting
+  static bool debugSuspendBackgroundFill = false;
+
+  /// Test-only: how many synchronous chapter layouts have been performed.
+  @visibleForTesting
+  int debugSyncLayouts = 0;
   @visibleForTesting
   bool get debugHasController => _pageController != null;
 
@@ -2036,11 +2040,15 @@ class ReaderScreenState extends State<ReaderScreen>
                 sliderValue: _flatPage.clamp(0, itemCount - 1),
                 sliderLabel: _progressPercent(),
                 onSliderChanged: (v) {
-                  if (v != _flatPage) {
-                    final ref = _refAt(v);
-                    if (ref != null) _ensureChapterReady(ref.$1);
-                    controller.jumpToPage(v);
+                  if (v == _flatPage) return;
+                  var target = v;
+                  final ref = _refAt(v);
+                  if (ref != null && !_isChapterReady(ref.$1)) {
+                    _ensureChapterReady(ref.$1);
+                    // The placeholder page is gone; land on the chapter start.
+                    target = _flatStart[ref.$1];
                   }
+                  controller.jumpToPage(target);
                 },
               ),
             ),
@@ -2092,10 +2100,19 @@ class ReaderScreenState extends State<ReaderScreen>
     }
     final controller = _pageController;
     if (controller == null) return;
-    final target = _flatPage + direction;
+    var target = _flatPage + direction;
     if (target < 0 || target >= _flatPageCount) return;
     final ref = _refAt(target);
-    if (ref != null) _ensureChapterReady(ref.$1);
+    if (ref != null && !_isChapterReady(ref.$1)) {
+      _ensureChapterReady(ref.$1);
+      // The target chapter was a one-page placeholder. Now that it is laid
+      // out, pick the end the turn belongs to: the last page for a backward
+      // turn, the first for a forward one.
+      target = direction < 0
+          ? _flatStart[ref.$1] + _paginators[ref.$1].pages.length - 1
+          : _flatStart[ref.$1];
+    }
+    if (target < 0 || target >= _flatPageCount) return;
     controller.animateToPage(
       target,
       duration: const Duration(milliseconds: 220),

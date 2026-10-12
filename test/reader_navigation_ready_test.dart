@@ -38,8 +38,6 @@ String _bookText() {
   return b.toString();
 }
 
-final _marker = RegExp(r'w\d+-\d+-\d+');
-
 ReaderScreenState _readerState(WidgetTester tester) =>
     tester.state<ReaderScreenState>(find.byType(ReaderScreen));
 
@@ -68,6 +66,9 @@ void main() {
       setBrightness: (_) async {},
       resetBrightness: () async {},
     );
+    // The background pass is suspended per-test so "not yet laid out" is
+    // deterministic instead of racing the frame budget.
+    ReaderScreenState.debugSuspendBackgroundFill = false;
 
     tmp = await Directory.systemTemp.createTemp('burrow_nav_ready');
     final bookFile = File('${tmp.path}/Long Book.txt');
@@ -89,6 +90,7 @@ void main() {
   });
 
   tearDown(() async {
+    ReaderScreenState.debugSuspendBackgroundFill = false;
     BrightnessController.instance = BrightnessController();
     await database.close();
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
@@ -122,19 +124,20 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('turning back into an unlaid chapter shows text, not a blank', (
+  testWidgets('turning back into an unlaid chapter shows its last page', (
     tester,
   ) async {
-    // Open on the last chapter; the background pass starts at chapter 0 and has
-    // not reached chapter 4 yet when the page is turned.
+    // Open on the last chapter; the background pass is suspended, so chapter 4
+    // is still a one-page placeholder when the page is turned.
     book.lastChapter = 5;
+    ReaderScreenState.debugSuspendBackgroundFill = true;
     await mountReader(tester);
     await tester.pump();
 
     expect(
-      _readerState(tester).debugAllReady,
-      isFalse,
-      reason: 'the background pass must still be running for this test to bite',
+      _readerState(tester).debugReadyCount,
+      1,
+      reason: 'only the anchor chapter should be laid out at first paint',
     );
 
     final size = tester.getSize(find.byType(PageView));
@@ -142,24 +145,42 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
+    // A backward turn keeps reading order: it must land on the END of the
+    // previous chapter ("Chapter 5" = index 4, markers w5-*), not its start.
     expect(
-      _marker.hasMatch(_visibleText(tester)),
-      isTrue,
-      reason: 'a page turn into an unlaid chapter must not show a blank page',
+      _visibleText(tester),
+      contains('w5-23'),
+      reason: 'a backward page turn must show the previous page',
     );
   });
 
   testWidgets('the initial pass lays out only the anchor chapter', (
     tester,
   ) async {
+    ReaderScreenState.debugSuspendBackgroundFill = true;
     await mountReader(tester);
     await tester.pump();
 
+    expect(_readerState(tester).debugReadyCount, 1);
+  });
+
+  testWidgets('turning within a laid-out chapter lays out nothing new', (
+    tester,
+  ) async {
+    ReaderScreenState.debugSuspendBackgroundFill = true;
+    await mountReader(tester);
+    await tester.pump();
+
+    final before = _readerState(tester).debugSyncLayouts;
+    final size = tester.getSize(find.byType(PageView));
+    await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
     expect(
-      _readerState(tester).debugReadyCount,
-      1,
-      reason: 'the next chapter must be laid out on demand, not before first '
-          'paint',
+      _readerState(tester).debugSyncLayouts,
+      before,
+      reason: 'a turn within a ready chapter must not re-lay it out',
     );
   });
 }
