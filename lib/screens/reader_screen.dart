@@ -31,6 +31,20 @@ import '../widgets/comic_image.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/toc_sheet.dart';
 
+/// Order in which the background pass should lay out chapters: the reader's
+/// chapter first, then forward to the end, then backward to the start.
+///
+/// Opening mid-book used to fill from chapter 0, so forward paging reached
+/// unlaid chapters long before the pass did.
+@visibleForTesting
+List<int> fillOrderFor(int count, int anchor) {
+  final a = anchor.clamp(0, count - 1);
+  return [
+    for (var c = a; c < count; c++) c,
+    for (var c = a - 1; c >= 0; c--) c,
+  ];
+}
+
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
     super.key,
@@ -172,6 +186,9 @@ class ReaderScreenState extends State<ReaderScreen>
   List<bool> _reflowReady = const [];
   int _reflowNext = 0;
   int _reflowGeneration = 0;
+  /// Chapters in the order the background pass should lay them out (outward
+  /// from the anchor), indexed by [_reflowNext].
+  List<int> _reflowOrder = const [];
   String? _reflowSignature;
   final Map<int, ChapterPaginationDriver> _reflowDrivers = {};
 
@@ -739,6 +756,7 @@ class ReaderScreenState extends State<ReaderScreen>
   _reflowReady = List.filled(n, false);
   _reflowReady[_anchorChapter] = true;
   _reflowNext = 0;
+  _reflowOrder = fillOrderFor(n, _anchorChapter);
   _reflowSignature = signature;
   _reflowGeneration++;
   final generation = _reflowGeneration;
@@ -820,6 +838,7 @@ class ReaderScreenState extends State<ReaderScreen>
     _reflowReady = List.filled(n, false);
     _reflowReady[_anchorChapter] = true;
     _reflowNext = 0;
+    _reflowOrder = fillOrderFor(n, _anchorChapter);
     _reflowSignature = signature;
     _reflowGeneration++;
     final generation = _reflowGeneration;
@@ -840,10 +859,10 @@ class ReaderScreenState extends State<ReaderScreen>
     final styles = _reflowStyles;
     if (pages == null || styles == null) return;
     final stopwatch = Stopwatch()..start();
-    final n = _doc!.chapters.length;
+    final order = _reflowOrder;
 
-    while (_reflowNext < n) {
-      final c = _reflowNext;
+    while (_reflowNext < order.length) {
+      final c = order[_reflowNext];
       if (_reflowReady[c]) {
         _reflowNext++;
         continue;
@@ -910,6 +929,7 @@ class ReaderScreenState extends State<ReaderScreen>
     _reflowStyles = null;
     _reflowReady = const [];
     _reflowNext = 0;
+    _reflowOrder = const [];
     _reflowSignature = null;
   }
 
