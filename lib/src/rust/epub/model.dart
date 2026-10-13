@@ -101,3 +101,36 @@ class MetadataDto {
           coverBytes == other.coverBytes &&
           fontFaces == other.fontFaces;
 }
+
+/// One table-of-contents entry, in document order.
+///
+/// Mirrors `TocEntry` in `lib/services/document_parser.dart`: `file_key` is the
+/// *normalised* (percent-decoded, lowercased) archive path of the target
+/// document without its fragment, and `fragment` is the raw (still
+/// percent-encoded) anchor id, or `None` when the entry targets the whole
+/// document. Several entries commonly point into one spine document via
+/// different `#anchor`s; each is a chapter in its own right, so the fragment is
+/// what tells them apart.
+class TocEntryDto {
+  final String fileKey;
+  final String? fragment;
+  final String title;
+
+  const TocEntryDto({
+    required this.fileKey,
+    this.fragment,
+    required this.title,
+  });
+
+  @override
+  int get hashCode => fileKey.hashCode ^ fragment.hashCode ^ title.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TocEntryDto &&
+          runtimeType == other.runtimeType &&
+          fileKey == other.fileKey &&
+          fragment == other.fragment &&
+          title == other.title;
+}

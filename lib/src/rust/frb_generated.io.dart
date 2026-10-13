@@ -54,10 +54,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FontFaceDto dco_decode_font_face_dto(dynamic raw);
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
   List<FontFaceDto> dco_decode_list_font_face_dto(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<TocEntryDto> dco_decode_list_toc_entry_dto(dynamic raw);
 
   @protected
   MetadataDto dco_decode_metadata_dto(dynamic raw);
@@ -70,6 +76,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  TocEntryDto dco_decode_toc_entry_dto(dynamic raw);
+
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -111,10 +123,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FontFaceDto sse_decode_font_face_dto(SseDeserializer deserializer);
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
   List<FontFaceDto> sse_decode_list_font_face_dto(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<TocEntryDto> sse_decode_list_toc_entry_dto(SseDeserializer deserializer);
 
   @protected
   MetadataDto sse_decode_metadata_dto(SseDeserializer deserializer);
@@ -127,6 +145,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  TocEntryDto sse_decode_toc_entry_dto(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -177,6 +201,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_font_face_dto(FontFaceDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_font_face_dto(
     List<FontFaceDto> self,
     SseSerializer serializer,
@@ -185,6 +212,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_toc_entry_dto(
+    List<TocEntryDto> self,
     SseSerializer serializer,
   );
 
@@ -202,6 +235,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     Uint8List? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_toc_entry_dto(TocEntryDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

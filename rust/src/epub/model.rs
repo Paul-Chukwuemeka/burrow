@@ -57,6 +57,22 @@ pub struct MetadataDto {
     pub font_faces: Vec<FontFaceDto>,
 }
 
+/// One table-of-contents entry, in document order.
+///
+/// Mirrors `TocEntry` in `lib/services/document_parser.dart`: `file_key` is the
+/// *normalised* (percent-decoded, lowercased) archive path of the target
+/// document without its fragment, and `fragment` is the raw (still
+/// percent-encoded) anchor id, or `None` when the entry targets the whole
+/// document. Several entries commonly point into one spine document via
+/// different `#anchor`s; each is a chapter in its own right, so the fragment is
+/// what tells them apart.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TocEntryDto {
+    pub file_key: String,
+    pub fragment: Option<String>,
+    pub title: String,
+}
+
 /// One `@font-face` the book declares.
 ///
 /// Fields mirror `FontFaceInfo` (Dart). `bytes` is intentionally absent for

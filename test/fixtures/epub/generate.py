@@ -115,9 +115,12 @@ def build_minimal() -> None:
         'media-type="image/png"/>\n'
         '    <item id="ch1" href="Text/ch1.xhtml" '
         'media-type="application/xhtml+xml"/>\n'
+        '    <item id="ch2" href="Text/ch2.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
         "  </manifest>\n"
         "  <spine>\n"
         '    <itemref idref="ch1"/>\n'
+        '    <itemref idref="ch2"/>\n'
         "  </spine>\n"
         "</package>\n"
     ).encode("utf-8")
@@ -132,6 +135,11 @@ def build_minimal() -> None:
             (
                 "OEBPS/Text/ch1.xhtml",
                 _xhtml("One", "The first chapter."),
+                True,
+            ),
+            (
+                "OEBPS/Text/ch2.xhtml",
+                _xhtml("Two", "The second chapter."),
                 True,
             ),
         ],
@@ -226,10 +234,171 @@ def build_opaque_cover() -> None:
     )
 
 
+def build_no_spine() -> None:
+    # An empty `<spine/>`: the chapter list falls back to every XHTML manifest
+    # entry. The manifest lists `ch10` before `ch2` so the expected order only
+    # holds if the fallback sorts naturally (ch2 before ch10), not by manifest
+    # order.
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>No Spine</dc:title>\n"
+        "    <dc:creator>N. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:no-spine</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch10" href="Text/ch10.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        '    <item id="ch2" href="Text/ch2.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine/>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "no-spine.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/Text/ch10.xhtml", _xhtml("Ten", "Tenth."), True),
+            ("OEBPS/Text/ch2.xhtml", _xhtml("Two", "Second."), True),
+        ],
+    )
+
+
+def _nav_xhtml() -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:epub="http://www.idpf.org/2007/ops">\n'
+        "<head><title>Contents</title></head>\n"
+        "<body>\n"
+        '  <nav epub:type="toc">\n'
+        "    <ol>\n"
+        '      <li><a href="Text/ch1.xhtml">One</a></li>\n'
+        '      <li><a href="Text/ch2.xhtml#sec%202">Two</a></li>\n'
+        "    </ol>\n"
+        "  </nav>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+
+def build_nav() -> None:
+    # EPUB3: the TOC lives in the `properties="nav"` document and there is no
+    # NCX, so the nav path must supply the titles.
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Nav Book</dc:title>\n"
+        "    <dc:creator>N. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:nav-book</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="nav" href="nav.xhtml" '
+        'media-type="application/xhtml+xml" properties="nav"/>\n'
+        '    <item id="ch1" href="Text/ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        '    <item id="ch2" href="Text/ch2.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        '    <itemref idref="ch2"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "nav.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/nav.xhtml", _nav_xhtml(), True),
+            ("OEBPS/Text/ch1.xhtml", _xhtml("One", "First."), True),
+            ("OEBPS/Text/ch2.xhtml", _xhtml("Two", "Second."), True),
+        ],
+    )
+
+
+def _ncx() -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
+        '  <head><meta name="dtb:uid" content="urn:uuid:ncx-book"/></head>\n'
+        "  <docTitle><text>Ncx Book</text></docTitle>\n"
+        "  <navMap>\n"
+        '    <navPoint id="n1" playOrder="1">\n'
+        "      <navLabel><text>One</text></navLabel>\n"
+        '      <content src="Text/ch1.xhtml"/>\n'
+        "    </navPoint>\n"
+        '    <navPoint id="n2" playOrder="2">\n'
+        "      <navLabel><text>Two</text></navLabel>\n"
+        '      <content src="Text/ch2.xhtml"/>\n'
+        "    </navPoint>\n"
+        "  </navMap>\n"
+        "</ncx>\n"
+    ).encode("utf-8")
+
+
+def build_ncx() -> None:
+    # EPUB2: no nav document, so the spine's `toc="ncx"` attribute points at the
+    # NCX, which supplies the titles.
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:opf="http://www.idpf.org/2007/opf">\n'
+        "    <dc:title>Ncx Book</dc:title>\n"
+        "    <dc:creator>N. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:ncx-book</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ncx" href="toc.ncx" '
+        'media-type="application/x-dtbncx+xml"/>\n'
+        '    <item id="ch1" href="Text/ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        '    <item id="ch2" href="Text/ch2.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        '  <spine toc="ncx">\n'
+        '    <itemref idref="ch1"/>\n'
+        '    <itemref idref="ch2"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "ncx.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/toc.ncx", _ncx(), True),
+            ("OEBPS/Text/ch1.xhtml", _xhtml("One", "First."), True),
+            ("OEBPS/Text/ch2.xhtml", _xhtml("Two", "Second."), True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
     build_opaque_cover()
+    build_no_spine()
+    build_nav()
+    build_ncx()
     print("wrote fixtures to", HERE)
 
 

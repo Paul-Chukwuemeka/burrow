@@ -1,8 +1,8 @@
 //! FFI surface for the Rust EPUB engine.
 
 use crate::epub::container::EpubArchive;
-use crate::epub::model::MetadataDto;
-use crate::epub::opf;
+use crate::epub::model::{MetadataDto, TocEntryDto};
+use crate::epub::opf::{self, Navigation};
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
 ///
@@ -21,24 +21,49 @@ pub fn engine_version() -> String {
 /// ever holds the handle.
 #[flutter_rust_bridge::frb(opaque)]
 pub struct DocumentHandle {
-    // Retained for Tasks 4-8 (manifest/spine/TOC and resource reads).
-    #[allow(dead_code)]
     archive: EpubArchive,
     metadata: MetadataDto,
+    navigation: Navigation,
 }
 
-/// Opens an EPUB and extracts its metadata, returning an opaque handle.
+/// Opens an EPUB, extracts its metadata, and resolves manifest/spine/TOC,
+/// returning an opaque handle.
 ///
 /// Errors are stringified for Dart (FRB maps `Err` to a thrown exception).
 pub fn open_epub(path: String) -> Result<DocumentHandle, String> {
     let archive = EpubArchive::open(&path).map_err(|e| e.to_string())?;
     let metadata = opf::read_metadata_from(&archive).map_err(|e| e.to_string())?;
-    Ok(DocumentHandle { archive, metadata })
+    let navigation = opf::read_navigation_from(&archive).map_err(|e| e.to_string())?;
+    Ok(DocumentHandle {
+        archive,
+        metadata,
+        navigation,
+    })
 }
 
 /// Returns the metadata captured when the handle was opened.
 pub fn metadata(handle: &DocumentHandle) -> Result<MetadataDto, String> {
     Ok(handle.metadata.clone())
+}
+
+/// Returns the table of contents in document order.
+pub fn toc(handle: &DocumentHandle) -> Result<Vec<TocEntryDto>, String> {
+    Ok(handle.navigation.toc.clone())
+}
+
+/// Returns the spine documents in reading order (normalised archive keys).
+pub fn spine(handle: &DocumentHandle) -> Result<Vec<String>, String> {
+    Ok(handle.navigation.spine.clone())
+}
+
+/// Returns the chapter titles in reading order.
+pub fn chapter_titles(handle: &DocumentHandle) -> Result<Vec<String>, String> {
+    Ok(opf::chapter_titles(&handle.archive, &handle.navigation))
+}
+
+/// Returns the number of chapters in the spine.
+pub fn chapter_count(handle: &DocumentHandle) -> Result<u32, String> {
+    Ok(chapter_titles(handle)?.len() as u32)
 }
 
 /// Opens `path` and extracts metadata without keeping a handle (parity helper).

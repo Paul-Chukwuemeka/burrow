@@ -6,11 +6,15 @@
 //! metadata paths agree field by field (spec D14, criterion 12). Any future
 //! divergence must be a classified ledger entry, not an accident.
 
+use std::cmp::Ordering;
+use std::collections::HashMap;
+
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
-use super::container::{self, normalize_key, EpubArchive};
-use super::model::{EpubError, MetadataDto};
+use super::container::{self, normalize_key, resolve_href, EpubArchive};
+use super::model::{EpubError, MetadataDto, TocEntryDto};
+use super::nav;
 
 /// Extracts metadata and cover bytes from `path` without parsing chapters.
 pub fn read_metadata(path: &str) -> Result<MetadataDto, EpubError> {
@@ -49,6 +53,218 @@ pub fn read_metadata_from(archive: &EpubArchive) -> Result<MetadataDto, EpubErro
     })
 }
 
+/// The resolved document structure of an EPUB: manifest, spine, and TOC.
+///
+/// Produced by [`read_navigation`]/[`read_navigation_from`]. Keys are the
+/// *normalised* archive paths (percent-decoded, lowercased), never manifest
+/// ids — see bug class `#116` in `PLAN.md`.
+#[derive(Debug, Clone, Default)]
+pub struct Navigation {
+    /// Manifest `id` -> normalised archive key.
+    pub manifest: HashMap<String, String>,
+    /// Chapter documents in reading order, as normalised archive keys.
+    pub spine: Vec<String>,
+    /// Table-of-contents entries, in document order.
+    pub toc: Vec<TocEntryDto>,
+}
+
+/// Reads the manifest, spine order, and TOC from `path`.
+pub fn read_navigation(path: &str) -> Result<Navigation, EpubError> {
+    let archive = container::open(path)?;
+    read_navigation_from(&archive)
+}
+
+/// Reads the manifest, spine order, and TOC from an already-open container.
+pub fn read_navigation_from(archive: &EpubArchive) -> Result<Navigation, EpubError> {
+    let opf_path = container::container_rootfile(archive)?;
+    let opf_bytes = archive
+        .read_by_key(&normalize_key(&opf_path))
+        .ok_or_else(|| EpubError::Invalid("Not a valid EPUB file".to_string()))?;
+    let opf = parse_opf(&String::from_utf8_lossy(&opf_bytes));
+    Ok(parse_navigation(archive, &opf, &opf_path))
+}
+
+/// Resolves the parsed OPF into manifest/spine/TOC, reading the TOC document.
+fn parse_navigation(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Navigation {
+    let base = opf_dir(opf_path);
+    let key_of = |href: &str| resolve_href(&base, href);
+
+    // Manifest: id -> resolved href. The `properties="nav"` item is the EPUB3
+    // table of contents.
+    let mut manifest = HashMap::new();
+    let mut nav_key: Option<String> = None;
+    for item in &opf.items {
+        let Some(href) = &item.href else { continue };
+        let key = key_of(href);
+        if !item.id.is_empty() {
+            manifest.insert(item.id.clone(), key.clone());
+        }
+        if has_property(item.properties.as_deref(), "nav") {
+            nav_key = Some(key);
+        }
+    }
+
+    // Spine order. An idref is resolved through the manifest to its href, not
+    // treated as a path (bug class #116).
+    let mut spine: Vec<String> = Vec::new();
+    for idref in &opf.spine {
+        if let Some(key) = manifest.get(idref) {
+            if !spine.contains(key) {
+                spine.push(key.clone());
+            }
+        }
+    }
+    if spine.is_empty() {
+        // Fallback: every XHTML/HTML manifest entry, in natural order. This
+        // covers both an absent `<spine>` and a spine whose idrefs all miss.
+        spine = html_manifest_keys(opf, &base);
+    }
+
+    // TOC: the EPUB3 nav document first, then the EPUB2 NCX, then a last-resort
+    // scan for any document that actually contains a `<nav>`.
+    let mut toc = Vec::new();
+    if let Some(key) = &nav_key {
+        if let Some(bytes) = archive.read_by_key(key) {
+            toc = nav::parse_nav(&String::from_utf8_lossy(&bytes), key, false);
+        }
+    }
+    if toc.is_empty() {
+        let ncx_key = opf
+            .toc_id
+            .as_ref()
+            .and_then(|id| manifest.get(id).cloned())
+            .or_else(|| {
+                let mut ncx: Vec<String> = opf
+                    .items
+                    .iter()
+                    .filter_map(|i| i.href.as_ref())
+                    .map(|h| key_of(h))
+                    .filter(|k| k.ends_with(".ncx"))
+                    .collect();
+                ncx.sort();
+                ncx.into_iter().next()
+            });
+        if let Some(key) = ncx_key {
+            if let Some(bytes) = archive.read_by_key(&key) {
+                toc = nav::parse_ncx(&String::from_utf8_lossy(&bytes), &key);
+            }
+        }
+    }
+    if toc.is_empty() {
+        // Last resort for books that never flag their nav document. Iterate the
+        // HTML entries in natural order and require a real `<nav>` so a stray
+        // link in a chapter is not mistaken for the contents.
+        for key in html_manifest_keys(opf, &base) {
+            if let Some(bytes) = archive.read_by_key(&key) {
+                let entries = nav::parse_nav(&String::from_utf8_lossy(&bytes), &key, true);
+                if !entries.is_empty() {
+                    toc = entries;
+                    break;
+                }
+            }
+        }
+    }
+
+    Navigation {
+        manifest,
+        spine,
+        toc,
+    }
+}
+
+/// XHTML/HTML manifest entries as normalised keys, natural-sorted and deduped.
+fn html_manifest_keys(opf: &Opf, base: &str) -> Vec<String> {
+    let mut keys: Vec<String> = opf
+        .items
+        .iter()
+        .filter_map(|i| i.href.as_ref())
+        .map(|h| resolve_href(base, h))
+        .filter(|k| is_html_key(k))
+        .collect();
+    keys.sort_by(|a, b| natural_compare(a, b));
+    keys.dedup();
+    keys
+}
+
+fn is_html_key(key: &str) -> bool {
+    key.ends_with(".xhtml") || key.ends_with(".html") || key.ends_with(".htm")
+}
+
+fn has_property(properties: Option<&str>, want: &str) -> bool {
+    properties
+        .map(|p| p.split_whitespace().any(|t| t == want))
+        .unwrap_or(false)
+}
+
+/// The chapter list's titles, in reading order.
+///
+/// TOC entries targeting a spine document supply its titles (one chapter per
+/// entry, so anchors split a document); a spine document with no entry — and
+/// every document in a book with no TOC at all — falls back to its own
+/// `<title>`/`<h1>`. Dart's `splitByAnchors` leaves those titles empty; this is
+/// a deliberate improvement (spec D11), not an accidental divergence.
+pub fn chapter_titles(archive: &EpubArchive, navigation: &Navigation) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in &navigation.spine {
+        let entries: Vec<&TocEntryDto> = navigation
+            .toc
+            .iter()
+            .filter(|e| &e.file_key == key)
+            .collect();
+        if entries.is_empty() {
+            out.push(chapter_title_for(archive, key));
+        } else {
+            out.extend(entries.into_iter().map(|e| e.title.clone()));
+        }
+    }
+    out
+}
+
+fn chapter_title_for(archive: &EpubArchive, key: &str) -> String {
+    archive
+        .read_by_key(key)
+        .and_then(|bytes| nav::document_title(&String::from_utf8_lossy(&bytes)))
+        .unwrap_or_default()
+}
+
+/// Natural sort comparator for filenames, mirroring
+/// `DocumentParser._naturalCompare`: numeric runs compare numerically, the rest
+/// compares code point by code point, and a prefix sorts first.
+pub fn natural_compare(a: &str, b: &str) -> Ordering {
+    natural_compare_impl(&a.to_lowercase(), &b.to_lowercase())
+}
+
+fn natural_compare_impl(a: &str, b: &str) -> Ordering {
+    let ar: Vec<char> = a.chars().collect();
+    let br: Vec<char> = b.chars().collect();
+    let (mut ia, mut ib) = (0usize, 0usize);
+    while ia < ar.len() && ib < br.len() {
+        let (ca, cb) = (ar[ia], br[ib]);
+        if ca.is_ascii_digit() && cb.is_ascii_digit() {
+            let mut na: u64 = 0;
+            let mut nb: u64 = 0;
+            while ia < ar.len() && ar[ia].is_ascii_digit() {
+                na = na * 10 + (ar[ia] as u64 - '0' as u64);
+                ia += 1;
+            }
+            while ib < br.len() && br[ib].is_ascii_digit() {
+                nb = nb * 10 + (br[ib] as u64 - '0' as u64);
+                ib += 1;
+            }
+            if na != nb {
+                return na.cmp(&nb);
+            }
+        } else {
+            if ca != cb {
+                return ca.cmp(&cb);
+            }
+            ia += 1;
+            ib += 1;
+        }
+    }
+    ar.len().cmp(&br.len())
+}
+
 #[derive(Debug, Default)]
 struct Opf {
     title: String,
@@ -62,6 +278,10 @@ struct Opf {
     identifiers: Vec<(Option<String>, String)>,
     metas: Vec<Meta>,
     items: Vec<Item>,
+    /// `<itemref idref>` values, in spine order.
+    spine: Vec<String>,
+    /// `<spine toc="...">` — the manifest id of the NCX document, if declared.
+    toc_id: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -232,6 +452,16 @@ fn handle(out: &mut Opf, frame: &Frame) {
                     media_type: get(&frame.attrs, "media-type").map(str::to_string),
                     properties: get(&frame.attrs, "properties").map(str::to_string),
                 });
+            }
+        }
+        "itemref" => {
+            if let Some(idref) = get(&frame.attrs, "idref") {
+                out.spine.push(idref.to_string());
+            }
+        }
+        "spine" => {
+            if out.toc_id.is_none() {
+                out.toc_id = get(&frame.attrs, "toc").map(str::to_string);
             }
         }
         _ => {}

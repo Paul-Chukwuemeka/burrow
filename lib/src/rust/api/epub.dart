@@ -14,7 +14,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// (the version is a cheap constant, so there is no reason to hop isolates).
 String engineVersion() => RustLib.instance.api.crateApiEpubEngineVersion();
 
-/// Opens an EPUB and extracts its metadata, returning an opaque handle.
+/// Opens an EPUB, extracts its metadata, and resolves manifest/spine/TOC,
+/// returning an opaque handle.
 ///
 /// Errors are stringified for Dart (FRB maps `Err` to a thrown exception).
 Future<DocumentHandle> openEpub({required String path}) =>
@@ -23,6 +24,22 @@ Future<DocumentHandle> openEpub({required String path}) =>
 /// Returns the metadata captured when the handle was opened.
 Future<MetadataDto> metadata({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubMetadata(handle: handle);
+
+/// Returns the table of contents in document order.
+Future<List<TocEntryDto>> toc({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubToc(handle: handle);
+
+/// Returns the spine documents in reading order (normalised archive keys).
+Future<List<String>> spine({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubSpine(handle: handle);
+
+/// Returns the chapter titles in reading order.
+Future<List<String>> chapterTitles({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubChapterTitles(handle: handle);
+
+/// Returns the number of chapters in the spine.
+Future<int> chapterCount({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubChapterCount(handle: handle);
 
 /// Opens `path` and extracts metadata without keeping a handle (parity helper).
 Future<MetadataDto> readMetadata({required String path}) =>
