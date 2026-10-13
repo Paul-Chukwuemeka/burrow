@@ -3,6 +3,7 @@
 
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
+import '../epub/model.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -12,3 +13,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// `frb(sync)` makes the generated Dart binding a plain `String engineVersion()`
 /// (the version is a cheap constant, so there is no reason to hop isolates).
 String engineVersion() => RustLib.instance.api.crateApiEpubEngineVersion();
+
+/// Opens an EPUB and extracts its metadata, returning an opaque handle.
+///
+/// Errors are stringified for Dart (FRB maps `Err` to a thrown exception).
+Future<DocumentHandle> openEpub({required String path}) =>
+    RustLib.instance.api.crateApiEpubOpenEpub(path: path);
+
+/// Returns the metadata captured when the handle was opened.
+Future<MetadataDto> metadata({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubMetadata(handle: handle);
+
+/// Opens `path` and extracts metadata without keeping a handle (parity helper).
+Future<MetadataDto> readMetadata({required String path}) =>
+    RustLib.instance.api.crateApiEpubReadMetadata(path: path);
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
+abstract class DocumentHandle implements RustOpaqueInterface {}

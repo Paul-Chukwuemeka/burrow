@@ -5,10 +5,18 @@ edition = "2021"
 license = "MIT"
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+# `rlib` is required for the `tests/` integration tests to link the crate.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
+# OCF container. Only the deflate codec is enabled: EPUBs use stored/deflate,
+# and this keeps the pure-Rust (MIT/Apache) backend instead of zopfli/zlib-rs.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# OPF/container/Nav XML.
+quick-xml = "0.42"
+# Href percent-decoding.
+percent-encoding = "2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

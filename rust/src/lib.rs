@@ -1,4 +1,5 @@
 pub mod api;
+pub mod epub;
 mod frb_generated;
 
 #[flutter_rust_bridge::frb(init)]
