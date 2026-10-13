@@ -1,0 +1,45 @@
+name: rust-engine
+
+on:
+  push:
+    paths:
+      - 'rust/**'
+      - 'lib/src/rust/**'
+      - 'test/epub_engine/**'
+      - 'flutter_rust_bridge.yaml'
+      - 'android/app/build.gradle.kts'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'lib/src/rust/**'
+      - 'test/epub_engine/**'
+      - 'flutter_rust_bridge.yaml'
+      - 'android/app/build.gradle.kts'
+      - '.github/workflows/rust.yml'
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test
+        run: cargo test
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: rust/Cargo.toml

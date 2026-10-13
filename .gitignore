@@ -47,6 +47,11 @@ app.*.map.json
 # Gradle build outputs
 **/build/
 
+# Rust engine shared libraries — build artifacts produced by
+# android/app/build.gradle.kts (buildRustEngine) via cargo-ndk. Never commit
+# binaries; a fresh checkout rebuilds them during the Android build.
+/android/app/src/main/jniLibs/
+
 # Flutter DevTools settings (generated)
 devtools_options.yaml
 

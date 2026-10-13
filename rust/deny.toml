@@ -1,0 +1,57 @@
+# cargo-deny: Burrow Rust engine license policy.
+#
+# The engine ships inside a proprietary app-store binary, so strong-copyleft
+# (GPL/AGPL) code is banned: `allow` below is an allowlist of permissive
+# licenses, and any crate licensed otherwise (including GPL/AGPL) fails
+# `cargo deny check licenses`. (cargo-deny >= 0.19 is allowlist-only; there
+# is no separate `deny` list for licenses.)
+# Run with: cargo deny check
+
+[advisories]
+# Transitive deps of the pinned flutter_rust_bridge toolchain currently trip
+# advisories that are not actionable from here (e.g. unmaintained `adler`,
+# yanked `futures-util 0.3.29`); they are ignored with reasons. The license
+# ban below is unaffected and stays deny-by-default.
+ignore = [
+    { id = "RUSTSEC-2025-0056", reason = "unmaintained `adler` is a transitive dep of the pinned flutter_rust_bridge 2.13.0 toolchain; not actionable here" },
+]
+
+[graph]
+targets = [
+    "aarch64-linux-android",
+    "armv7-linux-androideabi",
+    "x86_64-linux-android",
+    "x86_64-unknown-linux-gnu",
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Zlib",
+    "NCSA",
+    "BSL-1.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []
