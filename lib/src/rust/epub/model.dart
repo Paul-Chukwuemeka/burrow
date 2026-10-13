@@ -5,8 +5,6 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
-part 'model.freezed.dart';
 
 /// The attributes the block tree keeps for a node.
 ///
@@ -61,30 +59,35 @@ class Attrs {
           height == other.height;
 }
 
-@freezed
-sealed class BlockKind with _$BlockKind {
-  const BlockKind._();
-
+/// The structural role of a [`BlockNode`].
+///
+/// Deliberately small: the kinds the phase-1 flat projection and the future
+/// paginator need to tell apart (D6/G3). Everything without a dedicated role —
+/// inline markup (`span`, `em`, `a`, `code`, …) *and* generic block containers
+/// (`div`, `section`, `figure`, …) — is [`BlockKind::Inline`]; its children are
+/// preserved, so a `<div>` wrapping paragraphs is a transparent node rather
+/// than a flattening point.
+enum BlockKind {
   /// The synthetic tree root (also the `<body>` container).
-  const factory BlockKind.root() = BlockKind_Root;
-  const factory BlockKind.paragraph() = BlockKind_Paragraph;
+  root,
+  paragraph,
 
-  /// An `h1`–`h6`; the payload is the level (1–6).
-  const factory BlockKind.heading(int field0) = BlockKind_Heading;
+  /// An `h1`–`h6`; the level lives in [`BlockNode::heading_level`].
+  heading,
 
   /// A `ul`/`ol`/`menu`.
-  const factory BlockKind.list() = BlockKind_List;
+  list,
 
   /// An `li`.
-  const factory BlockKind.listItem() = BlockKind_ListItem;
-  const factory BlockKind.blockquote() = BlockKind_Blockquote;
-  const factory BlockKind.pre() = BlockKind_Pre;
+  listItem,
+  blockquote,
+  pre,
 
   /// An `img`. Carries no text; `attrs.src`/`alt`/`width`/`height` describe it.
-  const factory BlockKind.image() = BlockKind_Image;
+  image,
 
   /// Inline markup, or any element without a dedicated role (see the enum doc).
-  const factory BlockKind.inline() = BlockKind_Inline;
+  inline,
 }
 
 /// One node in the flat [`BlockTree`] arena.
@@ -92,15 +95,21 @@ sealed class BlockKind with _$BlockKind {
 /// `children` are indices into the arena (never recursive handles), so the tree
 /// crosses the FFI as a flat `Vec`. `text_range` is a half-open range into
 /// [`BlockTree::text`] measured in **Dart UTF-16 code units**, not Rust UTF-8
-/// bytes (D4): a non-BMP char such as `\u{1F600}` counts as two.
+/// bytes (D4): a non-BMP char such as `\u{1F600}` counts as two. Offsets and
+/// indices are `u32` so the FFI surface is plain Dart `int` / `Uint32List`
+/// rather than `BigInt` / `Uint64List`.
 class BlockNode {
   final BlockKind kind;
-  final (BigInt, BigInt) textRange;
-  final Uint64List children;
+
+  /// Heading level (1–6) when `kind == Heading`, else `None`.
+  final int? headingLevel;
+  final (int, int) textRange;
+  final Uint32List children;
   final Attrs attrs;
 
   const BlockNode({
     required this.kind,
+    this.headingLevel,
     required this.textRange,
     required this.children,
     required this.attrs,
@@ -108,7 +117,11 @@ class BlockNode {
 
   @override
   int get hashCode =>
-      kind.hashCode ^ textRange.hashCode ^ children.hashCode ^ attrs.hashCode;
+      kind.hashCode ^
+      headingLevel.hashCode ^
+      textRange.hashCode ^
+      children.hashCode ^
+      attrs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -116,6 +129,7 @@ class BlockNode {
       other is BlockNode &&
           runtimeType == other.runtimeType &&
           kind == other.kind &&
+          headingLevel == other.headingLevel &&
           textRange == other.textRange &&
           children == other.children &&
           attrs == other.attrs;

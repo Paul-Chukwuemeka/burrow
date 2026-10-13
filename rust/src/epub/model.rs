@@ -98,8 +98,8 @@ pub enum BlockKind {
     #[default]
     Root,
     Paragraph,
-    /// An `h1`–`h6`; the payload is the level (1–6).
-    Heading(u8),
+    /// An `h1`–`h6`; the level lives in [`BlockNode::heading_level`].
+    Heading,
     /// A `ul`/`ol`/`menu`.
     List,
     /// An `li`.
@@ -135,12 +135,16 @@ pub struct Attrs {
 /// `children` are indices into the arena (never recursive handles), so the tree
 /// crosses the FFI as a flat `Vec`. `text_range` is a half-open range into
 /// [`BlockTree::text`] measured in **Dart UTF-16 code units**, not Rust UTF-8
-/// bytes (D4): a non-BMP char such as `\u{1F600}` counts as two.
+/// bytes (D4): a non-BMP char such as `\u{1F600}` counts as two. Offsets and
+/// indices are `u32` so the FFI surface is plain Dart `int` / `Uint32List`
+/// rather than `BigInt` / `Uint64List`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BlockNode {
     pub kind: BlockKind,
-    pub text_range: (usize, usize),
-    pub children: Vec<usize>,
+    /// Heading level (1–6) when `kind == Heading`, else `None`.
+    pub heading_level: Option<u8>,
+    pub text_range: (u32, u32),
+    pub children: Vec<u32>,
     pub attrs: Attrs,
 }
 

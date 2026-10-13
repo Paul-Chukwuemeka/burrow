@@ -28,23 +28,20 @@ void main() {
     final tree = await blockTree(handle: handle, chapterKey: 'oebps/text/ch1.xhtml');
 
     expect(tree.nodes, isNotEmpty);
-    expect(tree.nodes.first.kind, isA<BlockKind_Root>());
+    expect(tree.nodes.first.kind, BlockKind.root);
     expect(tree.text, contains('The first chapter.'));
 
-    final heading = tree.nodes
-        .where((n) => n.kind is BlockKind_Heading)
-        .map((n) => n.kind as BlockKind_Heading)
-        .toList();
-    expect(heading, hasLength(1));
-    expect(heading.single.field0, 1);
+    final headings =
+        tree.nodes.where((n) => n.kind == BlockKind.heading).toList();
+    expect(headings, hasLength(1));
+    expect(headings.single.headingLevel, 1);
 
-    final paragraphs = tree.nodes
-        .where((n) => n.kind is BlockKind_Paragraph)
-        .toList();
+    final paragraphs =
+        tree.nodes.where((n) => n.kind == BlockKind.paragraph).toList();
     expect(paragraphs, isNotEmpty);
+    // `textRange` is a plain Dart record of two `int`s (u32 on the Rust side).
     final (start, end) = paragraphs.first.textRange;
-    expect(tree.text.substring(start.toInt(), end.toInt()),
-        contains('The first chapter.'));
+    expect(tree.text.substring(start, end), contains('The first chapter.'));
   });
 
   test('text ranges are UTF-16 code units for non-BMP text', () async {
@@ -52,20 +49,21 @@ void main() {
     final tree = await blockTree(handle: handle, chapterKey: 'oebps/ch1.xhtml');
 
     final paragraphs =
-        tree.nodes.where((n) => n.kind is BlockKind_Paragraph).toList();
-    expect(paragraphs, hasLength(2));
+        tree.nodes.where((n) => n.kind == BlockKind.paragraph).toList();
+    expect(paragraphs, hasLength(3));
 
     final first = paragraphs[0].textRange;
-    expect(first.$1, BigInt.zero);
-    expect(first.$2, BigInt.from(4)); // "A😀B" is 4 UTF-16 units, not 6 bytes.
+    expect(first.$1, 0);
+    expect(first.$2, 4); // "A😀B" is 4 UTF-16 units, not 6 bytes.
     expect(tree.text.substring(0, 4), 'A\u{1F600}B');
 
     final second = paragraphs[1].textRange;
-    expect(second.$1, BigInt.from(4));
-    expect(
-      tree.text.substring(second.$1.toInt(), second.$2.toInt()),
-      '\u{10348} tail',
-    );
+    expect(second.$1, 4);
+    expect(tree.text.substring(second.$1, second.$2), '\u{10348} tail');
+
+    // Inline-sibling spaces are rendered content and must survive.
+    final third = paragraphs[2].textRange;
+    expect(tree.text.substring(third.$1, third.$2), 'a b c');
   });
 
   test('drops scripted content and never fetches remote URLs', () async {
@@ -77,7 +75,7 @@ void main() {
     expect(tree.text, contains('Safe body text.'));
     expect(tree.text, isNot(contains('boom')));
 
-    final image = tree.nodes.firstWhere((n) => n.kind is BlockKind_Image);
+    final image = tree.nodes.firstWhere((n) => n.kind == BlockKind.image);
     expect(image.attrs.src, 'https://example.com/tracker.png');
   });
 

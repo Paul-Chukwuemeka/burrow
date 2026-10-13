@@ -482,6 +482,9 @@ def build_nonbmp() -> None:
     body = (
         "<p>A\U0001F600B</p>\n"
         "<p>\U00010348 tail</p>\n"
+        # Inline-sibling spaces must survive: this paragraph's children are all
+        # inline, so the spaces are rendered content, not inter-block layout.
+        "<p>a <em>b</em> <em>c</em></p>\n"
     )
     _write_chapter_epub(
         "nonbmp.epub",

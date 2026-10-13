@@ -76,6 +76,17 @@ fn non_bmp_paragraph_offsets_are_utf16_through_the_archive() {
         .expect("second paragraph");
     assert_eq!(tree.nodes[second].text_range.0, 4);
     assert_eq!(tree.node_text(second), "\u{10348} tail");
+
+    // Inline-sibling spaces survive (the third `<p>` is `a <em>b</em> <em>c</em>`).
+    let third = tree
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.kind == BlockKind::Paragraph)
+        .nth(2)
+        .map(|(i, _)| i)
+        .expect("third paragraph");
+    assert_eq!(tree.node_text(third), "a b c");
 }
 
 #[test]

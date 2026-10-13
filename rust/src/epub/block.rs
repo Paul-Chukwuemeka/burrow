@@ -72,7 +72,7 @@ fn dir_of(path: &str) -> String {
 /// Convenience for the ordering test: `block_text_range("A\u{1F600}B")` parses
 /// `<p>A😀B</p>` and returns the paragraph's range, which is `(0, 4)` because
 /// the emoji is one scalar but two UTF-16 code units.
-pub fn block_text_range(text: &str) -> (usize, usize) {
+pub fn block_text_range(text: &str) -> (u32, u32) {
     let tree = parse_xhtml(&format!("<p>{text}</p>"));
     tree.nodes
         .iter()
@@ -90,7 +90,7 @@ impl BlockTree {
     /// The text of node `index`, sliced by its UTF-16 `text_range`.
     pub fn node_text(&self, index: usize) -> &str {
         let (start, end) = match self.nodes.get(index) {
-            Some(node) => node.text_range,
+            Some(node) => (node.text_range.0 as usize, node.text_range.1 as usize),
             None => return "",
         };
         utf16_slice(&self.text, start, end)
@@ -119,12 +119,7 @@ impl BlockTree {
 fn kind_of(name: &str) -> BlockKind {
     match name {
         "p" => BlockKind::Paragraph,
-        "h1" => BlockKind::Heading(1),
-        "h2" => BlockKind::Heading(2),
-        "h3" => BlockKind::Heading(3),
-        "h4" => BlockKind::Heading(4),
-        "h5" => BlockKind::Heading(5),
-        "h6" => BlockKind::Heading(6),
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => BlockKind::Heading,
         "ul" | "ol" | "menu" => BlockKind::List,
         "li" => BlockKind::ListItem,
         "blockquote" => BlockKind::Blockquote,
@@ -132,6 +127,65 @@ fn kind_of(name: &str) -> BlockKind {
         "img" => BlockKind::Image,
         _ => BlockKind::Inline,
     }
+}
+
+/// The heading level (1–6) for an `h1`–`h6`, else `None`.
+fn heading_level(name: &str) -> Option<u8> {
+    match name {
+        "h1" => Some(1),
+        "h2" => Some(2),
+        "h3" => Some(3),
+        "h4" => Some(4),
+        "h5" => Some(5),
+        "h6" => Some(6),
+        _ => None,
+    }
+}
+
+/// Block-level tags. Used only to decide whether a whitespace-only text node is
+/// rendered content (inline flow) or layout (block flow); it is deliberately
+/// broader than [`BlockKind`], because e.g. a `<div>` is [`BlockKind::Inline`]
+/// but still establishes a block boundary for whitespace purposes.
+fn is_block_tag(name: &str) -> bool {
+    matches!(
+        name,
+        "address"
+            | "article"
+            | "aside"
+            | "blockquote"
+            | "details"
+            | "div"
+            | "dl"
+            | "fieldset"
+            | "figcaption"
+            | "figure"
+            | "footer"
+            | "form"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "header"
+            | "hr"
+            | "li"
+            | "main"
+            | "menu"
+            | "nav"
+            | "ol"
+            | "p"
+            | "pre"
+            | "section"
+            | "table"
+            | "ul"
+    )
+}
+
+fn is_block_element(node: &Handle) -> bool {
+    dom::element_name(node)
+        .map(|name| is_block_tag(&name))
+        .unwrap_or(false)
 }
 
 fn attrs_of(tag: &str, node: &Handle) -> Attrs {
@@ -191,7 +245,7 @@ struct Builder {
 
 impl Builder {
     fn build(mut self, document: Handle) -> BlockTree {
-        let root = self.push(BlockKind::Root, (0, 0), Attrs::default());
+        let root = self.push(BlockKind::Root, None, (0, 0), Attrs::default());
 
         // The `<body>` is the content root; `<head>` (title, stylesheets) is
         // not part of the chapter text.
@@ -202,20 +256,13 @@ impl Builder {
         // while a descendant is still being read would empty that descendant's
         // children mid-walk.
         let body = dom::find_element(&document, "body");
-        let content = match &body {
-            Some(body) => dom::children(body),
-            None => dom::children(&document),
+        let children = match &body {
+            Some(body) => self.walk_children(body, false),
+            None => self.walk_children(&document, false),
         };
 
-        let mut children = Vec::new();
-        for child in &content {
-            if let Some(index) = self.walk(child, false) {
-                children.push(index);
-            }
-        }
-
         self.nodes[root].children = children;
-        self.nodes[root].text_range = (0, self.utf16_len);
+        self.nodes[root].text_range = (0, self.utf16_len as u32);
         BlockTree {
             nodes: self.nodes,
             text: self.text,
@@ -224,20 +271,40 @@ impl Builder {
         }
     }
 
-    /// Returns the arena index of the node built, or `None` for text/ignored
-    /// nodes (text is folded into the shared buffer, not a node).
-    fn walk(&mut self, node: &Handle, in_pre: bool) -> Option<usize> {
-        if let Some(text) = dom::text(node) {
-            // Whitespace between block elements is layout, not content; inside
-            // `<pre>` it is significant and kept verbatim.
-            if text.is_empty() || (!in_pre && text.chars().all(char::is_whitespace)) {
-                return None;
-            }
-            self.utf16_len += text.encode_utf16().count();
-            self.text.push_str(&text);
-            return None;
-        }
+    /// Walks the children of `parent`, returning the arena indices of the child
+    /// nodes built (text is folded into the shared buffer, not a node).
+    ///
+    /// Whitespace handling is decided here, per parent: a whitespace-only text
+    /// node is *layout* only when the parent also lays out a block-level child.
+    /// Inside an inline flow (`<p>a <em>b</em> <em>c</em></p>`) the spaces are
+    /// rendered content and must survive, or the node text and the selected
+    /// offsets would silently merge words.
+    fn walk_children(&mut self, parent: &Handle, in_pre: bool) -> Vec<u32> {
+        let children = dom::children(parent);
+        let block_flow = children.iter().any(is_block_element);
 
+        let mut out = Vec::new();
+        for child in &children {
+            if let Some(text) = dom::text(child) {
+                if text.is_empty() {
+                    continue;
+                }
+                if !in_pre && block_flow && text.chars().all(char::is_whitespace) {
+                    continue;
+                }
+                self.utf16_len += text.encode_utf16().count();
+                self.text.push_str(&text);
+                continue;
+            }
+            if let Some(index) = self.walk(child, in_pre) {
+                out.push(index as u32);
+            }
+        }
+        out
+    }
+
+    /// Builds one element node (and its subtree), returning its arena index.
+    fn walk(&mut self, node: &Handle, in_pre: bool) -> Option<usize> {
         let name = dom::element_name(node)?;
 
         // D9: scripted/styled content is never represented. The subtree is
@@ -251,24 +318,31 @@ impl Builder {
 
         let kind = kind_of(&name);
         let attrs = attrs_of(&name, node);
-        let index = self.push(kind, (self.utf16_len, self.utf16_len), attrs);
+        let index = self.push(
+            kind,
+            heading_level(&name),
+            (self.utf16_len as u32, self.utf16_len as u32),
+            attrs,
+        );
 
         let in_pre = in_pre || name == "pre";
-        let mut children = Vec::new();
-        for child in dom::children(node) {
-            if let Some(child_index) = self.walk(&child, in_pre) {
-                children.push(child_index);
-            }
-        }
+        let children = self.walk_children(node, in_pre);
         self.nodes[index].children = children;
         // The node's range now spans every descendant text node appended.
-        self.nodes[index].text_range.1 = self.utf16_len;
+        self.nodes[index].text_range.1 = self.utf16_len as u32;
         Some(index)
     }
 
-    fn push(&mut self, kind: BlockKind, text_range: (usize, usize), attrs: Attrs) -> usize {
+    fn push(
+        &mut self,
+        kind: BlockKind,
+        heading_level: Option<u8>,
+        text_range: (u32, u32),
+        attrs: Attrs,
+    ) -> usize {
         self.nodes.push(BlockNode {
             kind,
+            heading_level,
             text_range,
             children: Vec::new(),
             attrs,
@@ -294,7 +368,7 @@ mod tests {
              <pre>  keep  </pre></body>",
         );
         let kinds: Vec<BlockKind> = tree.nodes.iter().map(|n| n.kind).collect();
-        assert!(kinds.contains(&BlockKind::Heading(1)));
+        assert!(kinds.contains(&BlockKind::Heading));
         assert_eq!(
             kinds.iter().filter(|k| **k == BlockKind::Paragraph).count(),
             2
@@ -320,9 +394,9 @@ mod tests {
         let heading = tree
             .nodes
             .iter()
-            .find(|n| matches!(n.kind, BlockKind::Heading(_)))
+            .find(|n| n.kind == BlockKind::Heading)
             .expect("heading");
-        assert_eq!(heading.kind, BlockKind::Heading(3));
+        assert_eq!(heading.heading_level, Some(3));
     }
 
     #[test]
@@ -359,9 +433,27 @@ mod tests {
     }
 
     #[test]
+    fn spaces_between_inline_siblings_are_preserved() {
+        // The spaces are children of the `<p>`, whose children are all inline,
+        // so they are rendered content — dropping them would merge the words.
+        let tree = parse_xhtml("<body><p>a <em>b</em> <em>c</em></p></body>");
+        assert_eq!(tree.text, "a b c");
+        let p = tree
+            .nodes
+            .iter()
+            .position(|n| n.kind == BlockKind::Paragraph)
+            .expect("paragraph");
+        assert_eq!(tree.nodes[p].text_range, (0, 5));
+        assert_eq!(tree.node_text(p), "a b c");
+    }
+
+    #[test]
     fn whitespace_between_blocks_is_not_content_but_pre_is_kept() {
         assert_eq!(text_of("<body>\n  <p>a</p>\n  <p>b</p>\n</body>"), "ab");
         assert_eq!(text_of("<body><pre>  x  </pre></body>"), "  x  ");
+        // Indentation around a block container is layout, even though the
+        // container itself is `Inline` (a `<div>`).
+        assert_eq!(text_of("<body>\n  <div><p>a</p></div>\n</body>"), "a");
     }
 
     #[test]
