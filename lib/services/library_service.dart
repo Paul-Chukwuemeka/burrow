@@ -304,8 +304,14 @@ class LibraryService extends ChangeNotifier {
     unawaited(reconcileMissingFiles());
 
     // Sweep stale/orphaned parsed-document cache entries (and earlier cache
-    // schema versions) in the background.
-    unawaited(DocumentParser.pruneCache([for (final b in _books) b.path]));
+    // schema versions) in the background. Keep every engine's namespace valid
+    // so the sweep never deletes the other engine's cache (design D13).
+    unawaited(
+      DocumentParser.pruneCache(
+        [for (final b in _books) b.path],
+        engineIds: const [dartEpubEngineId, rustEpubEngineId],
+      ),
+    );
 
     // One-time migration: group existing comics into the "Comics"
     // collection now that series names can be inferred from filenames.
