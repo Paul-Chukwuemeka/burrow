@@ -186,9 +186,50 @@ def build_percent_path() -> None:
     )
 
 
+def build_opaque_cover() -> None:
+    # The cover filename deliberately does NOT contain "cover", so the
+    # reader's last-resort filename scan cannot be what finds it. Cover
+    # resolution must go through `meta name="cover"` -> manifest href.
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:opf="http://www.idpf.org/2007/opf">\n'
+        "    <dc:title>Opaque Cover</dc:title>\n"
+        "    <dc:creator>O. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId" opf:scheme="ISBN">'
+        "9780306406157</dc:identifier>\n"
+        '    <meta name="cover" content="cv"/>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="cv" href="Images/front.png" media-type="image/png"/>\n'
+        '    <item id="ch1" href="Text/ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "opaque-cover.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/Images/front.png", _png(4, 4, (30, 120, 30)), True),
+            ("OEBPS/Text/ch1.xhtml", _xhtml("One", "Front cover."), True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
+    build_opaque_cover()
     print("wrote fixtures to", HERE)
 
 

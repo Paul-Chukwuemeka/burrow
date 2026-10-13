@@ -197,6 +197,11 @@ pub fn normalize_key(path: &str) -> String {
 ///
 /// Handles fragments, `..`/`.` segments, percent-encoding, and indirection
 /// through nested directories. Never panics on malformed escapes.
+///
+/// The result is **lowercased** to match [`normalize_key`], which is how the
+/// key map is stored. Returning a mixed-case path here was a bug: the stored
+/// keys are lowercased, so lookups silently missed unless the fallback scan
+/// happened to find the entry.
 pub fn resolve_href(base_dir: &str, href: &str) -> String {
     let clean = href.split('#').next().unwrap_or("").trim();
     let decoded = decode_percent(clean);
@@ -205,7 +210,7 @@ pub fn resolve_href(base_dir: &str, href: &str) -> String {
     } else {
         format!("{base_dir}/{decoded}")
     };
-    normalize_path(&joined)
+    normalize_path(&joined).to_lowercase()
 }
 
 /// Collapses `.`/`..`/empty segments and joins with `/`.
@@ -270,13 +275,14 @@ mod tests {
     }
 
     #[test]
-    fn resolve_href_walks_directories() {
-        assert_eq!(resolve_href("OEBPS", "Images/cover.png"), "OEBPS/Images/cover.png");
-        assert_eq!(resolve_href("OEBPS", "../Images/c.png"), "Images/c.png");
-        assert_eq!(resolve_href("", "Text/ch1.xhtml"), "Text/ch1.xhtml");
+    fn resolve_href_walks_directories_and_lowercases() {
+        // The result is a lookup key, so it must be lowercased like the key map.
+        assert_eq!(resolve_href("OEBPS", "Images/cover.png"), "oebps/images/cover.png");
+        assert_eq!(resolve_href("OEBPS", "../Images/c.png"), "images/c.png");
+        assert_eq!(resolve_href("", "Text/ch1.xhtml"), "text/ch1.xhtml");
         assert_eq!(
             resolve_href("OEBPS", "Images/Cover%20Art.png"),
-            "OEBPS/Images/Cover Art.png"
+            "oebps/images/cover art.png"
         );
     }
 }

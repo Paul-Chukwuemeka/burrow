@@ -59,6 +59,39 @@ fn percent_encoded_paths_do_not_throw() {
 }
 
 #[test]
+fn read_href_resolves_case_insensitively() {
+    let z = open(&fixture("minimal.epub")).unwrap();
+    // Direct hit through the href — the `meta name="cover"` path, not the
+    // `cover_fallback` filename scan.
+    assert!(z.read_href("OEBPS", "Images/cover.png").is_some());
+    // Directory AND file case differ from the stored entry (`OEBPS/Images/...`).
+    assert!(z.read_href("oebps", "images/COVER.PNG").is_some());
+    // `..` traversal still resolves after lowercasing.
+    assert!(z.read_href("OEBPS/Text", "../Images/cover.png").is_some());
+    // A genuinely absent entry must still miss.
+    assert!(z.read_href("OEBPS", "Images/missing.png").is_none());
+}
+
+#[test]
+fn percent_encoded_href_resolves_directly() {
+    let z = open(&fixture("percent-path.epub")).unwrap();
+    assert!(z.read_href("OEBPS", "Images/Cover%20Art.png").is_some());
+    // A bare `%` in the href must not throw and must still match its entry.
+    assert!(z.read_href("OEBPS", "Text/100%25_cover.xhtml").is_some());
+}
+
+#[test]
+fn cover_resolves_via_meta_href_not_filename_scan() {
+    // `front.png` contains no "cover", so `cover_fallback` cannot supply this
+    // cover: it only passes if `meta name="cover"` -> manifest href resolves.
+    let m = read_metadata(&fixture("opaque-cover.epub")).unwrap();
+    let cover = m
+        .cover_bytes
+        .expect("cover must resolve through meta name=cover -> href");
+    assert_eq!(&cover[..8], b"\x89PNG\r\n\x1a\n");
+}
+
+#[test]
 fn rejects_non_epub_bytes() {
     use std::sync::atomic::{AtomicU32, Ordering};
     static SEQ: AtomicU32 = AtomicU32::new(0);
