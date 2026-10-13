@@ -56,6 +56,7 @@ dependencies:
   # Runtime for the FRB-generated bindings in lib/src/rust/. The native engine
   # itself is built by cargo-ndk and wired into Gradle in android/app/build.gradle.kts.
   flutter_rust_bridge: 2.13.0
+  freezed_annotation: ^3.1.0
 
 dependency_overrides:
   lexicor:
@@ -72,6 +73,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   # Lets widget tests swap in a fake wakelock instead of hitting the plugin.
   wakelock_plus_platform_interface: ^1.6.0
+  freezed: ^4.0.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

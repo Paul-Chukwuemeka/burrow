@@ -83,3 +83,84 @@ pub struct FontFaceDto {
     pub family: String,
     pub src: String,
 }
+
+/// The structural role of a [`BlockNode`].
+///
+/// Deliberately small: the kinds the phase-1 flat projection and the future
+/// paginator need to tell apart (D6/G3). Everything without a dedicated role —
+/// inline markup (`span`, `em`, `a`, `code`, …) *and* generic block containers
+/// (`div`, `section`, `figure`, …) — is [`BlockKind::Inline`]; its children are
+/// preserved, so a `<div>` wrapping paragraphs is a transparent node rather
+/// than a flattening point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlockKind {
+    /// The synthetic tree root (also the `<body>` container).
+    #[default]
+    Root,
+    Paragraph,
+    /// An `h1`–`h6`; the payload is the level (1–6).
+    Heading(u8),
+    /// A `ul`/`ol`/`menu`.
+    List,
+    /// An `li`.
+    ListItem,
+    Blockquote,
+    Pre,
+    /// An `img`. Carries no text; `attrs.src`/`alt`/`width`/`height` describe it.
+    Image,
+    /// Inline markup, or any element without a dedicated role (see the enum doc).
+    Inline,
+}
+
+/// The attributes the block tree keeps for a node.
+///
+/// `tag` is the lowercased local element name (not an attribute), carried so a
+/// later cascade can run selector matching (Task 6). The rest are the HTML
+/// attributes the phase-1 model needs; `src`/`href` are kept **raw**, never
+/// resolved or fetched (D9).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Attrs {
+    pub tag: String,
+    pub id: Option<String>,
+    pub class: Option<String>,
+    pub src: Option<String>,
+    pub href: Option<String>,
+    pub alt: Option<String>,
+    pub width: Option<String>,
+    pub height: Option<String>,
+}
+
+/// One node in the flat [`BlockTree`] arena.
+///
+/// `children` are indices into the arena (never recursive handles), so the tree
+/// crosses the FFI as a flat `Vec`. `text_range` is a half-open range into
+/// [`BlockTree::text`] measured in **Dart UTF-16 code units**, not Rust UTF-8
+/// bytes (D4): a non-BMP char such as `\u{1F600}` counts as two.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BlockNode {
+    pub kind: BlockKind,
+    pub text_range: (usize, usize),
+    pub children: Vec<usize>,
+    pub attrs: Attrs,
+}
+
+/// A chapter parsed into a structured block tree.
+///
+/// `nodes` is a flat arena whose first entry is always the [`BlockKind::Root`];
+/// `text` is the chapter's visible text in document order, which `text_range`
+/// offsets index. The tree preserves block structure (paragraphs, headings,
+/// lists, blockquote, pre, images) instead of flattening to a body string (G3).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BlockTree {
+    pub nodes: Vec<BlockNode>,
+    /// Chapter text, in document order, in UTF-16-indexable form.
+    pub text: String,
+    /// Network fetches performed while building the tree. Always `0`: the
+    /// engine has no fetch capability (D9), and this field exists so the
+    /// invariant is asserted, not assumed.
+    pub remote_fetches: u32,
+    /// Number of `<script>` subtrees dropped while building. Proves the
+    /// scripted content *was present and removed*, complementing
+    /// `has_script_node()` (which must stay false).
+    pub dropped_scripts: u32,
+}

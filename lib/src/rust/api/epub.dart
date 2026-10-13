@@ -45,5 +45,18 @@ Future<int> chapterCount({required DocumentHandle handle}) =>
 Future<MetadataDto> readMetadata({required String path}) =>
     RustLib.instance.api.crateApiEpubReadMetadata(path: path);
 
+/// Parses one chapter into a structured block tree (Task 5).
+///
+/// `chapter_key` is a spine href (relative to the OPF directory) or an
+/// already-normalised archive key; resolution is percent-decoding and
+/// case-insensitive. Every node's `text_range` is in Dart UTF-16 code units.
+Future<BlockTree> blockTree({
+  required DocumentHandle handle,
+  required String chapterKey,
+}) => RustLib.instance.api.crateApiEpubBlockTree(
+  handle: handle,
+  chapterKey: chapterKey,
+);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}

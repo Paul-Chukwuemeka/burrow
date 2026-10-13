@@ -17,6 +17,13 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2-zli
 quick-xml = "0.42"
 # Href percent-decoding.
 percent-encoding = "2"
+# Browser-grade XHTML parsing with HTML5 error recovery (G1/D5). The `dom`
+# module lowers the result into our own block tree; the RcDom is never exposed.
+# `markup5ever_rcdom` 0.39 must stay in lockstep with `html5ever` 0.39 — both
+# are built against `markup5ever` 0.39, and a newer html5ever (0.40) expects a
+# different `markup5ever`, so the two would not type-check together.
+html5ever = "0.39"
+markup5ever_rcdom = "0.39"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

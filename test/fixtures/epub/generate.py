@@ -61,6 +61,61 @@ def _xhtml(title: str, body: str) -> bytes:
     ).encode("utf-8")
 
 
+def _raw_xhtml(title: str, body: str) -> bytes:
+    """Like `_xhtml` but the body markup is taken verbatim (no wrapping `<p>`),
+    so a fixture can carry malformed or scripted content."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        f"<head><title>{title}</title></head>\n"
+        f"<body>{body}</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+
+def _write_chapter_epub(
+    name: str,
+    title: str,
+    chapters: list[tuple[str, str, bytes]],
+) -> None:
+    """Writes a minimal EPUB3 with `(id, href, xhtml_bytes)` chapters under
+    `OEBPS/`, in spine order. Used by the XHTML/block-tree fixtures."""
+    items = "\n".join(
+        f'    <item id="{cid}" href="{href}" '
+        'media-type="application/xhtml+xml"/>'
+        for cid, href, _ in chapters
+    )
+    refs = "\n".join(f'    <itemref idref="{cid}"/>' for cid, _, _ in chapters)
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        f"    <dc:title>{title}</dc:title>\n"
+        "    <dc:creator>T. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        f'    <dc:identifier id="BookId">urn:uuid:{name}</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        f"{items}\n"
+        "  </manifest>\n"
+        "  <spine>\n"
+        f"{refs}\n"
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    entries: list[tuple[str, bytes, bool]] = [
+        ("mimetype", b"application/epub+zip", False),
+        ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+        ("OEBPS/content.opf", opf, True),
+    ]
+    entries.extend((f"OEBPS/{href}", data, True) for _, href, data in chapters)
+    _write_epub(HERE / name, entries)
+
+
+
 def _container(rootfile: str) -> bytes:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -393,6 +448,66 @@ def build_ncx() -> None:
     )
 
 
+def build_malformed() -> None:
+    # ch1 leaves `<div>` and both `<p>`s unclosed; the HTML5 parser must
+    # recover and keep "Chapter one body". ch2 is well-formed and must be
+    # unaffected (Review Focus #4).
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>One</title></head>\n"
+        "<body>\n"
+        '  <div class="wrap">\n'
+        "    <h1>Chapter one</h1>\n"
+        "    <p>Chapter one body\n"
+        "    <p>Chapter one second paragraph\n"
+        "  </div>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+    _write_chapter_epub(
+        "malformed.epub",
+        "Malformed",
+        [
+            ("ch1", "ch1.xhtml", ch1),
+            ("ch2", "ch2.xhtml", _xhtml("Two", "Chapter two body")),
+        ],
+    )
+
+
+def build_nonbmp() -> None:
+    # `A😀B` is four UTF-16 code units (`A` + surrogate pair + `B`); the
+    # paragraph's text_range must be (0, 4), not (0, 1 + 4 bytes + 1). A second
+    # paragraph exercises an astral CJK-ish char beyond the surrogate block.
+    body = (
+        "<p>A\U0001F600B</p>\n"
+        "<p>\U00010348 tail</p>\n"
+    )
+    _write_chapter_epub(
+        "nonbmp.epub",
+        "Non BMP",
+        [("ch1", "ch1.xhtml", _raw_xhtml("One", body))],
+    )
+
+
+def build_scripted() -> None:
+    # Contains scripted content and absolute URLs. The parser must drop the
+    # `<script>` subtree and never fetch the remote `<img>`/`<a>` targets
+    # (spec criterion 8 / D9).
+    body = (
+        "<h1>Scripted</h1>\n"
+        "<p>Safe body text.</p>\n"
+        "<script>alert('boom')</script>\n"
+        '<p><img src="https://example.com/tracker.png" alt="remote"/></p>\n'
+        '<p><a href="https://example.com/x">external</a></p>\n'
+    )
+    _write_chapter_epub(
+        "scripted.epub",
+        "Scripted",
+        [("ch1", "ch1.xhtml", _raw_xhtml("One", body))],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -400,6 +515,9 @@ def main() -> None:
     build_no_spine()
     build_nav()
     build_ncx()
+    build_malformed()
+    build_nonbmp()
+    build_scripted()
     print("wrote fixtures to", HERE)
 
 

@@ -45,6 +45,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  Attrs dco_decode_attrs(dynamic raw);
+
+  @protected
+  BlockKind dco_decode_block_kind(dynamic raw);
+
+  @protected
+  BlockNode dco_decode_block_node(dynamic raw);
+
+  @protected
+  BlockTree dco_decode_block_tree(dynamic raw);
+
+  @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
@@ -57,10 +69,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<BlockNode> dco_decode_list_block_node(dynamic raw);
+
+  @protected
   List<FontFaceDto> dco_decode_list_font_face_dto(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  Uint64List dco_decode_list_prim_usize_strict(dynamic raw);
 
   @protected
   List<TocEntryDto> dco_decode_list_toc_entry_dto(dynamic raw);
@@ -76,6 +94,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  (BigInt, BigInt) dco_decode_record_usize_usize(dynamic raw);
 
   @protected
   TocEntryDto dco_decode_toc_entry_dto(dynamic raw);
@@ -114,6 +135,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  Attrs sse_decode_attrs(SseDeserializer deserializer);
+
+  @protected
+  BlockKind sse_decode_block_kind(SseDeserializer deserializer);
+
+  @protected
+  BlockNode sse_decode_block_node(SseDeserializer deserializer);
+
+  @protected
+  BlockTree sse_decode_block_tree(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
@@ -126,10 +159,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<BlockNode> sse_decode_list_block_node(SseDeserializer deserializer);
+
+  @protected
   List<FontFaceDto> sse_decode_list_font_face_dto(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  Uint64List sse_decode_list_prim_usize_strict(SseDeserializer deserializer);
 
   @protected
   List<TocEntryDto> sse_decode_list_toc_entry_dto(SseDeserializer deserializer);
@@ -145,6 +184,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  (BigInt, BigInt) sse_decode_record_usize_usize(SseDeserializer deserializer);
 
   @protected
   TocEntryDto sse_decode_toc_entry_dto(SseDeserializer deserializer);
@@ -192,6 +234,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_attrs(Attrs self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_block_kind(BlockKind self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_block_node(BlockNode self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_block_tree(BlockTree self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
@@ -204,6 +258,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_block_node(
+    List<BlockNode> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_font_face_dto(
     List<FontFaceDto> self,
     SseSerializer serializer,
@@ -212,6 +272,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_usize_strict(
+    Uint64List self,
     SseSerializer serializer,
   );
 
@@ -233,6 +299,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_record_usize_usize(
+    (BigInt, BigInt) self,
     SseSerializer serializer,
   );
 

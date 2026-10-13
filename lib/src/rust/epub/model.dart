@@ -5,6 +5,168 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'model.freezed.dart';
+
+/// The attributes the block tree keeps for a node.
+///
+/// `tag` is the lowercased local element name (not an attribute), carried so a
+/// later cascade can run selector matching (Task 6). The rest are the HTML
+/// attributes the phase-1 model needs; `src`/`href` are kept **raw**, never
+/// resolved or fetched (D9).
+class Attrs {
+  final String tag;
+  final String? id;
+  final String? class_;
+  final String? src;
+  final String? href;
+  final String? alt;
+  final String? width;
+  final String? height;
+
+  const Attrs({
+    required this.tag,
+    this.id,
+    this.class_,
+    this.src,
+    this.href,
+    this.alt,
+    this.width,
+    this.height,
+  });
+
+  @override
+  int get hashCode =>
+      tag.hashCode ^
+      id.hashCode ^
+      class_.hashCode ^
+      src.hashCode ^
+      href.hashCode ^
+      alt.hashCode ^
+      width.hashCode ^
+      height.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Attrs &&
+          runtimeType == other.runtimeType &&
+          tag == other.tag &&
+          id == other.id &&
+          class_ == other.class_ &&
+          src == other.src &&
+          href == other.href &&
+          alt == other.alt &&
+          width == other.width &&
+          height == other.height;
+}
+
+@freezed
+sealed class BlockKind with _$BlockKind {
+  const BlockKind._();
+
+  /// The synthetic tree root (also the `<body>` container).
+  const factory BlockKind.root() = BlockKind_Root;
+  const factory BlockKind.paragraph() = BlockKind_Paragraph;
+
+  /// An `h1`–`h6`; the payload is the level (1–6).
+  const factory BlockKind.heading(int field0) = BlockKind_Heading;
+
+  /// A `ul`/`ol`/`menu`.
+  const factory BlockKind.list() = BlockKind_List;
+
+  /// An `li`.
+  const factory BlockKind.listItem() = BlockKind_ListItem;
+  const factory BlockKind.blockquote() = BlockKind_Blockquote;
+  const factory BlockKind.pre() = BlockKind_Pre;
+
+  /// An `img`. Carries no text; `attrs.src`/`alt`/`width`/`height` describe it.
+  const factory BlockKind.image() = BlockKind_Image;
+
+  /// Inline markup, or any element without a dedicated role (see the enum doc).
+  const factory BlockKind.inline() = BlockKind_Inline;
+}
+
+/// One node in the flat [`BlockTree`] arena.
+///
+/// `children` are indices into the arena (never recursive handles), so the tree
+/// crosses the FFI as a flat `Vec`. `text_range` is a half-open range into
+/// [`BlockTree::text`] measured in **Dart UTF-16 code units**, not Rust UTF-8
+/// bytes (D4): a non-BMP char such as `\u{1F600}` counts as two.
+class BlockNode {
+  final BlockKind kind;
+  final (BigInt, BigInt) textRange;
+  final Uint64List children;
+  final Attrs attrs;
+
+  const BlockNode({
+    required this.kind,
+    required this.textRange,
+    required this.children,
+    required this.attrs,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ textRange.hashCode ^ children.hashCode ^ attrs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BlockNode &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          textRange == other.textRange &&
+          children == other.children &&
+          attrs == other.attrs;
+}
+
+/// A chapter parsed into a structured block tree.
+///
+/// `nodes` is a flat arena whose first entry is always the [`BlockKind::Root`];
+/// `text` is the chapter's visible text in document order, which `text_range`
+/// offsets index. The tree preserves block structure (paragraphs, headings,
+/// lists, blockquote, pre, images) instead of flattening to a body string (G3).
+class BlockTree {
+  final List<BlockNode> nodes;
+
+  /// Chapter text, in document order, in UTF-16-indexable form.
+  final String text;
+
+  /// Network fetches performed while building the tree. Always `0`: the
+  /// engine has no fetch capability (D9), and this field exists so the
+  /// invariant is asserted, not assumed.
+  final int remoteFetches;
+
+  /// Number of `<script>` subtrees dropped while building. Proves the
+  /// scripted content *was present and removed*, complementing
+  /// `has_script_node()` (which must stay false).
+  final int droppedScripts;
+
+  const BlockTree({
+    required this.nodes,
+    required this.text,
+    required this.remoteFetches,
+    required this.droppedScripts,
+  });
+
+  @override
+  int get hashCode =>
+      nodes.hashCode ^
+      text.hashCode ^
+      remoteFetches.hashCode ^
+      droppedScripts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BlockTree &&
+          runtimeType == other.runtimeType &&
+          nodes == other.nodes &&
+          text == other.text &&
+          remoteFetches == other.remoteFetches &&
+          droppedScripts == other.droppedScripts;
+}
 
 /// One `@font-face` the book declares.
 ///

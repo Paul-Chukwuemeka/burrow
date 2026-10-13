@@ -1,7 +1,8 @@
 //! FFI surface for the Rust EPUB engine.
 
+use crate::epub::block;
 use crate::epub::container::EpubArchive;
-use crate::epub::model::{MetadataDto, TocEntryDto};
+use crate::epub::model::{BlockTree, MetadataDto, TocEntryDto};
 use crate::epub::opf::{self, Navigation};
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
@@ -69,6 +70,15 @@ pub fn chapter_count(handle: &DocumentHandle) -> Result<u32, String> {
 /// Opens `path` and extracts metadata without keeping a handle (parity helper).
 pub fn read_metadata(path: String) -> Result<MetadataDto, String> {
     opf::read_metadata(&path).map_err(|e| e.to_string())
+}
+
+/// Parses one chapter into a structured block tree (Task 5).
+///
+/// `chapter_key` is a spine href (relative to the OPF directory) or an
+/// already-normalised archive key; resolution is percent-decoding and
+/// case-insensitive. Every node's `text_range` is in Dart UTF-16 code units.
+pub fn block_tree(handle: &DocumentHandle, chapter_key: String) -> Result<BlockTree, String> {
+    block::parse_xhtml_document(&handle.archive, &chapter_key).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
