@@ -280,7 +280,7 @@ def _nav_xhtml() -> bytes:
         "<body>\n"
         '  <nav epub:type="toc">\n'
         "    <ol>\n"
-        '      <li><a href="Text/ch1.xhtml">One</a></li>\n'
+        '      <li><a href="Text/ch1.xhtml"><span>1</span> One</a></li>\n'
         '      <li><a href="Text/ch2.xhtml#sec%202">Two</a></li>\n'
         "    </ol>\n"
         "  </nav>\n"
@@ -291,7 +291,8 @@ def _nav_xhtml() -> bytes:
 
 def build_nav() -> None:
     # EPUB3: the TOC lives in the `properties="nav"` document and there is no
-    # NCX, so the nav path must supply the titles.
+    # NCX, so the nav path must supply the titles. The first label is mixed
+    # content (`<span>1</span> One`) to pin document-order text concatenation.
     opf = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '

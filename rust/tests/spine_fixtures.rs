@@ -41,7 +41,7 @@ fn toc_falls_back_from_nav_to_ncx() {
     let nav = open_epub(fixture("nav.epub")).unwrap();
     assert_eq!(
         chapter_titles(&nav).unwrap(),
-        vec!["One", "Two"],
+        vec!["1 One", "Two"],
         "EPUB3 nav document supplies the titles",
     );
 
@@ -63,7 +63,9 @@ fn toc_entries_keep_normalized_path_and_raw_fragment() {
             TocEntryDto {
                 file_key: "oebps/text/ch1.xhtml".to_string(),
                 fragment: None,
-                title: "One".to_string(),
+                // Mixed-content label (`<span>1</span> One`) keeps document
+                // order rather than emitting the trailing text first.
+                title: "1 One".to_string(),
             },
             TocEntryDto {
                 file_key: "oebps/text/ch2.xhtml".to_string(),

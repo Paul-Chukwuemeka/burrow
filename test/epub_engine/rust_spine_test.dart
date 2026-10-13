@@ -46,7 +46,7 @@ void main() {
     ]);
     expect(await chapterCount(handle: handle), 2);
     expect(await toc(handle: handle), const [
-      TocEntryDto(fileKey: 'oebps/text/ch1.xhtml', title: 'One'),
+      TocEntryDto(fileKey: 'oebps/text/ch1.xhtml', title: '1 One'),
       TocEntryDto(
         fileKey: 'oebps/text/ch2.xhtml',
         fragment: 'sec%202',

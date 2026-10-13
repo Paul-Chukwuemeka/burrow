@@ -146,14 +146,23 @@ fn dir_of(path: &str) -> String {
 // ("the first `<a>` inside the `<nav>` whose `epub:type` is `toc`"), so build
 // the tree once. Malformed XML stops parsing and keeps what was read, matching
 // the OPF/container parsers' tolerance.
+//
+// Text is stored as `#text` child nodes rather than a field on the element, so
+// a mixed-content label such as `<a><span>1</span> Introduction</a>` keeps its
+// document order ("1 Introduction"), matching Dart's `innerText`.
 // ---------------------------------------------------------------------------
+
+/// Element name used for text nodes in the tree.
+const TEXT_NODE: &str = "#text";
 
 #[derive(Debug, Default)]
 struct El {
     name: String,
     /// (local name, lowercased) -> value
     attrs: Vec<(String, String)>,
+    /// Text content for a `#text` node; empty for elements.
     text: String,
+    /// Child elements and text nodes, in document order.
     children: Vec<El>,
 }
 
@@ -198,21 +207,13 @@ fn parse_dom(xml: &str) -> Option<El> {
         match reader.read_event() {
             Ok(Event::Start(e)) => stack.push(el_of(&e)),
             Ok(Event::Empty(e)) => attach(&mut stack, &mut root, el_of(&e)),
-            Ok(Event::Text(e)) => {
-                if let Some(top) = stack.last_mut() {
-                    top.text.push_str(&e.into_inner());
-                }
-            }
-            Ok(Event::CData(e)) => {
-                if let Some(top) = stack.last_mut() {
-                    top.text.push_str(&e.into_inner());
-                }
-            }
+            Ok(Event::Text(e)) => push_text(&mut stack, &e.into_inner()),
+            Ok(Event::CData(e)) => push_text(&mut stack, &e.into_inner()),
             // quick-xml 0.42 emits entities separately from text.
             Ok(Event::GeneralRef(e)) => {
-                if let Some(top) = stack.last_mut() {
-                    append_entity(&mut top.text, &e);
-                }
+                let mut entity = String::new();
+                append_entity(&mut entity, &e);
+                push_text(&mut stack, &entity);
             }
             Ok(Event::End(_)) => {
                 if let Some(el) = stack.pop() {
@@ -233,6 +234,24 @@ fn attach(stack: &mut Vec<El>, root: &mut Option<El>, el: El) {
         Some(parent) => parent.children.push(el),
         None => *root = Some(el),
     }
+}
+
+/// Appends `s` to the parent's trailing `#text` node, or starts a new one, so
+/// text keeps its position relative to sibling elements.
+fn push_text(stack: &mut Vec<El>, s: &str) {
+    let Some(top) = stack.last_mut() else { return };
+    if let Some(last) = top.children.last_mut() {
+        if last.name == TEXT_NODE {
+            last.text.push_str(s);
+            return;
+        }
+    }
+    top.children.push(El {
+        name: TEXT_NODE.to_string(),
+        attrs: Vec::new(),
+        text: s.to_string(),
+        children: Vec::new(),
+    });
 }
 
 /// Resolves a `&name;` / `&#38;` reference event into text (mirrors `opf.rs`).
@@ -266,12 +285,22 @@ fn first<'a>(el: &'a El, name: &str) -> Option<&'a El> {
     found.first().copied()
 }
 
-/// Concatenates text directly under `el` and its descendants, then trims.
+/// Concatenates text under `el` in **document order**, then trims. Text nodes
+/// and element children are walked together, so mixed content like
+/// `<a><span>1</span> Introduction</a>` yields `"1 Introduction"`, matching
+/// Dart's `innerText`.
 fn inner_text(el: &El) -> String {
-    let mut out = el.text.clone();
-    for child in &el.children {
-        out.push_str(&inner_text(child));
+    fn walk(el: &El, out: &mut String) {
+        for child in &el.children {
+            if child.name == TEXT_NODE {
+                out.push_str(&child.text);
+            } else {
+                walk(child, out);
+            }
+        }
     }
+    let mut out = String::new();
+    walk(el, &mut out);
     out.trim().to_string()
 }
 
@@ -313,6 +342,24 @@ mod tests {
         let xml = r#"<html><body><p><a href="Text/ch1.xhtml">One</a></p></body></html>"#;
         assert!(parse_nav(xml, "OEBPS/page.xhtml", true).is_empty());
         assert_eq!(parse_nav(xml, "OEBPS/page.xhtml", false).len(), 1);
+    }
+
+    #[test]
+    fn nav_label_keeps_mixed_content_in_document_order() {
+        // A label with a leading element and trailing text must read
+        // "1 Introduction", not "Introduction1" (Dart `innerText` order).
+        let xml = r#"<html><body><nav epub:type="toc">
+            <ol><li><a href="Text/ch1.xhtml"><span>1</span> Introduction</a></li></ol>
+        </nav></body></html>"#;
+        let toc = parse_nav(xml, "OEBPS/nav.xhtml", false);
+        assert_eq!(toc.len(), 1);
+        assert_eq!(toc[0].title, "1 Introduction");
+    }
+
+    #[test]
+    fn document_title_keeps_mixed_content_in_document_order() {
+        let xml = "<html><head><title>Part <em>One</em> here</title></head></html>";
+        assert_eq!(document_title(xml).as_deref(), Some("Part One here"));
     }
 
     #[test]
