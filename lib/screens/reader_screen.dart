@@ -21,6 +21,7 @@ import '../models/style_run.dart';
 import '../services/book_search.dart';
 import '../services/comic_page_provider.dart';
 import '../services/document_parser.dart';
+import '../services/epub/epub_engine_factory.dart';
 import '../services/epub_css_parser.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
@@ -316,7 +317,8 @@ class ReaderScreenState extends State<ReaderScreen>
   Future<void> _loadDocument() async {
     try {
       final sw = Stopwatch()..start();
-      final doc = await DocumentParser.parse(_book.path);
+      final doc = await createEpubEngine(widget.library.epubEngine)
+          .parse(_book.path);
       OpenTrace.span('parse', sw.elapsed);
       // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
       if (doc.fontFaces.isNotEmpty) {

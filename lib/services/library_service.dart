@@ -18,6 +18,7 @@ import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
 import 'document_parser.dart';
+import 'epub/epub_engine.dart';
 import 'missing_matcher.dart';
 
 /// Status event for metadata extraction.
@@ -51,12 +52,22 @@ class LibraryService extends ChangeNotifier {
   static const _filtersKey = 'burrow.library.filters.v1';
   static const _comicsOrganizedKey = 'burrow.comics.organized.v1';
   static const _seriesCleanupKey = 'burrow.comics.seriesCleanup.v1';
+  static const _epubEngineKey = 'burrow.epub.engine.v1';
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
   List<Book>? _sortedCache;
   final Set<String> _missingIds = {};
   bool _storageUnavailable = false;
+
+  /// Content engine id persisted under [_epubEngineKey] (design D8).
+  ///
+  /// Defaults to the Dart engine; flipping it to `rust` is a reversible flag,
+  /// not a revert. Read once in [load] so the reader can pick an engine
+  /// synchronously on the open path.
+  String _epubEngine = dartEpubEngineId;
+
+  String get epubEngine => _epubEngine;
 
   Set<String> get missingIds => Set.unmodifiable(_missingIds);
   bool get storageUnavailable => _storageUnavailable;
@@ -279,6 +290,9 @@ class LibraryService extends ChangeNotifier {
     // Library layout preference.
     libraryLayout = prefs.getString(_layoutKey) ?? 'grid';
 
+    // Content-engine flag (default Dart until the Rust engine is proven).
+    _epubEngine = prefs.getString(_epubEngineKey) ?? dartEpubEngineId;
+
     // First-run onboarding state.
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;
 
@@ -393,6 +407,18 @@ class LibraryService extends ChangeNotifier {
     libraryLayout = layout;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_layoutKey, layout);
+    notifyListeners();
+  }
+
+  /// Persists the content-engine flag so switching engines stays reversible.
+  ///
+  /// [engineId] must be one the factory understands (`dart` or, once it is
+  /// implemented, `rust`); unknown ids fail on the next open rather than here
+  /// so a future engine can be selected before its build lands.
+  Future<void> saveEpubEngine(String engineId) async {
+    _epubEngine = engineId;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_epubEngineKey, engineId);
     notifyListeners();
   }
 

@@ -236,7 +236,7 @@ class DocumentParser {
     try {
       return await compute(
         _parseIsolate,
-        (path, cacheDir, cbrEntryNames, cbrExtractedDir),
+        (path, cacheDir, cbrEntryNames, cbrExtractedDir, engineId),
       );
     } finally {
       // Best-effort cleanup if the isolate didn't run (spawn failure). In the
@@ -460,14 +460,15 @@ class DocumentParser {
   }
 
   static Future<ParsedDocument> _parseIsolate(
-    (String, String?, List<String>?, String?) args,
+    (String, String?, List<String>?, String?, String) args,
   ) async {
-    final (path, cacheDirPath, cbrEntryNames, cbrExtractedDir) = args;
+    final (path, cacheDirPath, cbrEntryNames, cbrExtractedDir, engineId) =
+        args;
     // Check disk cache for EPUB/TXT (formats where parsing is expensive).
     final fmt = formatFromExtension(path);
     if ((fmt == BookFormat.epub || fmt == BookFormat.txt) &&
         cacheDirPath != null) {
-      final cached = await _loadFromCache(path, cacheDirPath);
+      final cached = await _loadFromCache(path, cacheDirPath, engineId);
       if (cached != null) {
         // The cache stores image/font references, not bytes; re-read them
         // from the source EPUB. If that fails (source moved/changed), drop the
@@ -475,7 +476,7 @@ class DocumentParser {
         if (fmt == BookFormat.epub) {
           final hydrated = _hydrateAssets(cached, path);
           if (hydrated != null) return hydrated;
-          _deleteCacheFile(path, cacheDirPath);
+          _deleteCacheFile(path, cacheDirPath, engineId);
         } else {
           return cached;
         }
@@ -506,7 +507,7 @@ class DocumentParser {
     // Save to disk cache for expensive formats.
     if ((fmt == BookFormat.epub || fmt == BookFormat.txt) &&
         cacheDirPath != null) {
-      await _saveToCache(path, doc, cacheDirPath);
+      await _saveToCache(path, doc, cacheDirPath, engineId);
     }
 
     return doc;
@@ -2296,18 +2297,43 @@ class DocumentParser {
   /// store e.g. `font-size:1em` as 1px and `70%` as 70px).
   static const _cacheSchemaTag = 'v4';
 
-  @visibleForTesting
-  static String cacheKeyForTest(String path) => _cacheKey(path);
+  /// Engine id this parser's cache entries are namespaced under.
+  ///
+  /// The reader may be switched to a different content engine by flag (design
+  /// D8); tagging the cache with the engine id keeps the two engines' entries
+  /// from ever being served to each other (design D13). See
+  /// `epub/epub_engine.dart` for the shared seam constants.
+  static const String engineId = 'dart';
 
-  static String _cacheKey(String path) {
-    final file = File(path);
-    final mtime = file.lastModifiedSync().millisecondsSinceEpoch;
-    final size = file.lengthSync();
+  @visibleForTesting
+  static String cacheKeyForTest(String path) =>
+      _cacheKey(path, engineId: engineId);
+
+  /// Disk-cache key for [path] as seen by [engineId].
+  ///
+  /// Public so the engine seam can expose the same key without reaching into
+  /// private state; missing/unreadable sources yield a stable key rather than
+  /// throwing, which is what the legacy internal callers relied on (they
+  /// wrapped [_cacheKey] in try/catch).
+  static String cacheKeyFor(String path, {required String engineId}) =>
+      _cacheKey(path, engineId: engineId);
+
+  static String _cacheKey(String path, {required String engineId}) {
+    var mtime = 0;
+    var size = 0;
+    try {
+      final file = File(path);
+      mtime = file.lastModifiedSync().millisecondsSinceEpoch;
+      size = file.lengthSync();
+    } catch (_) {
+      // Missing or unreadable source: fold in zeroes so callers still get a
+      // stable, engine-namespaced key instead of an exception.
+    }
     // Bump the schema tag when the cached shape changes so stale entries from
     // an older format are ignored instead of deserialized with missing fields.
     // v3: images/fonts store archive entry names instead of base64 bytes.
     // v4: CSS values keep their units (see _cacheSchemaTag).
-    final id = '${_cacheSchemaTag}_${path}_${mtime}_$size';
+    final id = '${_cacheSchemaTag}_${engineId}_${path}_${mtime}_$size';
     // 32-bit hashCode is sufficient for cache keys; collisions fall through
     // to a full parse and the stale entry is harmless.
     return id.hashCode.toRadixString(16);
@@ -2316,9 +2342,10 @@ class DocumentParser {
   static Future<ParsedDocument?> _loadFromCache(
     String path,
     String cacheDirPath,
+    String engineId,
   ) async {
     try {
-      final key = _cacheKey(path);
+      final key = _cacheKey(path, engineId: engineId);
       final cacheFile = File('$cacheDirPath/$key.json');
       if (!cacheFile.existsSync()) return null;
       final json =
@@ -2333,9 +2360,10 @@ class DocumentParser {
     String path,
     ParsedDocument doc,
     String cacheDirPath,
+    String engineId,
   ) async {
     try {
-      final key = _cacheKey(path);
+      final key = _cacheKey(path, engineId: engineId);
       final cacheFile = File('$cacheDirPath/$key.json');
       await cacheFile.writeAsString(jsonEncode(_docToJson(doc)));
     } catch (_) {}
@@ -2484,7 +2512,7 @@ class DocumentParser {
   /// Deletes the cache entry for [path], if one exists.
   static Future<void> clearCacheFor(String path) async {
     final dirPath = await _safeCacheDirPath();
-    if (dirPath != null) _deleteCacheFile(path, dirPath);
+    if (dirPath != null) _deleteCacheFile(path, dirPath, engineId);
   }
 
   /// Synchronous best-effort twin of [clearCacheFor] for code paths that
@@ -2496,12 +2524,16 @@ class DocumentParser {
   /// path + mtime + size so a stale entry can never serve wrong content.
   static void clearCacheForSync(String path) {
     final dirPath = _cacheDirPathCache;
-    if (dirPath != null) _deleteCacheFile(path, dirPath);
+    if (dirPath != null) _deleteCacheFile(path, dirPath, engineId);
   }
 
-  static void _deleteCacheFile(String path, String cacheDirPath) {
+  static void _deleteCacheFile(
+    String path,
+    String cacheDirPath,
+    String engineId,
+  ) {
     try {
-      final key = _cacheKey(path);
+      final key = _cacheKey(path, engineId: engineId);
       final file = File('$cacheDirPath/$key.json');
       if (file.existsSync()) file.deleteSync();
     } catch (_) {}
@@ -2516,6 +2548,7 @@ class DocumentParser {
   static Future<void> pruneCache(
     Iterable<String> paths, {
     int maxBytes = 256 * 1024 * 1024,
+    List<String> engineIds = const [engineId],
   }) async {
     if (_pruneRunning) return;
     final dirPath = await _safeCacheDirPath();
@@ -2526,6 +2559,7 @@ class DocumentParser {
         dirPath,
         [for (final p in paths) p],
         maxBytes,
+        engineIds,
       ));
     } catch (_) {
     } finally {
@@ -2535,16 +2569,20 @@ class DocumentParser {
 
   static bool _pruneRunning = false;
 
-  static void _pruneCacheIsolate((String, List<String>, int) args) {
-    final (dirPath, paths, maxBytes) = args;
+  static void _pruneCacheIsolate(
+    (String, List<String>, int, List<String>) args,
+  ) {
+    final (dirPath, paths, maxBytes, engineIds) = args;
     try {
       final dir = Directory(dirPath);
       if (!dir.existsSync()) return;
       final valid = <String>{};
       for (final p in paths) {
-        try {
-          valid.add(_cacheKey(p));
-        } catch (_) {}
+        for (final engine in engineIds) {
+          try {
+            valid.add(_cacheKey(p, engineId: engine));
+          } catch (_) {}
+        }
       }
 
       final files = <File>[];
