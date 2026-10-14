@@ -896,6 +896,270 @@ def build_anchor_split() -> None:    # Task 7 fix fixture: a SINGLE spine docume
     )
 
 
+def build_dual_toc() -> None:
+    # Task 9 parity fixture: BOTH an EPUB3 nav (`properties="nav"`) and an
+    # EPUB2 NCX (`spine toc="ncx"`), with DIFFERENT titles for the same
+    # documents. Dart reads the NCX first; Rust prefers the nav (the EPUB3
+    # canonical TOC). Bodies are identical, so only the chapter titles differ.
+    nav = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:epub="http://www.idpf.org/2007/ops">\n'
+        "<head><title>Contents</title></head>\n"
+        "<body>\n"
+        '  <nav epub:type="toc">\n'
+        "    <ol>\n"
+        '      <li><a href="Text/ch1.xhtml">Nav One</a></li>\n'
+        '      <li><a href="Text/ch2.xhtml">Nav Two</a></li>\n'
+        "    </ol>\n"
+        "  </nav>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+    ncx = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
+        '  <head><meta name="dtb:uid" content="urn:uuid:dual-toc"/></head>\n'
+        "  <docTitle><text>Dual Toc</text></docTitle>\n"
+        "  <navMap>\n"
+        '    <navPoint id="n1" playOrder="1">\n'
+        "      <navLabel><text>Ncx One</text></navLabel>\n"
+        '      <content src="Text/ch1.xhtml"/>\n'
+        "    </navPoint>\n"
+        '    <navPoint id="n2" playOrder="2">\n'
+        "      <navLabel><text>Ncx Two</text></navLabel>\n"
+        '      <content src="Text/ch2.xhtml"/>\n'
+        "    </navPoint>\n"
+        "  </navMap>\n"
+        "</ncx>\n"
+    ).encode("utf-8")
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Dual Toc</dc:title>\n"
+        "    <dc:creator>D. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:dual-toc</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="nav" href="nav.xhtml" '
+        'media-type="application/xhtml+xml" properties="nav"/>\n'
+        '    <item id="ncx" href="toc.ncx" '
+        'media-type="application/x-dtbncx+xml"/>\n'
+        '    <item id="ch1" href="Text/ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        '    <item id="ch2" href="Text/ch2.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        '  <spine toc="ncx">\n'
+        '    <itemref idref="ch1"/>\n'
+        '    <itemref idref="ch2"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "dual-toc.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/nav.xhtml", nav, True),
+            ("OEBPS/toc.ncx", ncx, True),
+            ("OEBPS/Text/ch1.xhtml", _xhtml("One", "First."), True),
+            ("OEBPS/Text/ch2.xhtml", _xhtml("Two", "Second."), True),
+        ],
+    )
+
+
+def build_dangling_spine() -> None:
+    # Task 9 parity fixture: every spine `idref` misses the manifest. Dart
+    # keeps only manifest hits (none) and throws "no readable text"; Rust
+    # falls back to the natural-sorted manifest XHTML list. Manifest order
+    # matches natural order here so only the fallback itself is exercised
+    # (ordering is pinned by `no-spine.epub`).
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Dangling Spine</dc:title>\n"
+        "    <dc:creator>D. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:dangling-spine</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch1" href="Text/ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        '    <item id="ch2" href="Text/ch2.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ghost1"/>\n'
+        '    <itemref idref="ghost2"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "dangling-spine.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/Text/ch1.xhtml", _xhtml("One", "First."), True),
+            ("OEBPS/Text/ch2.xhtml", _xhtml("Two", "Second."), True),
+        ],
+    )
+
+
+def build_svg_image() -> None:
+    # Task 9 parity fixture: an `<img>` whose file is a valid SVG. Dart drops
+    # `.svg` `<img>` tags (`.svg` is not in its EPUB image-entry map); Rust
+    # keeps a placeholder but reads intrinsic 0x0 (no SVG viewBox sniffing).
+    svg = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'viewBox="0 0 300 150" width="300" height="150">\n'
+        '  <rect width="300" height="150" fill="#336699"/>\n'
+        "</svg>\n"
+    ).encode("utf-8")
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Svg</title></head>\n"
+        "<body>\n"
+        "<h1>Svg</h1>\n"
+        '<p>Before <img src="Images/pic.svg" alt="diagram"/> after.</p>\n'
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Svg Image</dc:title>\n"
+        "    <dc:creator>S. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:svg-image</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="img1" href="Images/pic.svg" media-type="image/svg+xml"/>\n'
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "svg-image.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+            ("OEBPS/Images/pic.svg", svg, True),
+        ],
+    )
+
+
+def build_rich_meta() -> None:
+    # Task 9 parity fixture: the OPF description carries ESCAPED block markup.
+    # `innerText` unescapes it, so Dart's `htmlToText` emits paragraph breaks
+    # ("First para.\n\nSecond para."); the Rust `html_to_text` port must match
+    # (it is fixed, not ledgered, in this task).
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Rich Meta</dc:title>\n"
+        "    <dc:creator>R. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:rich-meta</dc:identifier>\n'
+        "    <dc:description>&lt;p&gt;First para.&lt;/p&gt;"
+        "&lt;p&gt;Second para.&lt;/p&gt;</dc:description>\n"
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "rich-meta.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", _xhtml("One", "First."), True),
+        ],
+    )
+
+
+def build_cover_inline() -> None:
+    # Task 9 parity fixture: an inline `<img>` whose file is the OPF-declared
+    # cover (`meta name="cover"`), but neither its `id` nor its filename
+    # contains "cover". Dart marks it `fullWidth` via `coverHrefs`; Rust only
+    # matches id/filename "cover", so it does not.
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Cover Inline</title></head>\n"
+        "<body>\n"
+        "<h1>Cover Inline</h1>\n"
+        '<p>See <img id="fig1" src="Images/front.png" alt="front"/> '
+        "here.</p>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:opf="http://www.idpf.org/2007/opf">\n'
+        "    <dc:title>Cover Inline</dc:title>\n"
+        "    <dc:creator>C. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:cover-inline</dc:identifier>\n'
+        '    <meta name="cover" content="cv"/>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="cv" href="Images/front.png" media-type="image/png"/>\n'
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "cover-inline.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+            ("OEBPS/Images/front.png", _png(8, 4, (30, 120, 30)), True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -912,6 +1176,11 @@ def main() -> None:
     build_anchor_split()
     build_missing_image()
     build_embedded_font()
+    build_dual_toc()
+    build_dangling_spine()
+    build_svg_image()
+    build_rich_meta()
+    build_cover_inline()
     print("wrote fixtures to", HERE)
 
 
