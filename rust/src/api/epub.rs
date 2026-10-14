@@ -1,8 +1,8 @@
 //! FFI surface for the Rust EPUB engine.
 
-use crate::epub::block;
+use crate::epub::cascade;
 use crate::epub::container::EpubArchive;
-use crate::epub::model::{BlockTree, MetadataDto, TocEntryDto};
+use crate::epub::model::{BlockTree, FontFaceDto, MetadataDto, TocEntryDto};
 use crate::epub::opf::{self, Navigation};
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
@@ -72,13 +72,22 @@ pub fn read_metadata(path: String) -> Result<MetadataDto, String> {
     opf::read_metadata(&path).map_err(|e| e.to_string())
 }
 
-/// Parses one chapter into a structured block tree (Task 5).
+/// Parses one chapter into a structured block tree with computed styles.
 ///
 /// `chapter_key` is a spine href (relative to the OPF directory) or an
 /// already-normalised archive key; resolution is percent-decoding and
-/// case-insensitive. Every node's `text_range` is in Dart UTF-16 code units.
+/// case-insensitive. Every node's `text_range` is in Dart UTF-16 code units,
+/// and every node's `style` carries the resolved cascade (Task 6): author
+/// rules, presentational hints and inline styles layered over the UA defaults,
+/// with inheritance applied.
 pub fn block_tree(handle: &DocumentHandle, chapter_key: String) -> Result<BlockTree, String> {
-    block::parse_xhtml_document(&handle.archive, &chapter_key).map_err(|e| e.to_string())
+    cascade::parse_styled_document(&handle.archive, &handle.navigation.manifest, &chapter_key)
+        .map_err(|e| e.to_string())
+}
+
+/// The book's `@font-face` families, extracted when the handle was opened.
+pub fn font_faces(handle: &DocumentHandle) -> Result<Vec<FontFaceDto>, String> {
+    Ok(handle.metadata.font_faces.clone())
 }
 
 #[cfg(test)]

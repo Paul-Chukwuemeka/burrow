@@ -13,8 +13,9 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
 use super::container::{self, normalize_key, resolve_href, EpubArchive};
-use super::model::{EpubError, MetadataDto, TocEntryDto};
+use super::model::{EpubError, FontFaceDto, MetadataDto, TocEntryDto};
 use super::nav;
+use super::css;
 
 /// Extracts metadata and cover bytes from `path` without parsing chapters.
 pub fn read_metadata(path: &str) -> Result<MetadataDto, EpubError> {
@@ -35,6 +36,7 @@ pub fn read_metadata_from(archive: &EpubArchive) -> Result<MetadataDto, EpubErro
     let genre = pick_genre(&opf.subjects);
     let isbn = pick_isbn(&opf.identifiers);
     let (series_name, series_index) = pick_series(&opf.metas);
+    let font_faces = extract_font_faces(archive, &opf, &opf_path);
 
     Ok(MetadataDto {
         title: opf.title,
@@ -49,7 +51,7 @@ pub fn read_metadata_from(archive: &EpubArchive) -> Result<MetadataDto, EpubErro
         series_name,
         series_index,
         cover_bytes,
-        font_faces: Vec::new(),
+        font_faces,
     })
 }
 
@@ -603,6 +605,32 @@ fn extract_cover(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Option<Vec
     }
 
     archive.cover_fallback()
+}
+
+/// `@font-face` declarations from the book's external stylesheets.
+///
+/// Mirrors `EpubCssParser`: only manifest `.css` files are scanned (inline
+/// `<style>` blocks are not), and each font `url()` resolves against the
+/// stylesheet's own directory.
+fn extract_font_faces(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Vec<FontFaceDto> {
+    let base = opf_dir(opf_path);
+    let mut faces: Vec<FontFaceDto> = Vec::new();
+    for item in &opf.items {
+        let Some(href) = &item.href else { continue };
+        if !href.to_ascii_lowercase().ends_with(".css") {
+            continue;
+        }
+        let key = resolve_href(&base, href);
+        if let Some(bytes) = archive.read_by_key(&key) {
+            let text = String::from_utf8_lossy(&bytes);
+            for face in css::extract_font_faces(&text, &key) {
+                if !faces.contains(&face) {
+                    faces.push(face);
+                }
+            }
+        }
+    }
+    faces
 }
 
 fn opf_dir(path: &str) -> String {

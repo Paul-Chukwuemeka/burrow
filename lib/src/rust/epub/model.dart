@@ -4,14 +4,16 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'cascade.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// The attributes the block tree keeps for a node.
 ///
-/// `tag` is the lowercased local element name (not an attribute), carried so a
-/// later cascade can run selector matching (Task 6). The rest are the HTML
-/// attributes the phase-1 model needs; `src`/`href` are kept **raw**, never
-/// resolved or fetched (D9).
+/// `tag` is the lowercased local element name (not an attribute), carried so the
+/// cascade can run selector matching. The rest are the HTML attributes the
+/// phase-1 model needs; `src`/`href` are kept **raw**, never resolved or fetched
+/// (D9). `style`/`align` feed the cascade: inline `style=""` declarations and
+/// the `align` presentational hint.
 class Attrs {
   final String tag;
   final String? id;
@@ -21,6 +23,8 @@ class Attrs {
   final String? alt;
   final String? width;
   final String? height;
+  final String? style;
+  final String? align;
 
   const Attrs({
     required this.tag,
@@ -31,6 +35,8 @@ class Attrs {
     this.alt,
     this.width,
     this.height,
+    this.style,
+    this.align,
   });
 
   @override
@@ -42,7 +48,9 @@ class Attrs {
       href.hashCode ^
       alt.hashCode ^
       width.hashCode ^
-      height.hashCode;
+      height.hashCode ^
+      style.hashCode ^
+      align.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -56,7 +64,9 @@ class Attrs {
           href == other.href &&
           alt == other.alt &&
           width == other.width &&
-          height == other.height;
+          height == other.height &&
+          style == other.style &&
+          align == other.align;
 }
 
 /// The structural role of a [`BlockNode`].
@@ -107,12 +117,18 @@ class BlockNode {
   final Uint32List children;
   final Attrs attrs;
 
+  /// The element's computed style after the cascade (Task 6). Defaults to an
+  /// all-unset style for an unstyled node; [`ComputedStyle::declared`] records
+  /// which properties an author rule/presentational hint/inline style set.
+  final ComputedStyle style;
+
   const BlockNode({
     required this.kind,
     this.headingLevel,
     required this.textRange,
     required this.children,
     required this.attrs,
+    required this.style,
   });
 
   @override
@@ -121,7 +137,8 @@ class BlockNode {
       headingLevel.hashCode ^
       textRange.hashCode ^
       children.hashCode ^
-      attrs.hashCode;
+      attrs.hashCode ^
+      style.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -132,7 +149,8 @@ class BlockNode {
           headingLevel == other.headingLevel &&
           textRange == other.textRange &&
           children == other.children &&
-          attrs == other.attrs;
+          attrs == other.attrs &&
+          style == other.style;
 }
 
 /// A chapter parsed into a structured block tree.

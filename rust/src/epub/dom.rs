@@ -85,6 +85,39 @@ pub fn children(node: &Handle) -> Vec<Handle> {
     node.children.borrow().clone()
 }
 
+/// The concatenated text of every element named `name`, in document order,
+/// including descendants of `node`.
+///
+/// Used to harvest `<style>` text from the whole document (`<head>` and
+/// `<body>`), matching the Dart parser's `doc.querySelectorAll('style')`.
+pub fn element_texts(node: &Handle, name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_element_texts(node, name, &mut out);
+    out
+}
+
+fn collect_element_texts(node: &Handle, name: &str, out: &mut Vec<String>) {
+    for child in children(node) {
+        if element_name(&child).as_deref() == Some(name) {
+            let mut text = String::new();
+            gather_text(&child, &mut text);
+            out.push(text);
+        } else {
+            collect_element_texts(&child, name, out);
+        }
+    }
+}
+
+fn gather_text(node: &Handle, out: &mut String) {
+    for child in children(node) {
+        if let Some(text) = text(&child) {
+            out.push_str(&text);
+        } else {
+            gather_text(&child, out);
+        }
+    }
+}
+
 /// The first element in document order whose local name matches `name`,
 /// searching descendants only (not `node` itself).
 pub fn find_element(node: &Handle, name: &str) -> Option<Handle> {

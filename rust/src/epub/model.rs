@@ -7,6 +7,8 @@
 
 use std::fmt;
 
+use super::cascade::ComputedStyle;
+
 /// Errors raised while opening or parsing an EPUB container/OPF.
 ///
 /// Deliberately coarse: the FFI layer stringifies these and Dart treats any
@@ -114,10 +116,11 @@ pub enum BlockKind {
 
 /// The attributes the block tree keeps for a node.
 ///
-/// `tag` is the lowercased local element name (not an attribute), carried so a
-/// later cascade can run selector matching (Task 6). The rest are the HTML
-/// attributes the phase-1 model needs; `src`/`href` are kept **raw**, never
-/// resolved or fetched (D9).
+/// `tag` is the lowercased local element name (not an attribute), carried so the
+/// cascade can run selector matching. The rest are the HTML attributes the
+/// phase-1 model needs; `src`/`href` are kept **raw**, never resolved or fetched
+/// (D9). `style`/`align` feed the cascade: inline `style=""` declarations and
+/// the `align` presentational hint.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Attrs {
     pub tag: String,
@@ -128,6 +131,8 @@ pub struct Attrs {
     pub alt: Option<String>,
     pub width: Option<String>,
     pub height: Option<String>,
+    pub style: Option<String>,
+    pub align: Option<String>,
 }
 
 /// One node in the flat [`BlockTree`] arena.
@@ -146,6 +151,10 @@ pub struct BlockNode {
     pub text_range: (u32, u32),
     pub children: Vec<u32>,
     pub attrs: Attrs,
+    /// The element's computed style after the cascade (Task 6). Defaults to an
+    /// all-unset style for an unstyled node; [`ComputedStyle::declared`] records
+    /// which properties an author rule/presentational hint/inline style set.
+    pub style: ComputedStyle,
 }
 
 /// A chapter parsed into a structured block tree.

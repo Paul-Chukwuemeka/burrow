@@ -511,6 +511,139 @@ def build_scripted() -> None:
     )
 
 
+def build_repeated_paragraphs() -> None:
+    # Two identical `<p class="note">` elements styled by an inline `<style>`
+    # rule. The Dart substring-mapping cascade styles the first twice; the Rust
+    # selector cascade must style both (Review Focus #2). The inline `<style>`
+    # also exercises the in-document stylesheet path.
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head>\n"
+        "<title>Repeated</title>\n"
+        "<style>\n"
+        ".note { font-size: 14px; color: #333333; }\n"
+        "p { margin-top: 2px; margin-bottom: 2px; }\n"
+        "</style>\n"
+        "</head>\n"
+        "<body>\n"
+        "<h1>Repeated</h1>\n"
+        '<p class="note">Same text.</p>\n'
+        '<p class="note">Same text.</p>\n'
+        "<p>Plain.</p>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Repeated Paragraphs</dc:title>\n"
+        "    <dc:creator>R. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:repeated</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "repeated-paragraphs.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+        ],
+    )
+
+
+def build_external_css() -> None:
+    # External stylesheet with an `@font-face`, a tag rule, a class rule (to pin
+    # specificity), a descendant combinator, and an `align` presentational hint.
+    # The font `src` is relative to `styles/`, so it must resolve against the
+    # CSS file's own directory (Review Focus #2 / cascade href resolution).
+    # `url()` uses double quotes: the Dart font-src regex only recognises
+    # straight/curly double quotes, so a single-quoted `url()` would make the
+    # Dart and Rust srcs diverge (Rust strips the quotes; Dart keeps them).
+    # Single-quote handling is unit-tested on the Rust side instead.
+    css = (
+        "@font-face {\n"
+        "  font-family: 'Burrow Serif';\n"
+        '  src: url("../fonts/burrow.woff2") format("woff2");\n'
+        "}\n"
+        "body { font-family: 'Burrow Serif', serif; }\n"
+        "p { font-size: 12px; margin-top: 1em; margin-bottom: 1em; }\n"
+        ".note { font-size: 14px; color: #336699; }\n"
+        ".title { font-size: 24px; }\n"
+        ".box p { text-align: justify; }\n"
+    ).encode("utf-8")
+
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head>\n"
+        "<title>Styled</title>\n"
+        '<link rel="stylesheet" type="text/css" href="styles/main.css"/>\n'
+        "</head>\n"
+        "<body>\n"
+        '<h1 class="title">Styled Chapter</h1>\n'
+        '<p class="note">First note.</p>\n'
+        '<p class="note">Second note.</p>\n'
+        '<div class="box"><p>Nested paragraph.</p></div>\n'
+        '<p align="right">Hinted paragraph.</p>\n'
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>External CSS</dc:title>\n"
+        "    <dc:creator>C. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:external-css</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="css1" href="styles/main.css" media-type="text/css"/>\n'
+        '    <item id="font1" href="fonts/burrow.woff2" '
+        'media-type="font/woff2"/>\n'
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "external-css.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+            ("OEBPS/styles/main.css", css, True),
+            # A placeholder font file so the resolved src points at a real
+            # entry (the cascade stores the reference; Task 8 loads the bytes).
+            ("OEBPS/fonts/burrow.woff2", b"wOF2\x00\x01\x00\x00dummy", True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -521,6 +654,8 @@ def main() -> None:
     build_malformed()
     build_nonbmp()
     build_scripted()
+    build_repeated_paragraphs()
+    build_external_css()
     print("wrote fixtures to", HERE)
 
 

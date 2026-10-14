@@ -10,7 +10,10 @@
 //! Two safety properties are enforced here (D9):
 //!
 //! - `<script>` (and `<style>`) subtrees are **dropped** during the build, so
-//!   scripted content is never represented, let alone executed;
+//!   scripted content is never represented, let alone executed. `<style>` text
+//!   is harvested for the cascade by [`parse_xhtml_bytes_parts`] (it is CSS
+//!   text, not a node, and never enters the tree), while `<script>` text is
+//!   discarded entirely;
 //! - absolute URLs are kept **raw** in `attrs` and never resolved or fetched —
 //!   the engine has no fetch capability, so [`BlockTree::remote_fetch_count`]
 //!   is zero by construction.
@@ -22,6 +25,16 @@ use markup5ever_rcdom::Handle;
 
 /// Parses an XHTML document from `bytes` into a block tree.
 pub fn parse_xhtml_bytes(bytes: &[u8]) -> BlockTree {
+    parse_xhtml_bytes_parts(bytes).0
+}
+
+/// Parses an XHTML document from `bytes` into a block tree plus its inline
+/// `<style>` text (in document order, from `<head>` and `<body>`).
+///
+/// The style *elements* are still dropped — nothing style-like enters the tree
+/// (D9) — but their CSS text is the cascade's inline input, which is why it is
+/// returned alongside rather than in the tree (and never crosses the FFI).
+pub fn parse_xhtml_bytes_parts(bytes: &[u8]) -> (BlockTree, Vec<String>) {
     let document = dom::parse_document(bytes);
     Builder::default().build(document)
 }
@@ -38,8 +51,17 @@ pub fn parse_xhtml(xml: &str) -> BlockTree {
 /// and case-insensitive, so both `Text/100%_cover.xhtml` and
 /// `oebps/text/100%_cover.xhtml` hit (bug class #148, Review Focus #3).
 pub fn parse_xhtml_document(archive: &EpubArchive, doc_path: &str) -> Result<BlockTree, EpubError> {
+    Ok(parse_xhtml_document_parts(archive, doc_path)?.0)
+}
+
+/// Like [`parse_xhtml_document`], but also returns the chapter's inline
+/// `<style>` text for the cascade.
+pub fn parse_xhtml_document_parts(
+    archive: &EpubArchive,
+    doc_path: &str,
+) -> Result<(BlockTree, Vec<String>), EpubError> {
     let bytes = read_chapter(archive, doc_path)?;
-    Ok(parse_xhtml_bytes(&bytes))
+    Ok(parse_xhtml_bytes_parts(&bytes))
 }
 
 /// Reads a chapter's bytes: first relative to the OPF directory, then as an
@@ -202,6 +224,8 @@ fn attrs_of(tag: &str, node: &Handle) -> Attrs {
             "alt" => attrs.alt = Some(value),
             "width" => attrs.width = Some(value),
             "height" => attrs.height = Some(value),
+            "style" => attrs.style = Some(value),
+            "align" => attrs.align = Some(value),
             _ => {}
         }
     }
@@ -244,11 +268,14 @@ struct Builder {
 }
 
 impl Builder {
-    fn build(mut self, document: Handle) -> BlockTree {
-        let root = self.push(BlockKind::Root, None, (0, 0), Attrs::default());
+    fn build(mut self, document: Handle) -> (BlockTree, Vec<String>) {
+        // Harvest every `<style>` block's text before walking: the style
+        // *elements* are dropped (D9), but their CSS text is cascade input.
+        let inline_styles = dom::element_texts(&document, "style");
 
         // The `<body>` is the content root; `<head>` (title, stylesheets) is
-        // not part of the chapter text.
+        // not part of the chapter text. The synthetic root carries the body's
+        // tag/id/class so a `body { … }` rule can match it during the cascade.
         //
         // Both `document` and `body` must stay live for the whole walk.
         // `markup5ever_rcdom`'s `Drop for Node` drains the *descendants* of a
@@ -256,6 +283,12 @@ impl Builder {
         // while a descendant is still being read would empty that descendant's
         // children mid-walk.
         let body = dom::find_element(&document, "body");
+        let root_attrs = match &body {
+            Some(body) => attrs_of("body", body),
+            None => Attrs::default(),
+        };
+        let root = self.push(BlockKind::Root, None, (0, 0), root_attrs);
+
         let children = match &body {
             Some(body) => self.walk_children(body, false),
             None => self.walk_children(&document, false),
@@ -263,12 +296,15 @@ impl Builder {
 
         self.nodes[root].children = children;
         self.nodes[root].text_range = (0, self.utf16_len as u32);
-        BlockTree {
-            nodes: self.nodes,
-            text: self.text,
-            remote_fetches: 0,
-            dropped_scripts: self.dropped_scripts,
-        }
+        (
+            BlockTree {
+                nodes: self.nodes,
+                text: self.text,
+                remote_fetches: 0,
+                dropped_scripts: self.dropped_scripts,
+            },
+            inline_styles,
+        )
     }
 
     /// Walks the children of `parent`, returning the arena indices of the child
@@ -346,6 +382,7 @@ impl Builder {
             text_range,
             children: Vec::new(),
             attrs,
+            style: crate::epub::cascade::ComputedStyle::default(),
         });
         self.nodes.len() - 1
     }

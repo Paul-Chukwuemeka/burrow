@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1009475624;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1859934478;
 
 // Section: executor
 
@@ -229,6 +229,57 @@ fn wire__crate__api__epub__engine_version_impl(
                 let output_ok = Ok::<_, ()>(crate::api::epub::engine_version())?;
                 std::result::Result::Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__epub__font_faces_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "font_faces",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let mut api_handle_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_handle,
+                                0,
+                                false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_handle_guard = Some(api_handle.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_handle_guard = api_handle_guard.unwrap();
+                    let output_ok = crate::api::epub::font_faces(&*api_handle_guard)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -499,6 +550,8 @@ impl SseDecode for crate::epub::model::Attrs {
         let mut var_alt = <Option<String>>::sse_decode(deserializer);
         let mut var_width = <Option<String>>::sse_decode(deserializer);
         let mut var_height = <Option<String>>::sse_decode(deserializer);
+        let mut var_style = <Option<String>>::sse_decode(deserializer);
+        let mut var_align = <Option<String>>::sse_decode(deserializer);
         return crate::epub::model::Attrs {
             tag: var_tag,
             id: var_id,
@@ -508,6 +561,8 @@ impl SseDecode for crate::epub::model::Attrs {
             alt: var_alt,
             width: var_width,
             height: var_height,
+            style: var_style,
+            align: var_align,
         };
     }
 }
@@ -539,12 +594,14 @@ impl SseDecode for crate::epub::model::BlockNode {
         let mut var_textRange = <(u32, u32)>::sse_decode(deserializer);
         let mut var_children = <Vec<u32>>::sse_decode(deserializer);
         let mut var_attrs = <crate::epub::model::Attrs>::sse_decode(deserializer);
+        let mut var_style = <crate::epub::cascade::ComputedStyle>::sse_decode(deserializer);
         return crate::epub::model::BlockNode {
             kind: var_kind,
             heading_level: var_headingLevel,
             text_range: var_textRange,
             children: var_children,
             attrs: var_attrs,
+            style: var_style,
         };
     }
 }
@@ -561,6 +618,70 @@ impl SseDecode for crate::epub::model::BlockTree {
             text: var_text,
             remote_fetches: var_remoteFetches,
             dropped_scripts: var_droppedScripts,
+        };
+    }
+}
+
+impl SseDecode for crate::epub::cascade::ComputedStyle {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_display = <Option<String>>::sse_decode(deserializer);
+        let mut var_fontFamily = <Option<String>>::sse_decode(deserializer);
+        let mut var_fontSize = <Option<String>>::sse_decode(deserializer);
+        let mut var_fontWeight = <Option<String>>::sse_decode(deserializer);
+        let mut var_fontStyle = <Option<String>>::sse_decode(deserializer);
+        let mut var_color = <Option<String>>::sse_decode(deserializer);
+        let mut var_lineHeight = <Option<String>>::sse_decode(deserializer);
+        let mut var_letterSpacing = <Option<String>>::sse_decode(deserializer);
+        let mut var_wordSpacing = <Option<String>>::sse_decode(deserializer);
+        let mut var_textAlign = <Option<String>>::sse_decode(deserializer);
+        let mut var_textIndent = <Option<String>>::sse_decode(deserializer);
+        let mut var_textDecoration = <Option<String>>::sse_decode(deserializer);
+        let mut var_textTransform = <Option<String>>::sse_decode(deserializer);
+        let mut var_whiteSpace = <Option<String>>::sse_decode(deserializer);
+        let mut var_marginTop = <Option<String>>::sse_decode(deserializer);
+        let mut var_marginRight = <Option<String>>::sse_decode(deserializer);
+        let mut var_marginBottom = <Option<String>>::sse_decode(deserializer);
+        let mut var_marginLeft = <Option<String>>::sse_decode(deserializer);
+        let mut var_paddingTop = <Option<String>>::sse_decode(deserializer);
+        let mut var_paddingRight = <Option<String>>::sse_decode(deserializer);
+        let mut var_paddingBottom = <Option<String>>::sse_decode(deserializer);
+        let mut var_paddingLeft = <Option<String>>::sse_decode(deserializer);
+        let mut var_width = <Option<String>>::sse_decode(deserializer);
+        let mut var_height = <Option<String>>::sse_decode(deserializer);
+        let mut var_maxWidth = <Option<String>>::sse_decode(deserializer);
+        let mut var_maxHeight = <Option<String>>::sse_decode(deserializer);
+        let mut var_verticalAlign = <Option<String>>::sse_decode(deserializer);
+        let mut var_declared = <Vec<String>>::sse_decode(deserializer);
+        return crate::epub::cascade::ComputedStyle {
+            display: var_display,
+            font_family: var_fontFamily,
+            font_size: var_fontSize,
+            font_weight: var_fontWeight,
+            font_style: var_fontStyle,
+            color: var_color,
+            line_height: var_lineHeight,
+            letter_spacing: var_letterSpacing,
+            word_spacing: var_wordSpacing,
+            text_align: var_textAlign,
+            text_indent: var_textIndent,
+            text_decoration: var_textDecoration,
+            text_transform: var_textTransform,
+            white_space: var_whiteSpace,
+            margin_top: var_marginTop,
+            margin_right: var_marginRight,
+            margin_bottom: var_marginBottom,
+            margin_left: var_marginLeft,
+            padding_top: var_paddingTop,
+            padding_right: var_paddingRight,
+            padding_bottom: var_paddingBottom,
+            padding_left: var_paddingLeft,
+            width: var_width,
+            height: var_height,
+            max_width: var_maxWidth,
+            max_height: var_maxHeight,
+            vertical_align: var_verticalAlign,
+            declared: var_declared,
         };
     }
 }
@@ -809,11 +930,12 @@ fn pde_ffi_dispatcher_primary_impl(
         1 => wire__crate__api__epub__block_tree_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__epub__chapter_count_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__epub__chapter_titles_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__epub__metadata_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__epub__open_epub_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__epub__read_metadata_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__epub__spine_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__epub__toc_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__epub__font_faces_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__epub__metadata_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__epub__open_epub_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__epub__read_metadata_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__epub__spine_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__epub__toc_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -860,6 +982,8 @@ impl flutter_rust_bridge::IntoDart for crate::epub::model::Attrs {
             self.alt.into_into_dart().into_dart(),
             self.width.into_into_dart().into_dart(),
             self.height.into_into_dart().into_dart(),
+            self.style.into_into_dart().into_dart(),
+            self.align.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -904,6 +1028,7 @@ impl flutter_rust_bridge::IntoDart for crate::epub::model::BlockNode {
             self.text_range.into_into_dart().into_dart(),
             self.children.into_into_dart().into_dart(),
             self.attrs.into_into_dart().into_dart(),
+            self.style.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -933,6 +1058,53 @@ impl flutter_rust_bridge::IntoIntoDart<crate::epub::model::BlockTree>
     for crate::epub::model::BlockTree
 {
     fn into_into_dart(self) -> crate::epub::model::BlockTree {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::cascade::ComputedStyle {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.display.into_into_dart().into_dart(),
+            self.font_family.into_into_dart().into_dart(),
+            self.font_size.into_into_dart().into_dart(),
+            self.font_weight.into_into_dart().into_dart(),
+            self.font_style.into_into_dart().into_dart(),
+            self.color.into_into_dart().into_dart(),
+            self.line_height.into_into_dart().into_dart(),
+            self.letter_spacing.into_into_dart().into_dart(),
+            self.word_spacing.into_into_dart().into_dart(),
+            self.text_align.into_into_dart().into_dart(),
+            self.text_indent.into_into_dart().into_dart(),
+            self.text_decoration.into_into_dart().into_dart(),
+            self.text_transform.into_into_dart().into_dart(),
+            self.white_space.into_into_dart().into_dart(),
+            self.margin_top.into_into_dart().into_dart(),
+            self.margin_right.into_into_dart().into_dart(),
+            self.margin_bottom.into_into_dart().into_dart(),
+            self.margin_left.into_into_dart().into_dart(),
+            self.padding_top.into_into_dart().into_dart(),
+            self.padding_right.into_into_dart().into_dart(),
+            self.padding_bottom.into_into_dart().into_dart(),
+            self.padding_left.into_into_dart().into_dart(),
+            self.width.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.max_width.into_into_dart().into_dart(),
+            self.max_height.into_into_dart().into_dart(),
+            self.vertical_align.into_into_dart().into_dart(),
+            self.declared.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::cascade::ComputedStyle
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::cascade::ComputedStyle>
+    for crate::epub::cascade::ComputedStyle
+{
+    fn into_into_dart(self) -> crate::epub::cascade::ComputedStyle {
         self
     }
 }
@@ -1048,6 +1220,8 @@ impl SseEncode for crate::epub::model::Attrs {
         <Option<String>>::sse_encode(self.alt, serializer);
         <Option<String>>::sse_encode(self.width, serializer);
         <Option<String>>::sse_encode(self.height, serializer);
+        <Option<String>>::sse_encode(self.style, serializer);
+        <Option<String>>::sse_encode(self.align, serializer);
     }
 }
 
@@ -1082,6 +1256,7 @@ impl SseEncode for crate::epub::model::BlockNode {
         <(u32, u32)>::sse_encode(self.text_range, serializer);
         <Vec<u32>>::sse_encode(self.children, serializer);
         <crate::epub::model::Attrs>::sse_encode(self.attrs, serializer);
+        <crate::epub::cascade::ComputedStyle>::sse_encode(self.style, serializer);
     }
 }
 
@@ -1092,6 +1267,40 @@ impl SseEncode for crate::epub::model::BlockTree {
         <String>::sse_encode(self.text, serializer);
         <u32>::sse_encode(self.remote_fetches, serializer);
         <u32>::sse_encode(self.dropped_scripts, serializer);
+    }
+}
+
+impl SseEncode for crate::epub::cascade::ComputedStyle {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.display, serializer);
+        <Option<String>>::sse_encode(self.font_family, serializer);
+        <Option<String>>::sse_encode(self.font_size, serializer);
+        <Option<String>>::sse_encode(self.font_weight, serializer);
+        <Option<String>>::sse_encode(self.font_style, serializer);
+        <Option<String>>::sse_encode(self.color, serializer);
+        <Option<String>>::sse_encode(self.line_height, serializer);
+        <Option<String>>::sse_encode(self.letter_spacing, serializer);
+        <Option<String>>::sse_encode(self.word_spacing, serializer);
+        <Option<String>>::sse_encode(self.text_align, serializer);
+        <Option<String>>::sse_encode(self.text_indent, serializer);
+        <Option<String>>::sse_encode(self.text_decoration, serializer);
+        <Option<String>>::sse_encode(self.text_transform, serializer);
+        <Option<String>>::sse_encode(self.white_space, serializer);
+        <Option<String>>::sse_encode(self.margin_top, serializer);
+        <Option<String>>::sse_encode(self.margin_right, serializer);
+        <Option<String>>::sse_encode(self.margin_bottom, serializer);
+        <Option<String>>::sse_encode(self.margin_left, serializer);
+        <Option<String>>::sse_encode(self.padding_top, serializer);
+        <Option<String>>::sse_encode(self.padding_right, serializer);
+        <Option<String>>::sse_encode(self.padding_bottom, serializer);
+        <Option<String>>::sse_encode(self.padding_left, serializer);
+        <Option<String>>::sse_encode(self.width, serializer);
+        <Option<String>>::sse_encode(self.height, serializer);
+        <Option<String>>::sse_encode(self.max_width, serializer);
+        <Option<String>>::sse_encode(self.max_height, serializer);
+        <Option<String>>::sse_encode(self.vertical_align, serializer);
+        <Vec<String>>::sse_encode(self.declared, serializer);
     }
 }
 

@@ -3,6 +3,7 @@
 
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
+import '../epub/cascade.dart';
 import '../epub/model.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -45,11 +46,14 @@ Future<int> chapterCount({required DocumentHandle handle}) =>
 Future<MetadataDto> readMetadata({required String path}) =>
     RustLib.instance.api.crateApiEpubReadMetadata(path: path);
 
-/// Parses one chapter into a structured block tree (Task 5).
+/// Parses one chapter into a structured block tree with computed styles.
 ///
 /// `chapter_key` is a spine href (relative to the OPF directory) or an
 /// already-normalised archive key; resolution is percent-decoding and
-/// case-insensitive. Every node's `text_range` is in Dart UTF-16 code units.
+/// case-insensitive. Every node's `text_range` is in Dart UTF-16 code units,
+/// and every node's `style` carries the resolved cascade (Task 6): author
+/// rules, presentational hints and inline styles layered over the UA defaults,
+/// with inheritance applied.
 Future<BlockTree> blockTree({
   required DocumentHandle handle,
   required String chapterKey,
@@ -57,6 +61,10 @@ Future<BlockTree> blockTree({
   handle: handle,
   chapterKey: chapterKey,
 );
+
+/// The book's `@font-face` families, extracted when the handle was opened.
+Future<List<FontFaceDto>> fontFaces({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubFontFaces(handle: handle);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}

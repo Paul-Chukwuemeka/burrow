@@ -6,6 +6,7 @@
 import 'api/epub.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'epub/cascade.dart';
 import 'epub/model.dart';
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
@@ -65,7 +66,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1009475624;
+  int get rustContentHash => -1859934478;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -89,6 +90,10 @@ abstract class RustLibApi extends BaseApi {
   });
 
   String crateApiEpubEngineVersion();
+
+  Future<List<FontFaceDto>> crateApiEpubFontFaces({
+    required DocumentHandle handle,
+  });
 
   Future<MetadataDto> crateApiEpubMetadata({required DocumentHandle handle});
 
@@ -242,7 +247,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "engine_version", argNames: []);
 
   @override
-  Future<MetadataDto> crateApiEpubMetadata({required DocumentHandle handle}) {
+  Future<List<FontFaceDto>> crateApiEpubFontFaces({
+    required DocumentHandle handle,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -255,6 +262,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             generalizedFrbRustBinding,
             serializer,
             funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_font_face_dto,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiEpubFontFacesConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEpubFontFacesConstMeta =>
+      const TaskConstMeta(debugName: "font_faces", argNames: ["handle"]);
+
+  @override
+  Future<MetadataDto> crateApiEpubMetadata({required DocumentHandle handle}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDocumentHandle(
+            handle,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 6,
             port: port_,
           );
         },
@@ -282,7 +320,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -311,7 +349,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -342,7 +380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 9,
             port: port_,
           );
         },
@@ -373,7 +411,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 10,
             port: port_,
           );
         },
@@ -436,8 +474,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Attrs dco_decode_attrs(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return Attrs(
       tag: dco_decode_String(arr[0]),
       id: dco_decode_opt_String(arr[1]),
@@ -447,6 +485,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       alt: dco_decode_opt_String(arr[5]),
       width: dco_decode_opt_String(arr[6]),
       height: dco_decode_opt_String(arr[7]),
+      style: dco_decode_opt_String(arr[8]),
+      align: dco_decode_opt_String(arr[9]),
     );
   }
 
@@ -460,14 +500,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BlockNode dco_decode_block_node(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return BlockNode(
       kind: dco_decode_block_kind(arr[0]),
       headingLevel: dco_decode_opt_box_autoadd_u_8(arr[1]),
       textRange: dco_decode_record_u_32_u_32(arr[2]),
       children: dco_decode_list_prim_u_32_strict(arr[3]),
       attrs: dco_decode_attrs(arr[4]),
+      style: dco_decode_computed_style(arr[5]),
     );
   }
 
@@ -495,6 +536,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int dco_decode_box_autoadd_u_8(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  ComputedStyle dco_decode_computed_style(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 28)
+      throw Exception('unexpected arr length: expect 28 but see ${arr.length}');
+    return ComputedStyle(
+      display: dco_decode_opt_String(arr[0]),
+      fontFamily: dco_decode_opt_String(arr[1]),
+      fontSize: dco_decode_opt_String(arr[2]),
+      fontWeight: dco_decode_opt_String(arr[3]),
+      fontStyle: dco_decode_opt_String(arr[4]),
+      color: dco_decode_opt_String(arr[5]),
+      lineHeight: dco_decode_opt_String(arr[6]),
+      letterSpacing: dco_decode_opt_String(arr[7]),
+      wordSpacing: dco_decode_opt_String(arr[8]),
+      textAlign: dco_decode_opt_String(arr[9]),
+      textIndent: dco_decode_opt_String(arr[10]),
+      textDecoration: dco_decode_opt_String(arr[11]),
+      textTransform: dco_decode_opt_String(arr[12]),
+      whiteSpace: dco_decode_opt_String(arr[13]),
+      marginTop: dco_decode_opt_String(arr[14]),
+      marginRight: dco_decode_opt_String(arr[15]),
+      marginBottom: dco_decode_opt_String(arr[16]),
+      marginLeft: dco_decode_opt_String(arr[17]),
+      paddingTop: dco_decode_opt_String(arr[18]),
+      paddingRight: dco_decode_opt_String(arr[19]),
+      paddingBottom: dco_decode_opt_String(arr[20]),
+      paddingLeft: dco_decode_opt_String(arr[21]),
+      width: dco_decode_opt_String(arr[22]),
+      height: dco_decode_opt_String(arr[23]),
+      maxWidth: dco_decode_opt_String(arr[24]),
+      maxHeight: dco_decode_opt_String(arr[25]),
+      verticalAlign: dco_decode_opt_String(arr[26]),
+      declared: dco_decode_list_String(arr[27]),
+    );
   }
 
   @protected
@@ -705,6 +784,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_alt = sse_decode_opt_String(deserializer);
     var var_width = sse_decode_opt_String(deserializer);
     var var_height = sse_decode_opt_String(deserializer);
+    var var_style = sse_decode_opt_String(deserializer);
+    var var_align = sse_decode_opt_String(deserializer);
     return Attrs(
       tag: var_tag,
       id: var_id,
@@ -714,6 +795,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       alt: var_alt,
       width: var_width,
       height: var_height,
+      style: var_style,
+      align: var_align,
     );
   }
 
@@ -732,12 +815,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_textRange = sse_decode_record_u_32_u_32(deserializer);
     var var_children = sse_decode_list_prim_u_32_strict(deserializer);
     var var_attrs = sse_decode_attrs(deserializer);
+    var var_style = sse_decode_computed_style(deserializer);
     return BlockNode(
       kind: var_kind,
       headingLevel: var_headingLevel,
       textRange: var_textRange,
       children: var_children,
       attrs: var_attrs,
+      style: var_style,
     );
   }
 
@@ -766,6 +851,69 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int sse_decode_box_autoadd_u_8(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_8(deserializer));
+  }
+
+  @protected
+  ComputedStyle sse_decode_computed_style(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_display = sse_decode_opt_String(deserializer);
+    var var_fontFamily = sse_decode_opt_String(deserializer);
+    var var_fontSize = sse_decode_opt_String(deserializer);
+    var var_fontWeight = sse_decode_opt_String(deserializer);
+    var var_fontStyle = sse_decode_opt_String(deserializer);
+    var var_color = sse_decode_opt_String(deserializer);
+    var var_lineHeight = sse_decode_opt_String(deserializer);
+    var var_letterSpacing = sse_decode_opt_String(deserializer);
+    var var_wordSpacing = sse_decode_opt_String(deserializer);
+    var var_textAlign = sse_decode_opt_String(deserializer);
+    var var_textIndent = sse_decode_opt_String(deserializer);
+    var var_textDecoration = sse_decode_opt_String(deserializer);
+    var var_textTransform = sse_decode_opt_String(deserializer);
+    var var_whiteSpace = sse_decode_opt_String(deserializer);
+    var var_marginTop = sse_decode_opt_String(deserializer);
+    var var_marginRight = sse_decode_opt_String(deserializer);
+    var var_marginBottom = sse_decode_opt_String(deserializer);
+    var var_marginLeft = sse_decode_opt_String(deserializer);
+    var var_paddingTop = sse_decode_opt_String(deserializer);
+    var var_paddingRight = sse_decode_opt_String(deserializer);
+    var var_paddingBottom = sse_decode_opt_String(deserializer);
+    var var_paddingLeft = sse_decode_opt_String(deserializer);
+    var var_width = sse_decode_opt_String(deserializer);
+    var var_height = sse_decode_opt_String(deserializer);
+    var var_maxWidth = sse_decode_opt_String(deserializer);
+    var var_maxHeight = sse_decode_opt_String(deserializer);
+    var var_verticalAlign = sse_decode_opt_String(deserializer);
+    var var_declared = sse_decode_list_String(deserializer);
+    return ComputedStyle(
+      display: var_display,
+      fontFamily: var_fontFamily,
+      fontSize: var_fontSize,
+      fontWeight: var_fontWeight,
+      fontStyle: var_fontStyle,
+      color: var_color,
+      lineHeight: var_lineHeight,
+      letterSpacing: var_letterSpacing,
+      wordSpacing: var_wordSpacing,
+      textAlign: var_textAlign,
+      textIndent: var_textIndent,
+      textDecoration: var_textDecoration,
+      textTransform: var_textTransform,
+      whiteSpace: var_whiteSpace,
+      marginTop: var_marginTop,
+      marginRight: var_marginRight,
+      marginBottom: var_marginBottom,
+      marginLeft: var_marginLeft,
+      paddingTop: var_paddingTop,
+      paddingRight: var_paddingRight,
+      paddingBottom: var_paddingBottom,
+      paddingLeft: var_paddingLeft,
+      width: var_width,
+      height: var_height,
+      maxWidth: var_maxWidth,
+      maxHeight: var_maxHeight,
+      verticalAlign: var_verticalAlign,
+      declared: var_declared,
+    );
   }
 
   @protected
@@ -1037,6 +1185,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.alt, serializer);
     sse_encode_opt_String(self.width, serializer);
     sse_encode_opt_String(self.height, serializer);
+    sse_encode_opt_String(self.style, serializer);
+    sse_encode_opt_String(self.align, serializer);
   }
 
   @protected
@@ -1053,6 +1203,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_record_u_32_u_32(self.textRange, serializer);
     sse_encode_list_prim_u_32_strict(self.children, serializer);
     sse_encode_attrs(self.attrs, serializer);
+    sse_encode_computed_style(self.style, serializer);
   }
 
   @protected
@@ -1074,6 +1225,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_u_8(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_8(self, serializer);
+  }
+
+  @protected
+  void sse_encode_computed_style(ComputedStyle self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_String(self.display, serializer);
+    sse_encode_opt_String(self.fontFamily, serializer);
+    sse_encode_opt_String(self.fontSize, serializer);
+    sse_encode_opt_String(self.fontWeight, serializer);
+    sse_encode_opt_String(self.fontStyle, serializer);
+    sse_encode_opt_String(self.color, serializer);
+    sse_encode_opt_String(self.lineHeight, serializer);
+    sse_encode_opt_String(self.letterSpacing, serializer);
+    sse_encode_opt_String(self.wordSpacing, serializer);
+    sse_encode_opt_String(self.textAlign, serializer);
+    sse_encode_opt_String(self.textIndent, serializer);
+    sse_encode_opt_String(self.textDecoration, serializer);
+    sse_encode_opt_String(self.textTransform, serializer);
+    sse_encode_opt_String(self.whiteSpace, serializer);
+    sse_encode_opt_String(self.marginTop, serializer);
+    sse_encode_opt_String(self.marginRight, serializer);
+    sse_encode_opt_String(self.marginBottom, serializer);
+    sse_encode_opt_String(self.marginLeft, serializer);
+    sse_encode_opt_String(self.paddingTop, serializer);
+    sse_encode_opt_String(self.paddingRight, serializer);
+    sse_encode_opt_String(self.paddingBottom, serializer);
+    sse_encode_opt_String(self.paddingLeft, serializer);
+    sse_encode_opt_String(self.width, serializer);
+    sse_encode_opt_String(self.height, serializer);
+    sse_encode_opt_String(self.maxWidth, serializer);
+    sse_encode_opt_String(self.maxHeight, serializer);
+    sse_encode_opt_String(self.verticalAlign, serializer);
+    sse_encode_list_String(self.declared, serializer);
   }
 
   @protected
