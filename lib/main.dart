@@ -8,10 +8,20 @@ import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/dictionary_service.dart';
 import 'services/library_service.dart';
+import 'src/rust/frb_generated.dart';
 import 'theme/burrow_tokens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The default content engine is the native Rust parser (engine flag `rust`,
+  // design D8). Its FFI binding must be initialized on this isolate before any
+  // engine call — without this every EPUB open and OPF metadata extraction
+  // fails with "flutter_rust_bridge has not been initialized".
+  try {
+    await RustLib.init();
+  } catch (e) {
+    debugPrint('Rust engine unavailable: $e');
+  }
   runApp(const BurrowApp());
 }
 

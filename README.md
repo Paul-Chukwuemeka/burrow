@@ -31,6 +31,20 @@ flutter build apk --release --split-per-abi
 # Output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
+## EPUB engine
+
+EPUB parsing and metadata extraction default to the **Rust engine** (native,
+via `flutter_rust_bridge`; see `rust/`). The pure-Dart parser remains
+available as a reversible fallback — no code revert needed to switch back:
+
+```dart
+await library.saveEpubEngine('dart'); // back to the Dart engine
+await library.saveEpubEngine('rust'); // back to the Rust default
+```
+
+The choice persists under `burrow.epub.engine.v1` and defaults to `rust`
+when unset.
+
 ## Install via ADB
 
 ```bash
