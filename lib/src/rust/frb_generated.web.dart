@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'epub/cascade.dart';
 import 'epub/model.dart';
+import 'epub/project.dart';
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 
@@ -51,6 +52,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Attrs dco_decode_attrs(dynamic raw);
 
   @protected
+  BlockDto dco_decode_block_dto(dynamic raw);
+
+  @protected
   BlockKind dco_decode_block_kind(dynamic raw);
 
   @protected
@@ -60,13 +64,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BlockTree dco_decode_block_tree(dynamic raw);
 
   @protected
+  bool dco_decode_bool(dynamic raw);
+
+  @protected
+  CssLengthDto dco_decode_box_autoadd_css_length_dto(dynamic raw);
+
+  @protected
+  CssStyleDto dco_decode_box_autoadd_css_style_dto(dynamic raw);
+
+  @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_8(dynamic raw);
 
   @protected
+  ChapterDto dco_decode_chapter_dto(dynamic raw);
+
+  @protected
   ComputedStyle dco_decode_computed_style(dynamic raw);
+
+  @protected
+  CssLengthDto dco_decode_css_length_dto(dynamic raw);
+
+  @protected
+  CssStyleDto dco_decode_css_style_dto(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
@@ -78,7 +103,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  ImageRunDto dco_decode_image_run_dto(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<BlockDto> dco_decode_list_block_dto(dynamic raw);
 
   @protected
   List<BlockNode> dco_decode_list_block_node(dynamic raw);
@@ -87,10 +118,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<FontFaceDto> dco_decode_list_font_face_dto(dynamic raw);
 
   @protected
+  List<ImageRunDto> dco_decode_list_image_run_dto(dynamic raw);
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<StyleRunDto> dco_decode_list_style_run_dto(dynamic raw);
 
   @protected
   List<TocEntryDto> dco_decode_list_toc_entry_dto(dynamic raw);
@@ -102,7 +139,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  CssLengthDto? dco_decode_opt_box_autoadd_css_length_dto(dynamic raw);
+
+  @protected
+  CssStyleDto? dco_decode_opt_box_autoadd_css_style_dto(dynamic raw);
+
+  @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw);
@@ -112,6 +158,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   (int, int) dco_decode_record_u_32_u_32(dynamic raw);
+
+  @protected
+  StyleRunDto dco_decode_style_run_dto(dynamic raw);
 
   @protected
   TocEntryDto dco_decode_toc_entry_dto(dynamic raw);
@@ -153,6 +202,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Attrs sse_decode_attrs(SseDeserializer deserializer);
 
   @protected
+  BlockDto sse_decode_block_dto(SseDeserializer deserializer);
+
+  @protected
   BlockKind sse_decode_block_kind(SseDeserializer deserializer);
 
   @protected
@@ -162,13 +214,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BlockTree sse_decode_block_tree(SseDeserializer deserializer);
 
   @protected
+  bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  CssLengthDto sse_decode_box_autoadd_css_length_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  CssStyleDto sse_decode_box_autoadd_css_style_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_8(SseDeserializer deserializer);
 
   @protected
+  ChapterDto sse_decode_chapter_dto(SseDeserializer deserializer);
+
+  @protected
   ComputedStyle sse_decode_computed_style(SseDeserializer deserializer);
+
+  @protected
+  CssLengthDto sse_decode_css_length_dto(SseDeserializer deserializer);
+
+  @protected
+  CssStyleDto sse_decode_css_style_dto(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
@@ -180,7 +257,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  ImageRunDto sse_decode_image_run_dto(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<BlockDto> sse_decode_list_block_dto(SseDeserializer deserializer);
 
   @protected
   List<BlockNode> sse_decode_list_block_node(SseDeserializer deserializer);
@@ -189,10 +272,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<FontFaceDto> sse_decode_list_font_face_dto(SseDeserializer deserializer);
 
   @protected
+  List<ImageRunDto> sse_decode_list_image_run_dto(SseDeserializer deserializer);
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<StyleRunDto> sse_decode_list_style_run_dto(SseDeserializer deserializer);
 
   @protected
   List<TocEntryDto> sse_decode_list_toc_entry_dto(SseDeserializer deserializer);
@@ -204,7 +293,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  CssLengthDto? sse_decode_opt_box_autoadd_css_length_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  CssStyleDto? sse_decode_opt_box_autoadd_css_style_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer);
@@ -214,6 +316,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   (int, int) sse_decode_record_u_32_u_32(SseDeserializer deserializer);
+
+  @protected
+  StyleRunDto sse_decode_style_run_dto(SseDeserializer deserializer);
 
   @protected
   TocEntryDto sse_decode_toc_entry_dto(SseDeserializer deserializer);
@@ -229,9 +334,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_usize(SseDeserializer deserializer);
-
-  @protected
-  bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
   void
@@ -261,6 +363,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_attrs(Attrs self, SseSerializer serializer);
 
   @protected
+  void sse_encode_block_dto(BlockDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_block_kind(BlockKind self, SseSerializer serializer);
 
   @protected
@@ -270,13 +375,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_block_tree(BlockTree self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_css_length_dto(
+    CssLengthDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_css_style_dto(
+    CssStyleDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_8(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_chapter_dto(ChapterDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_computed_style(ComputedStyle self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_css_length_dto(CssLengthDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_css_style_dto(CssStyleDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
@@ -288,7 +420,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_image_run_dto(ImageRunDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_block_dto(List<BlockDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_block_node(
@@ -299,6 +437,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_font_face_dto(
     List<FontFaceDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_image_run_dto(
+    List<ImageRunDto> self,
     SseSerializer serializer,
   );
 
@@ -315,6 +459,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_style_run_dto(
+    List<StyleRunDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_toc_entry_dto(
     List<TocEntryDto> self,
     SseSerializer serializer,
@@ -327,7 +477,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_css_length_dto(
+    CssLengthDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_css_style_dto(
+    CssStyleDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer);
@@ -340,6 +505,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_record_u_32_u_32((int, int) self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_style_run_dto(StyleRunDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_toc_entry_dto(TocEntryDto self, SseSerializer serializer);
@@ -355,9 +523,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer);
 }
 
 // Section: wire_class

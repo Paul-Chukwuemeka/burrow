@@ -3,7 +3,9 @@
 use crate::epub::cascade;
 use crate::epub::container::EpubArchive;
 use crate::epub::model::{BlockTree, FontFaceDto, MetadataDto, TocEntryDto};
+use crate::epub::nav;
 use crate::epub::opf::{self, Navigation};
+use crate::epub::project::{self, ChapterDto};
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
 ///
@@ -88,6 +90,41 @@ pub fn block_tree(handle: &DocumentHandle, chapter_key: String) -> Result<BlockT
 /// The book's `@font-face` families, extracted when the handle was opened.
 pub fn font_faces(handle: &DocumentHandle) -> Result<Vec<FontFaceDto>, String> {
     Ok(handle.metadata.font_faces.clone())
+}
+
+/// Projects one spine chapter into today's flat-run model (spec D4/D6).
+///
+/// `index` is the spine reading order, as returned by [`spine`]. The projected
+/// `body` carries one `\u{FFFC}` per image, every run/image offset is a Dart
+/// UTF-16 code unit, `%` box lengths stay symbolic, and no resource bytes cross
+/// the boundary (`ImageRunDto::source_key` is the reference Task 8 hydrates).
+/// The chapter's title comes from its first TOC entry, falling back to the
+/// document's own `<title>`/`<h1>`.
+pub fn chapter(handle: &DocumentHandle, index: u32) -> Result<ChapterDto, String> {
+    let key = handle
+        .navigation
+        .spine
+        .get(index as usize)
+        .cloned()
+        .ok_or_else(|| format!("Chapter index out of range: {index}"))?;
+    let title = chapter_title_for(handle, &key);
+    let tree = cascade::parse_styled_document(&handle.archive, &handle.navigation.manifest, &key)
+        .map_err(|e| e.to_string())?;
+    Ok(project::project_tree(&tree, title, &handle.archive, &key))
+}
+
+/// The title for one spine document: its first TOC entry's title, else the
+/// document's own `<title>`/`<h1>` (matching [`chapter_titles`] for the common
+/// single-entry document).
+fn chapter_title_for(handle: &DocumentHandle, key: &str) -> String {
+    if let Some(entry) = handle.navigation.toc.iter().find(|e| e.file_key == key) {
+        return entry.title.clone();
+    }
+    handle
+        .archive
+        .read_by_key(key)
+        .and_then(|bytes| nav::document_title(&String::from_utf8_lossy(&bytes)))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

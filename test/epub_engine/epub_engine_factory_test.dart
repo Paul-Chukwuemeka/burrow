@@ -7,16 +7,7 @@ void main() {
     expect(() => createEpubEngine('nope'), throwsArgumentError);
   });
 
-  test('rust is registered as a stub that is not yet implemented', () async {
-    final engine = createEpubEngine('rust');
-    await expectLater(engine.parse('/tmp/book.epub'), throwsUnimplementedError);
-    await expectLater(
-      engine.extractMetadata('/tmp/book.epub'),
-      throwsUnimplementedError,
-    );
-    expect(
-      () => engine.clearCacheFor('/tmp/book.epub'),
-      throwsUnimplementedError,
-    );
+  test('factory returns the Rust engine for "rust"', () {
+    expect(createEpubEngine('rust'), isA<RustEpubEngine>());
   });
 }

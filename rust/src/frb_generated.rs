@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1859934478;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -670787007;
 
 // Section: executor
 
@@ -95,6 +95,58 @@ fn wire__crate__api__epub__block_tree_impl(
                     let api_handle_guard = api_handle_guard.unwrap();
                     let output_ok =
                         crate::api::epub::block_tree(&*api_handle_guard, api_chapter_key)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__epub__chapter_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "chapter",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_index = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let mut api_handle_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_handle,
+                                0,
+                                false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_handle_guard = Some(api_handle.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_handle_guard = api_handle_guard.unwrap();
+                    let output_ok = crate::api::epub::chapter(&*api_handle_guard, api_index)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -567,6 +619,22 @@ impl SseDecode for crate::epub::model::Attrs {
     }
 }
 
+impl SseDecode for crate::epub::project::BlockDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <crate::epub::model::BlockKind>::sse_decode(deserializer);
+        let mut var_headingLevel = <Option<u8>>::sse_decode(deserializer);
+        let mut var_textRange = <(u32, u32)>::sse_decode(deserializer);
+        let mut var_children = <Vec<u32>>::sse_decode(deserializer);
+        return crate::epub::project::BlockDto {
+            kind: var_kind,
+            heading_level: var_headingLevel,
+            text_range: var_textRange,
+            children: var_children,
+        };
+    }
+}
+
 impl SseDecode for crate::epub::model::BlockKind {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -618,6 +686,31 @@ impl SseDecode for crate::epub::model::BlockTree {
             text: var_text,
             remote_fetches: var_remoteFetches,
             dropped_scripts: var_droppedScripts,
+        };
+    }
+}
+
+impl SseDecode for bool {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u8().unwrap() != 0
+    }
+}
+
+impl SseDecode for crate::epub::project::ChapterDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_body = <String>::sse_decode(deserializer);
+        let mut var_runs = <Vec<crate::epub::project::StyleRunDto>>::sse_decode(deserializer);
+        let mut var_images = <Vec<crate::epub::project::ImageRunDto>>::sse_decode(deserializer);
+        let mut var_blocks = <Vec<crate::epub::project::BlockDto>>::sse_decode(deserializer);
+        return crate::epub::project::ChapterDto {
+            title: var_title,
+            body: var_body,
+            runs: var_runs,
+            images: var_images,
+            blocks: var_blocks,
         };
     }
 }
@@ -686,6 +779,70 @@ impl SseDecode for crate::epub::cascade::ComputedStyle {
     }
 }
 
+impl SseDecode for crate::epub::project::CssLengthDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_value = <f64>::sse_decode(deserializer);
+        let mut var_isPercent = <bool>::sse_decode(deserializer);
+        return crate::epub::project::CssLengthDto {
+            value: var_value,
+            is_percent: var_isPercent,
+        };
+    }
+}
+
+impl SseDecode for crate::epub::project::CssStyleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_fontSize = <Option<f64>>::sse_decode(deserializer);
+        let mut var_color = <Option<u32>>::sse_decode(deserializer);
+        let mut var_textAlign = <Option<String>>::sse_decode(deserializer);
+        let mut var_textIndent = <Option<f64>>::sse_decode(deserializer);
+        let mut var_marginLeft = <Option<f64>>::sse_decode(deserializer);
+        let mut var_marginRight = <Option<f64>>::sse_decode(deserializer);
+        let mut var_marginTop = <Option<f64>>::sse_decode(deserializer);
+        let mut var_marginBottom = <Option<f64>>::sse_decode(deserializer);
+        let mut var_fontWeight = <Option<f64>>::sse_decode(deserializer);
+        let mut var_fontStyle = <Option<String>>::sse_decode(deserializer);
+        let mut var_textDecoration = <Option<String>>::sse_decode(deserializer);
+        let mut var_fontFamily = <Option<String>>::sse_decode(deserializer);
+        let mut var_lineHeight = <Option<f64>>::sse_decode(deserializer);
+        let mut var_letterSpacing = <Option<f64>>::sse_decode(deserializer);
+        let mut var_wordSpacing = <Option<f64>>::sse_decode(deserializer);
+        let mut var_textTransform = <Option<String>>::sse_decode(deserializer);
+        let mut var_whiteSpace = <Option<String>>::sse_decode(deserializer);
+        let mut var_width = <Option<crate::epub::project::CssLengthDto>>::sse_decode(deserializer);
+        let mut var_height = <Option<crate::epub::project::CssLengthDto>>::sse_decode(deserializer);
+        let mut var_maxWidth =
+            <Option<crate::epub::project::CssLengthDto>>::sse_decode(deserializer);
+        let mut var_maxHeight =
+            <Option<crate::epub::project::CssLengthDto>>::sse_decode(deserializer);
+        return crate::epub::project::CssStyleDto {
+            font_size: var_fontSize,
+            color: var_color,
+            text_align: var_textAlign,
+            text_indent: var_textIndent,
+            margin_left: var_marginLeft,
+            margin_right: var_marginRight,
+            margin_top: var_marginTop,
+            margin_bottom: var_marginBottom,
+            font_weight: var_fontWeight,
+            font_style: var_fontStyle,
+            text_decoration: var_textDecoration,
+            font_family: var_fontFamily,
+            line_height: var_lineHeight,
+            letter_spacing: var_letterSpacing,
+            word_spacing: var_wordSpacing,
+            text_transform: var_textTransform,
+            white_space: var_whiteSpace,
+            width: var_width,
+            height: var_height,
+            max_width: var_maxWidth,
+            max_height: var_maxHeight,
+        };
+    }
+}
+
 impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -712,6 +869,38 @@ impl SseDecode for i32 {
     }
 }
 
+impl SseDecode for crate::epub::project::ImageRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_offset = <u32>::sse_decode(deserializer);
+        let mut var_intrinsicW = <u32>::sse_decode(deserializer);
+        let mut var_intrinsicH = <u32>::sse_decode(deserializer);
+        let mut var_alt = <String>::sse_decode(deserializer);
+        let mut var_fullWidth = <bool>::sse_decode(deserializer);
+        let mut var_sourceKey = <Option<String>>::sse_decode(deserializer);
+        let mut var_imgSrc = <String>::sse_decode(deserializer);
+        let mut var_imgClass = <String>::sse_decode(deserializer);
+        let mut var_elementId = <String>::sse_decode(deserializer);
+        let mut var_htmlW = <Option<f64>>::sse_decode(deserializer);
+        let mut var_htmlH = <Option<f64>>::sse_decode(deserializer);
+        let mut var_css = <Option<crate::epub::project::CssStyleDto>>::sse_decode(deserializer);
+        return crate::epub::project::ImageRunDto {
+            offset: var_offset,
+            intrinsic_w: var_intrinsicW,
+            intrinsic_h: var_intrinsicH,
+            alt: var_alt,
+            full_width: var_fullWidth,
+            source_key: var_sourceKey,
+            img_src: var_imgSrc,
+            img_class: var_imgClass,
+            element_id: var_elementId,
+            html_w: var_htmlW,
+            html_h: var_htmlH,
+            css: var_css,
+        };
+    }
+}
+
 impl SseDecode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -719,6 +908,18 @@ impl SseDecode for Vec<String> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::epub::project::BlockDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::epub::project::BlockDto>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -748,6 +949,20 @@ impl SseDecode for Vec<crate::epub::model::FontFaceDto> {
     }
 }
 
+impl SseDecode for Vec<crate::epub::project::ImageRunDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::epub::project::ImageRunDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -767,6 +982,20 @@ impl SseDecode for Vec<u8> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<u8>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::epub::project::StyleRunDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::epub::project::StyleRunDto>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -829,11 +1058,48 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<crate::epub::project::CssLengthDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::epub::project::CssLengthDto>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::epub::project::CssStyleDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::epub::project::CssStyleDto>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<f64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u32>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -868,6 +1134,26 @@ impl SseDecode for (u32, u32) {
         let mut var_field0 = <u32>::sse_decode(deserializer);
         let mut var_field1 = <u32>::sse_decode(deserializer);
         return (var_field0, var_field1);
+    }
+}
+
+impl SseDecode for crate::epub::project::StyleRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_start = <u32>::sse_decode(deserializer);
+        let mut var_end = <u32>::sse_decode(deserializer);
+        let mut var_bold = <bool>::sse_decode(deserializer);
+        let mut var_italic = <bool>::sse_decode(deserializer);
+        let mut var_quote = <bool>::sse_decode(deserializer);
+        let mut var_css = <Option<crate::epub::project::CssStyleDto>>::sse_decode(deserializer);
+        return crate::epub::project::StyleRunDto {
+            start: var_start,
+            end: var_end,
+            bold: var_bold,
+            italic: var_italic,
+            quote: var_quote,
+            css: var_css,
+        };
     }
 }
 
@@ -911,13 +1197,6 @@ impl SseDecode for usize {
     }
 }
 
-impl SseDecode for bool {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_u8().unwrap() != 0
-    }
-}
-
 fn pde_ffi_dispatcher_primary_impl(
     func_id: i32,
     port: flutter_rust_bridge::for_generated::MessagePort,
@@ -928,14 +1207,15 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__epub__block_tree_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__epub__chapter_count_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__epub__chapter_titles_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__epub__font_faces_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__epub__metadata_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__epub__open_epub_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__epub__read_metadata_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__epub__spine_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__epub__toc_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__epub__chapter_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__epub__chapter_count_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__epub__chapter_titles_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__epub__font_faces_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__epub__metadata_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__epub__open_epub_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__epub__read_metadata_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__epub__spine_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__epub__toc_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -948,7 +1228,7 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        4 => wire__crate__api__epub__engine_version_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__epub__engine_version_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -991,6 +1271,29 @@ impl flutter_rust_bridge::IntoDart for crate::epub::model::Attrs {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::epub::model::Attrs {}
 impl flutter_rust_bridge::IntoIntoDart<crate::epub::model::Attrs> for crate::epub::model::Attrs {
     fn into_into_dart(self) -> crate::epub::model::Attrs {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::BlockDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.heading_level.into_into_dart().into_dart(),
+            self.text_range.into_into_dart().into_dart(),
+            self.children.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::project::BlockDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::BlockDto>
+    for crate::epub::project::BlockDto
+{
+    fn into_into_dart(self) -> crate::epub::project::BlockDto {
         self
     }
 }
@@ -1062,6 +1365,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::epub::model::BlockTree>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::ChapterDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.title.into_into_dart().into_dart(),
+            self.body.into_into_dart().into_dart(),
+            self.runs.into_into_dart().into_dart(),
+            self.images.into_into_dart().into_dart(),
+            self.blocks.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::project::ChapterDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::ChapterDto>
+    for crate::epub::project::ChapterDto
+{
+    fn into_into_dart(self) -> crate::epub::project::ChapterDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::epub::cascade::ComputedStyle {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1109,6 +1436,67 @@ impl flutter_rust_bridge::IntoIntoDart<crate::epub::cascade::ComputedStyle>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::CssLengthDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.value.into_into_dart().into_dart(),
+            self.is_percent.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::project::CssLengthDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::CssLengthDto>
+    for crate::epub::project::CssLengthDto
+{
+    fn into_into_dart(self) -> crate::epub::project::CssLengthDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::CssStyleDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.font_size.into_into_dart().into_dart(),
+            self.color.into_into_dart().into_dart(),
+            self.text_align.into_into_dart().into_dart(),
+            self.text_indent.into_into_dart().into_dart(),
+            self.margin_left.into_into_dart().into_dart(),
+            self.margin_right.into_into_dart().into_dart(),
+            self.margin_top.into_into_dart().into_dart(),
+            self.margin_bottom.into_into_dart().into_dart(),
+            self.font_weight.into_into_dart().into_dart(),
+            self.font_style.into_into_dart().into_dart(),
+            self.text_decoration.into_into_dart().into_dart(),
+            self.font_family.into_into_dart().into_dart(),
+            self.line_height.into_into_dart().into_dart(),
+            self.letter_spacing.into_into_dart().into_dart(),
+            self.word_spacing.into_into_dart().into_dart(),
+            self.text_transform.into_into_dart().into_dart(),
+            self.white_space.into_into_dart().into_dart(),
+            self.width.into_into_dart().into_dart(),
+            self.height.into_into_dart().into_dart(),
+            self.max_width.into_into_dart().into_dart(),
+            self.max_height.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::project::CssStyleDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::CssStyleDto>
+    for crate::epub::project::CssStyleDto
+{
+    fn into_into_dart(self) -> crate::epub::project::CssStyleDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::epub::model::FontFaceDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1126,6 +1514,37 @@ impl flutter_rust_bridge::IntoIntoDart<crate::epub::model::FontFaceDto>
     for crate::epub::model::FontFaceDto
 {
     fn into_into_dart(self) -> crate::epub::model::FontFaceDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::ImageRunDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.offset.into_into_dart().into_dart(),
+            self.intrinsic_w.into_into_dart().into_dart(),
+            self.intrinsic_h.into_into_dart().into_dart(),
+            self.alt.into_into_dart().into_dart(),
+            self.full_width.into_into_dart().into_dart(),
+            self.source_key.into_into_dart().into_dart(),
+            self.img_src.into_into_dart().into_dart(),
+            self.img_class.into_into_dart().into_dart(),
+            self.element_id.into_into_dart().into_dart(),
+            self.html_w.into_into_dart().into_dart(),
+            self.html_h.into_into_dart().into_dart(),
+            self.css.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::project::ImageRunDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::ImageRunDto>
+    for crate::epub::project::ImageRunDto
+{
+    fn into_into_dart(self) -> crate::epub::project::ImageRunDto {
         self
     }
 }
@@ -1158,6 +1577,31 @@ impl flutter_rust_bridge::IntoIntoDart<crate::epub::model::MetadataDto>
     for crate::epub::model::MetadataDto
 {
     fn into_into_dart(self) -> crate::epub::model::MetadataDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::StyleRunDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.start.into_into_dart().into_dart(),
+            self.end.into_into_dart().into_dart(),
+            self.bold.into_into_dart().into_dart(),
+            self.italic.into_into_dart().into_dart(),
+            self.quote.into_into_dart().into_dart(),
+            self.css.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::epub::project::StyleRunDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::StyleRunDto>
+    for crate::epub::project::StyleRunDto
+{
+    fn into_into_dart(self) -> crate::epub::project::StyleRunDto {
         self
     }
 }
@@ -1225,6 +1669,16 @@ impl SseEncode for crate::epub::model::Attrs {
     }
 }
 
+impl SseEncode for crate::epub::project::BlockDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::epub::model::BlockKind>::sse_encode(self.kind, serializer);
+        <Option<u8>>::sse_encode(self.heading_level, serializer);
+        <(u32, u32)>::sse_encode(self.text_range, serializer);
+        <Vec<u32>>::sse_encode(self.children, serializer);
+    }
+}
+
 impl SseEncode for crate::epub::model::BlockKind {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1270,6 +1724,24 @@ impl SseEncode for crate::epub::model::BlockTree {
     }
 }
 
+impl SseEncode for bool {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u8(self as _).unwrap();
+    }
+}
+
+impl SseEncode for crate::epub::project::ChapterDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.title, serializer);
+        <String>::sse_encode(self.body, serializer);
+        <Vec<crate::epub::project::StyleRunDto>>::sse_encode(self.runs, serializer);
+        <Vec<crate::epub::project::ImageRunDto>>::sse_encode(self.images, serializer);
+        <Vec<crate::epub::project::BlockDto>>::sse_encode(self.blocks, serializer);
+    }
+}
+
 impl SseEncode for crate::epub::cascade::ComputedStyle {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1304,6 +1776,41 @@ impl SseEncode for crate::epub::cascade::ComputedStyle {
     }
 }
 
+impl SseEncode for crate::epub::project::CssLengthDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.value, serializer);
+        <bool>::sse_encode(self.is_percent, serializer);
+    }
+}
+
+impl SseEncode for crate::epub::project::CssStyleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<f64>>::sse_encode(self.font_size, serializer);
+        <Option<u32>>::sse_encode(self.color, serializer);
+        <Option<String>>::sse_encode(self.text_align, serializer);
+        <Option<f64>>::sse_encode(self.text_indent, serializer);
+        <Option<f64>>::sse_encode(self.margin_left, serializer);
+        <Option<f64>>::sse_encode(self.margin_right, serializer);
+        <Option<f64>>::sse_encode(self.margin_top, serializer);
+        <Option<f64>>::sse_encode(self.margin_bottom, serializer);
+        <Option<f64>>::sse_encode(self.font_weight, serializer);
+        <Option<String>>::sse_encode(self.font_style, serializer);
+        <Option<String>>::sse_encode(self.text_decoration, serializer);
+        <Option<String>>::sse_encode(self.font_family, serializer);
+        <Option<f64>>::sse_encode(self.line_height, serializer);
+        <Option<f64>>::sse_encode(self.letter_spacing, serializer);
+        <Option<f64>>::sse_encode(self.word_spacing, serializer);
+        <Option<String>>::sse_encode(self.text_transform, serializer);
+        <Option<String>>::sse_encode(self.white_space, serializer);
+        <Option<crate::epub::project::CssLengthDto>>::sse_encode(self.width, serializer);
+        <Option<crate::epub::project::CssLengthDto>>::sse_encode(self.height, serializer);
+        <Option<crate::epub::project::CssLengthDto>>::sse_encode(self.max_width, serializer);
+        <Option<crate::epub::project::CssLengthDto>>::sse_encode(self.max_height, serializer);
+    }
+}
+
 impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1326,12 +1833,40 @@ impl SseEncode for i32 {
     }
 }
 
+impl SseEncode for crate::epub::project::ImageRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.offset, serializer);
+        <u32>::sse_encode(self.intrinsic_w, serializer);
+        <u32>::sse_encode(self.intrinsic_h, serializer);
+        <String>::sse_encode(self.alt, serializer);
+        <bool>::sse_encode(self.full_width, serializer);
+        <Option<String>>::sse_encode(self.source_key, serializer);
+        <String>::sse_encode(self.img_src, serializer);
+        <String>::sse_encode(self.img_class, serializer);
+        <String>::sse_encode(self.element_id, serializer);
+        <Option<f64>>::sse_encode(self.html_w, serializer);
+        <Option<f64>>::sse_encode(self.html_h, serializer);
+        <Option<crate::epub::project::CssStyleDto>>::sse_encode(self.css, serializer);
+    }
+}
+
 impl SseEncode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <String>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::epub::project::BlockDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::epub::project::BlockDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -1356,6 +1891,16 @@ impl SseEncode for Vec<crate::epub::model::FontFaceDto> {
     }
 }
 
+impl SseEncode for Vec<crate::epub::project::ImageRunDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::epub::project::ImageRunDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1372,6 +1917,16 @@ impl SseEncode for Vec<u8> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <u8>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::epub::project::StyleRunDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::epub::project::StyleRunDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -1415,12 +1970,42 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<crate::epub::project::CssLengthDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::epub::project::CssLengthDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::epub::project::CssStyleDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::epub::project::CssStyleDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <f64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u32>::sse_encode(value, serializer);
         }
     }
 }
@@ -1450,6 +2035,18 @@ impl SseEncode for (u32, u32) {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.0, serializer);
         <u32>::sse_encode(self.1, serializer);
+    }
+}
+
+impl SseEncode for crate::epub::project::StyleRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.start, serializer);
+        <u32>::sse_encode(self.end, serializer);
+        <bool>::sse_encode(self.bold, serializer);
+        <bool>::sse_encode(self.italic, serializer);
+        <bool>::sse_encode(self.quote, serializer);
+        <Option<crate::epub::project::CssStyleDto>>::sse_encode(self.css, serializer);
     }
 }
 
@@ -1488,13 +2085,6 @@ impl SseEncode for usize {
             .cursor
             .write_u64::<NativeEndian>(self as _)
             .unwrap();
-    }
-}
-
-impl SseEncode for bool {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer.cursor.write_u8(self as _).unwrap();
     }
 }
 

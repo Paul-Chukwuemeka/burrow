@@ -644,6 +644,68 @@ def build_external_css() -> None:
     )
 
 
+def build_projection() -> None:
+    # Task 7 fixture for the flat-run projection. One chapter exercises every
+    # projection contract at once: a non-BMP emoji inside an `<em>` run (UTF-16
+    # offsets), an inline `<img>` that resolves to a real archive entry (a
+    # single `\uFFFC` placeholder + intrinsic size), an inline `<style>` with a
+    # class rule whose `max-width: 100%` must stay symbolic, and a blockquote
+    # (quote runs). The `<img>` also carries numeric width/height attributes.
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head>\n"
+        "<title>Projection</title>\n"
+        "<style>\n"
+        ".note { color: #336699; font-size: 14px; }\n"
+        ".wide { max-width: 100%; }\n"
+        "</style>\n"
+        "</head>\n"
+        "<body>\n"
+        "<h1>Projection</h1>\n"
+        "<p>Intro <em>emoji \U0001F600 run</em> tail</p>\n"
+        '<p class="note">Styled note.</p>\n'
+        "<blockquote><p>Quoted text.</p></blockquote>\n"
+        '<p><img src="Images/pic.png" alt="tiny" width="8" height="4" '
+        'class="wide"/></p>\n'
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Projection</dc:title>\n"
+        "    <dc:creator>P. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:projection</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="img1" href="Images/pic.png" media-type="image/png"/>\n'
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "projection.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/Images/pic.png", _png(8, 4, (10, 200, 40)), True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -656,6 +718,7 @@ def main() -> None:
     build_scripted()
     build_repeated_paragraphs()
     build_external_css()
+    build_projection()
     print("wrote fixtures to", HERE)
 
 

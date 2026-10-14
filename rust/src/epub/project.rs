@@ -1,0 +1,1300 @@
+//! Flat-run projection: the block tree + computed styles lowered into today's
+//! `ChapterDto` (spec D4/D6/D12, Phase-A contract).
+//!
+//! The projection reproduces the *shape* of the existing Dart `Chapter` — a
+//! flat `body` string with `\u{FFFC}` image placeholders, `StyleRun`s over that
+//! body, and `ImageRun` sizing/reference metadata — from the structured block
+//! tree. Offsets are **Dart UTF-16 code units** (D4), images become a single
+//! placeholder each, and `%` box lengths stay symbolic (`CssLengthDto::is_percent`)
+//! so `max-width: 100%` is never resolved at parse time.
+//!
+//! Two contracts are deliberate:
+//!
+//! * **Whitespace** is collapsed exactly like Dart's `_RichTextBuilder` (block
+//!   tags insert newlines that collapse to at most two; horizontal whitespace
+//!   collapses to one space and is dropped around line breaks), so an unstyled
+//!   book's body is byte-identical to the Dart engine's.
+//! * **UTF-16 offsets** are emitted, not Rust byte offsets: `units.rs` converts
+//!   the byte offsets recorded while building the body once it is final, so a
+//!   non-BMP character does not shift the runs and images after it (Review
+//!   Focus #1).
+//!
+//! The `css` on a run is built only from properties the element actually
+//! *declared* (author rule / presentational hint / inline style); UA defaults
+//! stay on the block tree (D12), which is what keeps an unstyled book's flat
+//! output style-free.
+
+use crate::epub::block::utf16_slice;
+use crate::epub::cascade::ComputedStyle;
+use crate::epub::container::{resolve_href, EpubArchive};
+use crate::epub::model::{BlockKind, BlockTree};
+use crate::epub::units;
+
+/// A whole chapter projected into the flat-run model.
+///
+/// `blocks` is the block-tree arena in its original UTF-16 coordinates (an
+/// additive field per D17); `body`/`runs`/`images` are the phase-1 render
+/// contract and are unchanged from the Dart engine's output shape.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ChapterDto {
+    pub title: String,
+    pub body: String,
+    pub runs: Vec<StyleRunDto>,
+    pub images: Vec<ImageRunDto>,
+    pub blocks: Vec<BlockDto>,
+}
+
+/// A structural block, projected so a future paginator can reach the tree
+/// through the same call as the flat runs. `text_range` indexes the tree's own
+/// text buffer (UTF-16), not the flat body.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BlockDto {
+    pub kind: BlockKind,
+    pub heading_level: Option<u8>,
+    pub text_range: (u32, u32),
+    pub children: Vec<u32>,
+}
+
+/// One styled range over [`ChapterDto::body`].
+///
+/// `start`/`end` are UTF-16 code units (Dart `String.substring` indices) and are
+/// half-open. `bold`/`italic`/`quote` carry the emphasis/blockquote flags; `css`
+/// carries author-declared typography (never UA defaults).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StyleRunDto {
+    pub start: u32,
+    pub end: u32,
+    pub bold: bool,
+    pub italic: bool,
+    pub quote: bool,
+    pub css: Option<CssStyleDto>,
+}
+
+/// One inline image, occupying a single `\u{FFFC}` at `offset` in the body.
+///
+/// `source_key` is the normalised archive entry the image resolves to (the
+/// reference Dart hydrates bytes from, D15); it is `None` when the `src` does
+/// not resolve to an entry. `intrinsic_w`/`intrinsic_h` are read from the image
+/// header, `0` when unknown. No bytes cross the FFI here.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ImageRunDto {
+    pub offset: u32,
+    pub intrinsic_w: u32,
+    pub intrinsic_h: u32,
+    pub alt: String,
+    pub full_width: bool,
+    pub source_key: Option<String>,
+    pub img_src: String,
+    pub img_class: String,
+    pub element_id: String,
+    pub html_w: Option<f64>,
+    pub html_h: Option<f64>,
+    pub css: Option<CssStyleDto>,
+}
+
+/// A box length that is either absolute pixels or a percentage of the
+/// containing block (mirrors `CssLength`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct CssLengthDto {
+    pub value: f64,
+    pub is_percent: bool,
+}
+
+/// The typography a run/image carries, mirroring `CssStyle` field for field so
+/// the Dart adapter can reconstruct it with the existing `CssStyle.fromJson`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CssStyleDto {
+    pub font_size: Option<f64>,
+    pub color: Option<u32>,
+    pub text_align: Option<String>,
+    pub text_indent: Option<f64>,
+    pub margin_left: Option<f64>,
+    pub margin_right: Option<f64>,
+    pub margin_top: Option<f64>,
+    pub margin_bottom: Option<f64>,
+    pub font_weight: Option<f64>,
+    pub font_style: Option<String>,
+    pub text_decoration: Option<String>,
+    pub font_family: Option<String>,
+    pub line_height: Option<f64>,
+    pub letter_spacing: Option<f64>,
+    pub word_spacing: Option<f64>,
+    pub text_transform: Option<String>,
+    pub white_space: Option<String>,
+    pub width: Option<CssLengthDto>,
+    pub height: Option<CssLengthDto>,
+    pub max_width: Option<CssLengthDto>,
+    pub max_height: Option<CssLengthDto>,
+}
+
+impl CssStyleDto {
+    /// True when no property was set (so no run is worth emitting).
+    pub fn is_empty(&self) -> bool {
+        *self == CssStyleDto::default()
+    }
+
+    /// Overlays `other` on `self`: every property `other` sets wins (the same
+    /// rule as `CssStyle.merge`, applied outer-first).
+    pub fn merge(&self, other: &CssStyleDto) -> CssStyleDto {
+        macro_rules! pick {
+            ($field:ident) => {
+                other.$field.clone().or_else(|| self.$field.clone())
+            };
+        }
+        CssStyleDto {
+            font_size: pick!(font_size),
+            color: pick!(color),
+            text_align: pick!(text_align),
+            text_indent: pick!(text_indent),
+            margin_left: pick!(margin_left),
+            margin_right: pick!(margin_right),
+            margin_top: pick!(margin_top),
+            margin_bottom: pick!(margin_bottom),
+            font_weight: pick!(font_weight),
+            font_style: pick!(font_style),
+            text_decoration: pick!(text_decoration),
+            font_family: pick!(font_family),
+            line_height: pick!(line_height),
+            letter_spacing: pick!(letter_spacing),
+            word_spacing: pick!(word_spacing),
+            text_transform: pick!(text_transform),
+            white_space: pick!(white_space),
+            width: pick!(width),
+            height: pick!(height),
+            max_width: pick!(max_width),
+            max_height: pick!(max_height),
+        }
+    }
+
+    /// True when any image-sizing property was declared (used to decide whether
+    /// an `<img>`'s CSS belongs on its [`ImageRunDto`]).
+    pub fn has_image_sizing(&self) -> bool {
+        self.width.is_some()
+            || self.height.is_some()
+            || self.max_width.is_some()
+            || self.max_height.is_some()
+    }
+}
+
+/// Projects a styled chapter into a [`ChapterDto`].
+///
+/// `chapter_key` is the chapter's normalised archive key (its directory is the
+/// base for resolving image `src`s); `archive` supplies image bytes for the
+/// intrinsic-size read.
+pub fn project_tree(
+    tree: &BlockTree,
+    title: String,
+    archive: &EpubArchive,
+    chapter_key: &str,
+) -> ChapterDto {
+    let base_dir = dir_of(chapter_key);
+    project_with(tree, title, |src| {
+        let key = resolve_href(&base_dir, src);
+        let bytes = archive.read_by_key(&key);
+        (key, bytes)
+    })
+}
+
+/// Projection with an injectable resource reader, so the string behaviour is
+/// testable without a real archive. `read(src)` returns the resolved archive
+/// key and its bytes (if any).
+pub fn project_with<F>(tree: &BlockTree, title: String, read: F) -> ChapterDto
+where
+    F: Fn(&str) -> (String, Option<Vec<u8>>),
+{
+    let mut projector = Projector {
+        tree,
+        read,
+        body: String::new(),
+        runs: Vec::new(),
+        images: Vec::new(),
+        node_start: vec![None; tree.nodes.len()],
+        node_end: vec![0; tree.nodes.len()],
+        open: Vec::new(),
+        pending_newlines: 0,
+        pending_space: false,
+        last_char: None,
+        bold: 0,
+        italic: 0,
+        quote: 0,
+    };
+    projector.walk();
+    projector.finish(title)
+}
+
+/// The directory part of a normalised archive key, or `""` at the root.
+fn dir_of(key: &str) -> String {
+    match key.rfind('/') {
+        Some(index) => key[..index].to_string(),
+        None => String::new(),
+    }
+}
+
+/// Block tags whose open/close each contribute a (collapsible) newline.
+///
+/// This is intentionally the *Dart* `_blockTagNames` set, not [`BlockKind`]:
+/// the projection reproduces the Dart renderer's wrapping, where e.g. `<ul>`
+/// and `<pre>` are transparent and only `li` breaks.
+const BLOCK_TAGS: &[&str] = &[
+    "p",
+    "div",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "tr",
+    "br",
+    "section",
+    "article",
+    "blockquote",
+];
+
+fn is_block_tag(tag: &str) -> bool {
+    BLOCK_TAGS.contains(&tag)
+}
+
+/// True for whitespace that right-trims the body, matching Dart's `_isWs`.
+fn is_trim_ws(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r')
+}
+
+/// True for the horizontal whitespace class the body tokenizer splits on.
+fn is_ws_token_char(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\r' | '\u{0C}' | '\u{0B}')
+}
+
+/// True for a token's first character that Dart treats as pending whitespace.
+fn is_pending_ws_head(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r')
+}
+
+/// An action on the explicit walk stack (keeps deep nesting off the call stack).
+enum Action {
+    Enter(usize),
+    Exit(usize),
+    /// Emit the given UTF-16 range of the tree's text buffer.
+    Text(u32, u32),
+}
+
+/// A run recorded mid-walk, in *byte* offsets until [`Projector::finish`].
+struct RawRun {
+    start: usize,
+    end: usize,
+    bold: bool,
+    italic: bool,
+    quote: bool,
+    css: Option<CssStyleDto>,
+}
+
+/// A not-yet-emitted image, in *byte* offsets until [`Projector::finish`].
+struct RawImage {
+    offset: usize,
+    intrinsic_w: u32,
+    intrinsic_h: u32,
+    alt: String,
+    full_width: bool,
+    source_key: Option<String>,
+    img_src: String,
+    img_class: String,
+    element_id: String,
+    html_w: Option<f64>,
+    html_h: Option<f64>,
+    css: Option<CssStyleDto>,
+}
+
+/// A node currently on the open path, with the byte offset of its first text.
+struct OpenNode {
+    index: usize,
+    start: Option<usize>,
+}
+
+struct Projector<'a, F> {
+    tree: &'a BlockTree,
+    read: F,
+    body: String,
+    runs: Vec<RawRun>,
+    images: Vec<RawImage>,
+    node_start: Vec<Option<usize>>,
+    node_end: Vec<usize>,
+    open: Vec<OpenNode>,
+    pending_newlines: usize,
+    pending_space: bool,
+    last_char: Option<char>,
+    bold: u32,
+    italic: u32,
+    quote: u32,
+}
+
+impl<'a, F> Projector<'a, F>
+where
+    F: Fn(&str) -> (String, Option<Vec<u8>>),
+{
+    fn walk(&mut self) {
+        let mut stack = vec![Action::Enter(0)];
+        while let Some(action) = stack.pop() {
+            match action {
+                Action::Enter(index) => self.enter(index, &mut stack),
+                Action::Exit(index) => self.exit(index),
+                Action::Text(start, end) => self.emit_text_slice(start, end),
+            }
+        }
+    }
+
+    /// Opens node `index`: applies its tag's whitespace/emphasis effect and
+    /// schedules its direct text and children in document order.
+    fn enter(&mut self, index: usize, stack: &mut Vec<Action>) {
+        let (tag, text_range, children) = {
+            let node = &self.tree.nodes[index];
+            (
+                node.attrs.tag.clone(),
+                node.text_range,
+                node.children.clone(),
+            )
+        };
+
+        // An `<img>` is emitted in place and has no children (and no closing
+        // newline): it never joins the open stack.
+        if tag == "img" {
+            self.emit_image(index);
+            return;
+        }
+
+        if is_block_tag(&tag) {
+            self.newline();
+        }
+        if tag == "blockquote" {
+            self.quote += 1;
+        }
+        if tag == "b" || tag == "strong" {
+            self.flush_space();
+            self.bold += 1;
+        }
+        if tag == "i" || tag == "em" {
+            self.flush_space();
+            self.italic += 1;
+        }
+
+        self.open.push(OpenNode { index, start: None });
+        stack.push(Action::Exit(index));
+
+        // Direct text = the parent's range minus its children's ranges, in order.
+        let mut items: Vec<Action> = Vec::new();
+        let mut cursor = text_range.0;
+        for &child in &children {
+            let (child_start, child_end) = {
+                let node = &self.tree.nodes[child as usize];
+                node.text_range
+            };
+            if child_start > cursor {
+                items.push(Action::Text(cursor, child_start));
+            }
+            items.push(Action::Enter(child as usize));
+            cursor = cursor.max(child_end);
+        }
+        if text_range.1 > cursor {
+            items.push(Action::Text(cursor, text_range.1));
+        }
+        for item in items.into_iter().rev() {
+            stack.push(item);
+        }
+    }
+
+    /// Closes node `index`: undoes its effects and seals its text extent.
+    fn exit(&mut self, index: usize) {
+        let tag = self.tree.nodes[index].attrs.tag.clone();
+        if tag == "b" || tag == "strong" {
+            self.flush_space();
+            self.bold = self.bold.saturating_sub(1);
+        }
+        if tag == "i" || tag == "em" {
+            self.flush_space();
+            self.italic = self.italic.saturating_sub(1);
+        }
+        if tag == "blockquote" {
+            self.quote = self.quote.saturating_sub(1);
+        }
+        if is_block_tag(&tag) && tag != "br" {
+            self.newline();
+        }
+        if let Some(node) = self.open.pop() {
+            if let Some(start) = node.start {
+                self.node_start[node.index] = Some(start);
+                self.node_end[node.index] = self.body.len();
+            }
+        }
+    }
+
+    /// Emits one tree-text range, applying the Dart whitespace collapse.
+    fn emit_text_slice(&mut self, start: u32, end: u32) {
+        let tree = self.tree;
+        let raw: &str = utf16_slice(&tree.text, start as usize, end as usize);
+        if raw.is_empty() {
+            return;
+        }
+        let mut tokens: Vec<&str> = Vec::new();
+        let mut run_start = 0usize;
+        let mut run_is_ws: Option<bool> = None;
+        for (index, ch) in raw.char_indices() {
+            let is_ws = is_ws_token_char(ch);
+            match run_is_ws {
+                None => {
+                    run_start = index;
+                    run_is_ws = Some(is_ws);
+                }
+                Some(previous) if previous != is_ws => {
+                    tokens.push(&raw[run_start..index]);
+                    run_start = index;
+                    run_is_ws = Some(is_ws);
+                }
+                _ => {}
+            }
+        }
+        if run_is_ws.is_some() {
+            tokens.push(&raw[run_start..]);
+        }
+        for token in tokens {
+            self.emit_token(token);
+        }
+    }
+
+    /// Emits one whitespace-collapsed token, applying pending-space/newline.
+    fn emit_token(&mut self, token: &str) {
+        let Some(head) = token.chars().next() else {
+            return;
+        };
+        if is_pending_ws_head(head) {
+            self.pending_space = true;
+            return;
+        }
+        if self.pending_newlines > 0 && !self.body.is_empty() {
+            let count = self.pending_newlines.min(2);
+            self.push_newlines(count);
+        }
+        self.pending_newlines = 0;
+        if self.pending_space && !self.body.is_empty() && self.last_char != Some('\n') {
+            self.emit(" ");
+        }
+        self.pending_space = false;
+        self.emit(token);
+    }
+
+    /// Emits an `<img>`: flushes pending whitespace, writes the `\u{FFFC}`
+    /// placeholder, and records the image's reference and sizing metadata.
+    fn emit_image(&mut self, index: usize) {
+        let attrs = self.tree.nodes[index].attrs.clone();
+        let Some(src) = attrs.src.clone().filter(|s| !s.is_empty()) else {
+            return;
+        };
+
+        self.flush_space();
+        if self.pending_newlines > 0 && !self.body.is_empty() {
+            let count = self.pending_newlines.min(2);
+            self.push_newlines(count);
+        }
+        self.pending_newlines = 0;
+        self.pending_space = false;
+
+        let offset = self.body.len();
+        self.body.push('\u{FFFC}');
+        self.last_char = Some('\u{FFFC}');
+
+        let (key, bytes) = (self.read)(&src);
+        let source_key = bytes.as_ref().map(|_| key);
+        let (intrinsic_w, intrinsic_h) = bytes.as_deref().map(image_dimensions).unwrap_or((0, 0));
+
+        let file_name = src
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_lowercase();
+        let id_cover = attrs
+            .id
+            .as_deref()
+            .map(|id| id.to_lowercase().contains("cover"))
+            .unwrap_or(false);
+        let full_width = id_cover || file_name.contains("cover");
+
+        let css = css_style_from_declared(&self.tree.nodes[index].style)
+            .filter(CssStyleDto::has_image_sizing);
+
+        self.images.push(RawImage {
+            offset,
+            intrinsic_w,
+            intrinsic_h,
+            alt: attrs.alt.clone().unwrap_or_default(),
+            full_width,
+            source_key,
+            img_src: src,
+            img_class: attrs.class.clone().unwrap_or_default(),
+            element_id: attrs.id.clone().unwrap_or_default(),
+            html_w: attrs.width.as_deref().and_then(parse_plain_number),
+            html_h: attrs.height.as_deref().and_then(parse_plain_number),
+            css,
+        });
+    }
+
+    /// A block/line break: collapses with adjacent breaks, drops pending space.
+    fn newline(&mut self) {
+        self.pending_newlines += 1;
+    }
+
+    /// Writes `count` literal newlines (not a run, matching Dart's builder).
+    fn push_newlines(&mut self, count: usize) {
+        for _ in 0..count {
+            self.body.push('\n');
+        }
+        self.last_char = Some('\n');
+    }
+
+    /// Emits any pending space now, stamped with the *current* style.
+    fn flush_space(&mut self) {
+        if !self.pending_space {
+            return;
+        }
+        if !self.body.is_empty() && self.last_char != Some('\n') {
+            self.emit(" ");
+        }
+        self.pending_space = false;
+    }
+
+    /// Appends a rendered token, crediting every open node and recording any
+    /// emphasis run it falls in.
+    fn emit(&mut self, token: &str) {
+        let start = self.body.len();
+        for node in &mut self.open {
+            if node.start.is_none() {
+                node.start = Some(start);
+            }
+            self.node_end[node.index] = start + token.len();
+        }
+        self.body.push_str(token);
+        self.last_char = token.chars().last();
+
+        if self.bold > 0 || self.italic > 0 || self.quote > 0 {
+            let (bold, italic, quote) = (self.bold > 0, self.italic > 0, self.quote > 0);
+            let end = start + token.len();
+            if let Some(last) = self.runs.last_mut() {
+                if last.end == start
+                    && last.css.is_none()
+                    && (last.bold, last.italic, last.quote) == (bold, italic, quote)
+                {
+                    last.end = end;
+                    return;
+                }
+            }
+            self.runs.push(RawRun {
+                start,
+                end,
+                bold,
+                italic,
+                quote,
+                css: None,
+            });
+        }
+    }
+
+    /// Trims the body, converts byte offsets to UTF-16, and assembles the DTO.
+    fn finish(mut self, title: String) -> ChapterDto {
+        let end = self.body.trim_end_matches(is_trim_ws).len();
+        self.body.truncate(end);
+
+        // Promote a large standalone image to full width (mirrors Dart).
+        for image in &mut self.images {
+            if !image.full_width && image.offset < end {
+                let largest = image.intrinsic_w.max(image.intrinsic_h);
+                if largest >= 400 && is_standalone(&self.body, image.offset) {
+                    image.full_width = true;
+                }
+            }
+        }
+
+        let offsets = units::utf16_offsets(&self.body);
+
+        let base = std::mem::take(&mut self.runs);
+        let css_runs = self.declared_css_runs(end);
+        let merged = merge_runs(base, css_runs, end);
+
+        let runs = merged
+            .into_iter()
+            .map(|run| StyleRunDto {
+                start: offsets[run.start],
+                end: offsets[run.end],
+                bold: run.bold,
+                italic: run.italic,
+                quote: run.quote,
+                css: run.css,
+            })
+            .collect();
+
+        let images = self
+            .images
+            .into_iter()
+            .filter(|image| image.offset < end)
+            .map(|image| ImageRunDto {
+                offset: offsets[image.offset],
+                intrinsic_w: image.intrinsic_w,
+                intrinsic_h: image.intrinsic_h,
+                alt: image.alt,
+                full_width: image.full_width,
+                source_key: image.source_key,
+                img_src: image.img_src,
+                img_class: image.img_class,
+                element_id: image.element_id,
+                html_w: image.html_w,
+                html_h: image.html_h,
+                css: image.css,
+            })
+            .collect();
+
+        let blocks = self
+            .tree
+            .nodes
+            .iter()
+            .map(|node| BlockDto {
+                kind: node.kind,
+                heading_level: node.heading_level,
+                text_range: node.text_range,
+                children: node.children.clone(),
+            })
+            .collect();
+
+        ChapterDto {
+            title,
+            body: self.body,
+            runs,
+            images,
+            blocks,
+        }
+    }
+
+    /// Author-declared styles over each node's body extent, as runs.
+    ///
+    /// This replaces the Dart engine's `body.indexOf(element.text)` heuristic
+    /// with the node's real extent, so repeated identical paragraphs and
+    /// descendant combinators style the *correct* instance (spec D11, Review
+    /// Focus #2). Elements with no declared CSS produce nothing.
+    fn declared_css_runs(&self, limit: usize) -> Vec<RawRun> {
+        let mut out = Vec::new();
+        for (index, start) in self.node_start.iter().enumerate() {
+            let Some(start) = *start else { continue };
+            let end = self.node_end[index].min(limit);
+            if start >= end {
+                continue;
+            }
+            if let Some(css) = css_style_from_declared(&self.tree.nodes[index].style) {
+                if !css.is_empty() {
+                    out.push(RawRun {
+                        start,
+                        end,
+                        bold: false,
+                        italic: false,
+                        quote: false,
+                        css: Some(css),
+                    });
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Splits base emphasis runs and CSS runs into a maximal constant-style cover.
+///
+/// Boundaries of both sets become cut points; each elementary interval takes the
+/// covering base run's emphasis and the merged (outer-first) CSS of every
+/// covering CSS run, then adjacent equal intervals coalesce. This mirrors the
+/// intent of Dart's `_applyCssRanges` while keeping correct node extents.
+fn merge_runs(mut base: Vec<RawRun>, mut css: Vec<RawRun>, limit: usize) -> Vec<RawRun> {
+    for run in base.iter_mut().chain(css.iter_mut()) {
+        run.end = run.end.min(limit);
+    }
+    base.retain(|run| run.start < run.end);
+    css.retain(|run| run.start < run.end);
+
+    if css.is_empty() {
+        return coalesce(base);
+    }
+    if base.is_empty() {
+        return coalesce(css);
+    }
+
+    let mut points: Vec<usize> = Vec::new();
+    for run in base.iter().chain(css.iter()) {
+        points.push(run.start);
+        points.push(run.end);
+    }
+    points.sort_unstable();
+    points.dedup();
+
+    // Outer-first so a nested rule's declaration wins when merging.
+    css.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
+
+    let mut out: Vec<RawRun> = Vec::new();
+    for window in points.windows(2) {
+        let (start, end) = (window[0], window[1]);
+        if start >= end {
+            continue;
+        }
+        let covering_base = base.iter().find(|run| run.start <= start && run.end >= end);
+        let mut acc: Option<CssStyleDto> = None;
+        for run in &css {
+            if run.start <= start && run.end >= end {
+                if let Some(css) = &run.css {
+                    acc = Some(match acc {
+                        None => css.clone(),
+                        Some(previous) => previous.merge(css),
+                    });
+                }
+            }
+        }
+        if covering_base.is_none() && acc.is_none() {
+            continue;
+        }
+        let (bold, italic, quote) = covering_base
+            .map(|run| (run.bold, run.italic, run.quote))
+            .unwrap_or((false, false, false));
+        let run = RawRun {
+            start,
+            end,
+            bold,
+            italic,
+            quote,
+            css: acc,
+        };
+        if let Some(last) = out.last_mut() {
+            if last.end == start
+                && (last.bold, last.italic, last.quote) == (bold, italic, quote)
+                && last.css == run.css
+            {
+                last.end = end;
+                continue;
+            }
+        }
+        out.push(run);
+    }
+    out
+}
+
+/// Merges adjacent runs that carry the same style (already sorted by start).
+fn coalesce(runs: Vec<RawRun>) -> Vec<RawRun> {
+    let mut out: Vec<RawRun> = Vec::new();
+    for run in runs {
+        if let Some(last) = out.last_mut() {
+            if last.end == run.start
+                && (last.bold, last.italic, last.quote) == (run.bold, run.italic, run.quote)
+                && last.css == run.css
+            {
+                last.end = run.end;
+                continue;
+            }
+        }
+        out.push(run);
+    }
+    out
+}
+
+/// True when only horizontal whitespace / placeholders / line breaks surround
+/// the placeholder at `offset` (mirrors Dart's `_isStandalone`).
+fn is_standalone(body: &str, offset: usize) -> bool {
+    let placeholder = '\u{FFFC}'.len_utf8();
+    let left = body[..offset]
+        .chars()
+        .rev()
+        .find(|ch| !chars_horizontal_ws(*ch) && *ch != '\u{FFFC}');
+    if left.is_some_and(|ch| ch != '\n') {
+        return false;
+    }
+    let right = body[offset + placeholder..]
+        .chars()
+        .find(|ch| !chars_horizontal_ws(*ch) && *ch != '\u{FFFC}');
+    if right.is_some_and(|ch| ch != '\n') {
+        return false;
+    }
+    true
+}
+
+fn chars_horizontal_ws(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\r')
+}
+
+/// Builds the run/image `CssStyleDto` from a node's author-declared properties
+/// only. UA defaults are skipped so an unstyled book emits no CSS (D12).
+fn css_style_from_declared(style: &ComputedStyle) -> Option<CssStyleDto> {
+    let mut out = CssStyleDto::default();
+    let mut any = false;
+    macro_rules! assign {
+        ($slot:expr, $value:expr) => {{
+            let value = $value;
+            if value.is_some() {
+                any = true;
+            }
+            $slot = value;
+        }};
+    }
+    for property in &style.declared {
+        let value = style.get(property);
+        match property.as_str() {
+            "font-size" => assign!(out.font_size, value.and_then(parse_font_size)),
+            "color" => assign!(out.color, value.and_then(parse_color)),
+            "text-align" => assign!(out.text_align, value.and_then(parse_text_align)),
+            "text-indent" => assign!(out.text_indent, value.and_then(parse_length)),
+            "margin-left" => assign!(out.margin_left, value.and_then(parse_length)),
+            "margin-right" => assign!(out.margin_right, value.and_then(parse_length)),
+            "margin-top" => assign!(out.margin_top, value.and_then(parse_length)),
+            "margin-bottom" => assign!(out.margin_bottom, value.and_then(parse_length)),
+            "font-weight" => assign!(out.font_weight, value.and_then(parse_font_weight)),
+            "font-style" => assign!(out.font_style, value.and_then(parse_font_style)),
+            "text-decoration" => {
+                assign!(out.text_decoration, value.and_then(parse_text_decoration))
+            }
+            "font-family" => {
+                assign!(
+                    out.font_family,
+                    value.map(parse_font_family).filter(|s| !s.is_empty())
+                )
+            }
+            "line-height" => assign!(out.line_height, value.and_then(parse_line_height)),
+            "letter-spacing" => assign!(out.letter_spacing, value.and_then(parse_length)),
+            "word-spacing" => assign!(out.word_spacing, value.and_then(parse_length)),
+            "text-transform" => assign!(
+                out.text_transform,
+                value.map(str::to_string).filter(|s| !s.is_empty())
+            ),
+            "white-space" => assign!(
+                out.white_space,
+                value.map(str::to_string).filter(|s| !s.is_empty())
+            ),
+            "width" => assign!(out.width, value.and_then(parse_css_length)),
+            "height" => assign!(out.height, value.and_then(parse_css_length)),
+            "max-width" => assign!(out.max_width, value.and_then(parse_css_length)),
+            "max-height" => assign!(out.max_height, value.and_then(parse_css_length)),
+            _ => {}
+        }
+    }
+    any.then_some(out)
+}
+
+/// A bare numeric HTML `width`/`height` attribute value.
+fn parse_plain_number(value: &str) -> Option<f64> {
+    value.trim().parse::<f64>().ok()
+}
+
+/// `em`/`rem`/`pt`/unitless lengths as pixels, matching `_parseLength`.
+///
+/// Percentages are *not* resolved here (Dart treats them as a bare number for
+/// these properties, where CSS would resolve them against the font/container).
+fn parse_length(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    let number = strip_units(trimmed)?;
+    let lower = trimmed.to_lowercase();
+    if lower.ends_with("em") || lower.ends_with("rem") {
+        Some(number * 16.0)
+    } else if lower.ends_with("pt") {
+        Some(number * 1.333)
+    } else {
+        Some(number)
+    }
+}
+
+/// `font-size`, with percentage and `em` resolution, matching `_parseFontSize`.
+fn parse_font_size(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    let number = strip_units(trimmed)?;
+    let lower = trimmed.to_lowercase();
+    if lower.ends_with('%') {
+        Some(number * 16.0 / 100.0)
+    } else if lower.ends_with("em") || lower.ends_with("rem") {
+        Some(number * 16.0)
+    } else if lower.ends_with("pt") {
+        Some(number * 1.333)
+    } else {
+        Some(number)
+    }
+}
+
+/// `line-height`, matching `_parseLineHeight` (percent and `em` stay multipliers).
+fn parse_line_height(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    let lower = trimmed.to_lowercase();
+    if let Some(body) = lower.strip_suffix('%') {
+        return body.trim().parse::<f64>().ok().map(|n| n / 100.0);
+    }
+    if let Some(body) = lower
+        .strip_suffix("em")
+        .or_else(|| lower.strip_suffix("rem"))
+    {
+        return body.trim().parse::<f64>().ok();
+    }
+    if let Some(body) = lower.strip_suffix("px") {
+        return body.trim().parse::<f64>().ok().map(|n| n / 16.0);
+    }
+    if let Some(body) = lower.strip_suffix("pt") {
+        return body.trim().parse::<f64>().ok().map(|n| n * 1.333 / 16.0);
+    }
+    if let Ok(number) = trimmed.parse::<f64>() {
+        return Some(number);
+    }
+    parse_length(trimmed)
+}
+
+/// Box-model lengths, keeping `%` (and viewport units) symbolic, matching
+/// `_parseCssLength`.
+fn parse_css_length(value: &str) -> Option<CssLengthDto> {
+    let trimmed = value.trim();
+    let lower = trimmed.to_lowercase();
+    if lower.is_empty()
+        || matches!(
+            lower.as_str(),
+            "auto" | "none" | "initial" | "inherit" | "unset"
+        )
+    {
+        return None;
+    }
+    if let Some(body) = lower.strip_suffix('%') {
+        return body.trim().parse::<f64>().ok().map(|value| CssLengthDto {
+            value,
+            is_percent: true,
+        });
+    }
+    if let Some(body) = lower
+        .strip_suffix("vw")
+        .or_else(|| lower.strip_suffix("vh"))
+    {
+        return body.trim().parse::<f64>().ok().map(|value| CssLengthDto {
+            value,
+            is_percent: true,
+        });
+    }
+    let number: f64 = strip_trailing_letters(trimmed).parse().ok()?;
+    if lower.ends_with("em") || lower.ends_with("rem") {
+        Some(CssLengthDto {
+            value: number * 16.0,
+            is_percent: false,
+        })
+    } else if lower.ends_with("pt") {
+        Some(CssLengthDto {
+            value: number * 1.333,
+            is_percent: false,
+        })
+    } else {
+        Some(CssLengthDto {
+            value: number,
+            is_percent: false,
+        })
+    }
+}
+
+/// Strips every ASCII letter and `%` then parses the number, matching the Dart
+/// `replaceAll(RegExp(r'[a-zA-Z%]'), '')`.
+fn strip_units(value: &str) -> Option<f64> {
+    let numeric: String = value
+        .chars()
+        .filter(|ch| !ch.is_ascii_alphabetic() && *ch != '%')
+        .collect();
+    numeric.trim().parse::<f64>().ok()
+}
+
+/// Strips trailing ASCII letters, matching `replaceAll(RegExp(r'[a-z]+$'), '')`.
+fn strip_trailing_letters(value: &str) -> &str {
+    value.trim_end_matches(|ch: char| ch.is_ascii_alphabetic())
+}
+
+fn parse_text_align(value: &str) -> Option<String> {
+    let v = value.trim().to_lowercase();
+    matches!(v.as_str(), "left" | "center" | "right" | "justify").then_some(v)
+}
+
+fn parse_font_weight(value: &str) -> Option<f64> {
+    match value.trim().to_lowercase().as_str() {
+        "bold" => Some(700.0),
+        "bolder" => Some(800.0),
+        "lighter" => Some(300.0),
+        "100" => Some(100.0),
+        "200" => Some(200.0),
+        "300" => Some(300.0),
+        "400" => Some(400.0),
+        "500" => Some(500.0),
+        "600" => Some(600.0),
+        "700" => Some(700.0),
+        "800" => Some(800.0),
+        "900" => Some(900.0),
+        _ => None,
+    }
+}
+
+fn parse_font_style(value: &str) -> Option<String> {
+    let v = value.trim().to_lowercase();
+    matches!(v.as_str(), "italic" | "oblique").then(|| "italic".to_string())
+}
+
+fn parse_text_decoration(value: &str) -> Option<String> {
+    let v = value.trim().to_lowercase();
+    if v.contains("underline") {
+        Some("underline".to_string())
+    } else if v.contains("line-through") {
+        Some("lineThrough".to_string())
+    } else if v.contains("overline") {
+        Some("overline".to_string())
+    } else {
+        None
+    }
+}
+
+/// Strips `'`/curly double quotes and trims, matching `propsToCssStyle`.
+fn parse_font_family(value: &str) -> String {
+    value
+        .replace(['\'', '\u{201C}', '\u{201D}'], "")
+        .trim()
+        .to_string()
+}
+
+fn parse_color(value: &str) -> Option<u32> {
+    let v = value.trim().to_lowercase();
+    let named = match v.as_str() {
+        "black" => Some(0xFF00_0000),
+        "white" => Some(0xFFFF_FFFF),
+        "red" => Some(0xFFFF_0000),
+        "green" => Some(0xFF00_8000),
+        "blue" => Some(0xFF00_00FF),
+        "gray" | "grey" => Some(0xFF80_8080),
+        "silver" => Some(0xFFC0_C0C0),
+        "orange" => Some(0xFFFF_A500),
+        "purple" => Some(0xFF80_0080),
+        "navy" => Some(0xFF00_0080),
+        "teal" => Some(0xFF00_8080),
+        "maroon" => Some(0xFF80_0000),
+        "olive" => Some(0xFF80_8000),
+        "yellow" => Some(0xFFFF_FF00),
+        _ => None,
+    };
+    if let Some(argb) = named {
+        return Some(argb);
+    }
+
+    if let Some(hex) = v.strip_prefix('#') {
+        if hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return match hex.len() {
+                3 => {
+                    let r = u32::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
+                    let g = u32::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
+                    let b = u32::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+                    Some(0xFF00_0000 | (r << 16) | (g << 8) | b)
+                }
+                6 => {
+                    let rgb = u32::from_str_radix(hex, 16).ok()?;
+                    Some(0xFF00_0000 | rgb)
+                }
+                8 => u32::from_str_radix(hex, 16).ok(),
+                _ => None,
+            };
+        }
+        return None;
+    }
+
+    parse_rgb_function(&v)
+}
+
+/// `rgb(r,g,b)` / `rgba(r,g,b,a)` — a deliberately small scanner, matching the
+/// Dart regex (decimal channels, optional float alpha).
+fn parse_rgb_function(value: &str) -> Option<u32> {
+    let open = value.find("rgb")?;
+    let start = value[open..].find('(')? + open;
+    let end = value[start..].find(')')? + start;
+    let inner = &value[start + 1..end];
+    let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let r: u32 = parts[0].parse().ok()?;
+    let g: u32 = parts[1].parse().ok()?;
+    let b: u32 = parts[2].parse().ok()?;
+    let a: u32 = match parts.get(3) {
+        Some(raw) => (raw.parse::<f64>().ok()? * 255.0).round() as u32,
+        None => 255,
+    };
+    Some(((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF))
+}
+
+/// Reads the intrinsic (width, height) from an image header, mirroring Dart's
+/// `_decodeImageDimensions`. Unknown formats yield `(0, 0)` ("unknown").
+pub fn image_dimensions(bytes: &[u8]) -> (u32, u32) {
+    // PNG: IHDR width/height are big-endian u32 at bytes 16/20.
+    if bytes.len() >= 24 && bytes[..4] == [0x89, b'P', b'N', b'G'] {
+        let w = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+        let h = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+        return (w, h);
+    }
+    // GIF: logical screen size, little-endian u16 at 6/8.
+    if bytes.len() >= 10 && bytes[..3] == *b"GIF" {
+        let w = u16::from_le_bytes([bytes[6], bytes[7]]) as u32;
+        let h = u16::from_le_bytes([bytes[8], bytes[9]]) as u32;
+        return (w, h);
+    }
+    // BMP: int32 LE width at 18, height at 22.
+    if bytes.len() >= 26 && bytes[..2] == *b"BM" {
+        let w = i32::from_le_bytes([bytes[18], bytes[19], bytes[20], bytes[21]]);
+        let h = i32::from_le_bytes([bytes[22], bytes[23], bytes[24], bytes[25]]);
+        return (w.unsigned_abs(), h.unsigned_abs());
+    }
+    // WebP: RIFF container, first chunk's canvas size.
+    if bytes.len() >= 30 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        match &bytes[12..16] {
+            b"VP8X" => {
+                let w = 1 + (bytes[24] as u32 | (bytes[25] as u32) << 8 | (bytes[26] as u32) << 16);
+                let h = 1 + (bytes[27] as u32 | (bytes[28] as u32) << 8 | (bytes[29] as u32) << 16);
+                return (w, h);
+            }
+            b"VP8L" if bytes.len() >= 25 => {
+                let b0 = bytes[21] as u32;
+                let b1 = bytes[22] as u32;
+                let b2 = bytes[23] as u32;
+                let b3 = bytes[24] as u32;
+                let w = 1 + (((b1 & 0x3F) << 8) | b0);
+                let h = 1 + (((b3 & 0x0F) << 10) | (b2 << 2) | ((b1 & 0xC0) >> 6));
+                return (w, h);
+            }
+            b"VP8 " if bytes.len() >= 30 => {
+                let w = (bytes[26] as u32 | (bytes[27] as u32) << 8) & 0x3FFF;
+                let h = (bytes[28] as u32 | (bytes[29] as u32) << 8) & 0x3FFF;
+                return (w, h);
+            }
+            _ => {}
+        }
+    }
+    // JPEG: scan for a SOF0–SOF15 marker (excluding DHT/JPG/DAC).
+    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
+        let mut i = 2usize;
+        while i + 9 < bytes.len() {
+            if bytes[i] != 0xFF {
+                i += 1;
+                continue;
+            }
+            let marker = bytes[i + 1];
+            if (0xC0..=0xCF).contains(&marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC
+            {
+                let h = u16::from_be_bytes([bytes[i + 5], bytes[i + 6]]) as u32;
+                let w = u16::from_be_bytes([bytes[i + 7], bytes[i + 8]]) as u32;
+                return (w, h);
+            }
+            let len = u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
+            i += 2 + len;
+        }
+    }
+    (0, 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::epub::block::parse_xhtml;
+    use crate::epub::cascade::resolve_stylesheets;
+    use std::collections::HashMap;
+
+    /// Parses `xml` and attaches the cascade for the inline `css`.
+    fn styled(xml: &str, css: &str) -> BlockTree {
+        let mut tree = parse_xhtml(xml);
+        let inline: Vec<String> = if css.is_empty() {
+            Vec::new()
+        } else {
+            vec![css.to_string()]
+        };
+        let table = resolve_stylesheets(&HashMap::new(), |_| None, &inline, &tree);
+        table.attach(&mut tree);
+        tree
+    }
+
+    /// Projects with no readable resources (string behaviour only).
+    fn project(tree: &BlockTree) -> ChapterDto {
+        project_with(tree, String::new(), |src| (src.to_string(), None))
+    }
+
+    #[test]
+    fn whitespace_collapse_matches_the_dart_renderer() {
+        let tree = styled("<body><h1>One</h1><p>The first chapter.</p></body>", "");
+        let dto = project(&tree);
+        assert_eq!(dto.body, "One\n\nThe first chapter.");
+    }
+
+    #[test]
+    fn emphasis_runs_cover_their_text_and_spaces() {
+        let tree = styled("<body><p>a <em>b</em> c</p></body>", "");
+        let dto = project(&tree);
+        assert_eq!(dto.body, "a b c");
+        assert_eq!(dto.runs.len(), 1);
+        let run = &dto.runs[0];
+        assert!(run.italic);
+        assert_eq!(&dto.body[run.start as usize..run.end as usize], "b");
+    }
+
+    #[test]
+    fn percent_lengths_stay_symbolic() {
+        let tree = styled(
+            "<body><p class=\"wide\">x</p></body>",
+            ".wide { max-width: 100%; width: 50%; }",
+        );
+        let dto = project(&tree);
+        let css = dto
+            .runs
+            .iter()
+            .find_map(|run| run.css.clone())
+            .expect("css");
+        assert_eq!(
+            css.max_width,
+            Some(CssLengthDto {
+                value: 100.0,
+                is_percent: true
+            })
+        );
+        assert_eq!(
+            css.width,
+            Some(CssLengthDto {
+                value: 50.0,
+                is_percent: true
+            })
+        );
+    }
+
+    #[test]
+    fn font_and_colour_values_mirror_the_dart_parser() {
+        let tree = styled(
+            "<body><p class=\"n\">x</p></body>",
+            ".n { font-size: 1.3em; color: #336699; font-weight: bold; text-align: justify; }",
+        );
+        let dto = project(&tree);
+        let css = dto
+            .runs
+            .iter()
+            .find_map(|run| run.css.clone())
+            .expect("css");
+        assert_eq!(css.font_size, Some(1.3 * 16.0));
+        assert_eq!(css.color, Some(0xFF33_6699));
+        assert_eq!(css.font_weight, Some(700.0));
+        assert_eq!(css.text_align.as_deref(), Some("justify"));
+    }
+
+    #[test]
+    fn blockquote_text_is_quoted() {
+        let tree = styled("<body><blockquote><p>q</p></blockquote></body>", "");
+        let dto = project(&tree);
+        let run = dto.runs.iter().find(|run| run.quote).expect("quote run");
+        assert_eq!(&dto.body[run.start as usize..run.end as usize], "q");
+    }
+
+    #[test]
+    fn image_dimensions_read_png_headers() {
+        // 8x4 PNG header.
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        png.extend_from_slice(&13u32.to_be_bytes());
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&8u32.to_be_bytes());
+        png.extend_from_slice(&4u32.to_be_bytes());
+        assert_eq!(image_dimensions(&png), (8, 4));
+        assert_eq!(image_dimensions(b"not an image"), (0, 0));
+    }
+}

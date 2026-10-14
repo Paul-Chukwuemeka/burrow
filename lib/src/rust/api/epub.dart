@@ -5,8 +5,11 @@
 
 import '../epub/cascade.dart';
 import '../epub/model.dart';
+import '../epub/project.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
+// These functions are ignored because they are not marked as `pub`: `chapter_title_for`
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
 ///
@@ -65,6 +68,19 @@ Future<BlockTree> blockTree({
 /// The book's `@font-face` families, extracted when the handle was opened.
 Future<List<FontFaceDto>> fontFaces({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubFontFaces(handle: handle);
+
+/// Projects one spine chapter into today's flat-run model (spec D4/D6).
+///
+/// `index` is the spine reading order, as returned by [`spine`]. The projected
+/// `body` carries one `\u{FFFC}` per image, every run/image offset is a Dart
+/// UTF-16 code unit, `%` box lengths stay symbolic, and no resource bytes cross
+/// the boundary (`ImageRunDto::source_key` is the reference Task 8 hydrates).
+/// The chapter's title comes from its first TOC entry, falling back to the
+/// document's own `<title>`/`<h1>`.
+Future<ChapterDto> chapter({
+  required DocumentHandle handle,
+  required int index,
+}) => RustLib.instance.api.crateApiEpubChapter(handle: handle, index: index);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}
