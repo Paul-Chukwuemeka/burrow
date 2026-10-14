@@ -5,6 +5,7 @@ import 'package:burrow/models/style_run.dart' show ImageRun;
 import 'package:burrow/src/rust/api/epub.dart' as rust;
 import 'package:burrow/src/rust/epub/project.dart' show ChapterDto;
 
+import '../../models/book.dart';
 import '../../utils/book_title.dart';
 import '../document_parser.dart';
 import '../epub_css_parser.dart';
@@ -45,8 +46,17 @@ class RustEpubEngine implements EpubEngine {
     );
   }
 
+  /// Extracts only metadata and cover bytes via the Rust OPF reader.
+  ///
+  /// Non-EPUB formats have no OPF, so they fall back to the Dart
+  /// implementation (filename title, first-page comic cover) rather than
+  /// failing as "not a valid EPUB". The OPF duality this task removes exists
+  /// only for EPUBs; nothing else parses an OPF.
   @override
   Future<ParsedMetadata> extractMetadata(String path) async {
+    if (formatFromExtension(path) != BookFormat.epub) {
+      return DocumentParser.extractMetadata(path);
+    }
     final metadata = await rust.readMetadata(path: path);
     return EpubDtoMapper.toParsedMetadata(
       metadata,

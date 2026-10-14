@@ -18,7 +18,7 @@ import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
 import 'document_parser.dart';
-import 'epub/epub_engine.dart';
+import 'epub/epub_engine_factory.dart';
 import 'missing_matcher.dart';
 
 /// Status event for metadata extraction.
@@ -872,8 +872,9 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Number of metadata extractions to run concurrently. Each runs in its own
-  /// isolate via [DocumentParser.extractMetadata]. Capped low so background
-  /// extraction never starves the UI or spikes memory during bulk imports.
+  /// isolate via the active content engine's [EpubEngine.extractMetadata].
+  /// Capped low so background extraction never starves the UI or spikes
+  /// memory during bulk imports.
   static int get _metadataConcurrency {
     final cores = Platform.numberOfProcessors;
     return cores <= 2 ? 1 : 2;
@@ -1025,7 +1026,9 @@ class LibraryService extends ChangeNotifier {
 
     ParsedMetadata doc;
     try {
-      doc = await DocumentParser.extractMetadata(book.path);
+      // Library metadata comes from the same engine (and the same OPF
+      // implementation) as the reader, behind the reversible engine flag.
+      doc = await createEpubEngine(_epubEngine).extractMetadata(book.path);
     } on FormatException {
       debugPrint('Metadata parse skip (format): ${book.title}');
       book.metadataComplete = true;

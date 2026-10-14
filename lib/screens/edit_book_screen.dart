@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
-import '../services/document_parser.dart';
+import '../services/epub/epub_engine_factory.dart';
 import '../services/library_service.dart';
 import '../services/metadata_api_service.dart';
 import '../theme/burrow_tokens.dart';
@@ -156,7 +156,9 @@ class _EditBookScreenState extends State<EditBookScreen> {
     if (_refetching) return;
     setState(() => _refetching = true);
     try {
-      final meta = await DocumentParser.extractMetadata(widget.book.path);
+      final meta = await createEpubEngine(
+        widget.library.epubEngine,
+      ).extractMetadata(widget.book.path);
       if (!mounted) return;
       _titleCtrl.text = meta.title;
       _authorCtrl.text = meta.author;
