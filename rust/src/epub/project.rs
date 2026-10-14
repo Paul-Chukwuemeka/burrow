@@ -31,6 +31,7 @@ use crate::epub::model::{BlockKind, BlockTree};
 use crate::epub::units;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// A whole chapter projected into the flat-run model.
 ///
@@ -193,15 +194,18 @@ pub struct SplitEntry {
 ///
 /// `chapter_key` is the chapter's normalised archive key (its directory is the
 /// base for resolving image `src`s); `archive` supplies image bytes for the
-/// intrinsic-size read.
+/// intrinsic-size read. `cover_hrefs` are the OPF-declared cover keys (see
+/// `Navigation::cover_hrefs`): an image resolving to one is full-width, exactly
+/// like Dart's `coverHrefs` check alongside the id/filename "cover" match.
 pub fn project_tree(
     tree: &BlockTree,
     title: String,
     archive: &EpubArchive,
     chapter_key: &str,
+    cover_hrefs: &HashSet<String>,
 ) -> ChapterDto {
     let base_dir = dir_of(chapter_key);
-    project_with(tree, title, |src| {
+    project_with(tree, title, cover_hrefs, |src| {
         let key = resolve_href(&base_dir, src);
         let bytes = archive.read_by_key(&key);
         (key, bytes)
@@ -226,9 +230,10 @@ pub fn project_split(
     entries: &[SplitEntry],
     archive: &EpubArchive,
     chapter_key: &str,
+    cover_hrefs: &HashSet<String>,
 ) -> Vec<ChapterDto> {
     let base_dir = dir_of(chapter_key);
-    project_split_with(tree, fallback_title, entries, |src| {
+    project_split_with(tree, fallback_title, entries, cover_hrefs, |src| {
         let key = resolve_href(&base_dir, src);
         let bytes = archive.read_by_key(&key);
         (key, bytes)
@@ -241,12 +246,13 @@ pub fn project_split_with<F>(
     tree: &BlockTree,
     fallback_title: String,
     entries: &[SplitEntry],
+    cover_hrefs: &HashSet<String>,
     read: F,
 ) -> Vec<ChapterDto>
 where
     F: Fn(&str) -> (String, Option<Vec<u8>>),
 {
-    let (mut full, anchors) = project_full_with(tree, String::new(), read);
+    let (mut full, anchors) = project_full_with(tree, String::new(), cover_hrefs, read);
     if entries.is_empty() {
         full.title = fallback_title;
         return vec![full];
@@ -257,11 +263,16 @@ where
 /// Projection with an injectable resource reader, so the string behaviour is
 /// testable without a real archive. `read(src)` returns the resolved archive
 /// key and its bytes (if any).
-pub fn project_with<F>(tree: &BlockTree, title: String, read: F) -> ChapterDto
+pub fn project_with<F>(
+    tree: &BlockTree,
+    title: String,
+    cover_hrefs: &HashSet<String>,
+    read: F,
+) -> ChapterDto
 where
     F: Fn(&str) -> (String, Option<Vec<u8>>),
 {
-    project_full_with(tree, title, read).0
+    project_full_with(tree, title, cover_hrefs, read).0
 }
 
 /// The full-document projection plus its anchor map.
@@ -272,6 +283,7 @@ where
 fn project_full_with<F>(
     tree: &BlockTree,
     title: String,
+    cover_hrefs: &HashSet<String>,
     read: F,
 ) -> (ChapterDto, HashMap<String, u32>)
 where
@@ -280,6 +292,7 @@ where
     let mut projector = Projector {
         tree,
         read,
+        cover_hrefs,
         body: String::new(),
         runs: Vec::new(),
         images: Vec::new(),
@@ -391,6 +404,8 @@ struct OpenNode {
 struct Projector<'a, F> {
     tree: &'a BlockTree,
     read: F,
+    /// OPF-declared cover keys (Dart's `coverHrefs`), for full-width marking.
+    cover_hrefs: &'a HashSet<String>,
     body: String,
     runs: Vec<RawRun>,
     images: Vec<RawImage>,
@@ -629,6 +644,8 @@ where
         self.last_char = Some('\u{FFFC}');
 
         let (key, bytes) = (self.read)(&src);
+        // Resolve the OPF-cover check before `key` moves into `source_key`.
+        let is_opf_cover = self.cover_hrefs.contains(&key);
         let source_key = bytes.as_ref().map(|_| key);
         let (intrinsic_w, intrinsic_h) = bytes.as_deref().map(image_dimensions).unwrap_or((0, 0));
 
@@ -645,7 +662,10 @@ where
             .as_deref()
             .map(|id| id.to_lowercase().contains("cover"))
             .unwrap_or(false);
-        let full_width = id_cover || file_name.contains("cover");
+        // Dart's cover rule: id or filename containing "cover", or the image
+        // resolving to an OPF-declared cover href. `key` is the resolved
+        // normalised archive key, directly comparable to `cover_hrefs`.
+        let full_width = id_cover || file_name.contains("cover") || is_opf_cover;
 
         let css = css_style_from_declared(&self.tree.nodes[index].style)
             .filter(CssStyleDto::has_image_sizing);
@@ -1453,6 +1473,125 @@ fn parse_rgb_function(value: &str) -> Option<u32> {
     Some(((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF))
 }
 
+/// True when the bytes open as XML/SVG, mirroring Dart's `_looksLikeSvg`:
+/// within the first 64 bytes, the first byte that is not whitespace or a UTF-8
+/// BOM byte is `<`. Byte-wise, like Dart (which compares raw bytes, not chars).
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    for &b in bytes.iter().take(64) {
+        if b == b'<' {
+            return true;
+        }
+        if !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0xEF | 0xBB | 0xBF) {
+            return false;
+        }
+    }
+    false
+}
+
+/// Best-effort SVG dimensions from `viewBox`, then `width`/`height`, mirroring
+/// Dart's `_decodeSvgDimensions` (viewBox wins; `0` when unresolved).
+fn svg_dimensions(bytes: &[u8]) -> (u32, u32) {
+    const LIMIT: usize = 8192;
+    let slice = if bytes.len() > LIMIT {
+        &bytes[..LIMIT]
+    } else {
+        bytes
+    };
+    let text = String::from_utf8_lossy(slice);
+    if let Some(view_box) = attr_value(&text, "viewBox") {
+        let parts: Vec<&str> = view_box
+            .split(|c: char| c.is_whitespace() || c == ',')
+            .filter(|p| !p.is_empty())
+            .collect();
+        if parts.len() == 4 {
+            if let (Ok(w), Ok(h)) = (parts[2].parse::<f64>(), parts[3].parse::<f64>()) {
+                if w > 0.0 && h > 0.0 {
+                    return (w.round() as u32, h.round() as u32);
+                }
+            }
+        }
+    }
+    // Bare leading number of `width`/`height` (`[\d.]+`, like Dart).
+    let w = attr_value(&text, "width").and_then(|v| leading_number(&v));
+    let h = attr_value(&text, "height").and_then(|v| leading_number(&v));
+    match (w, h) {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => (w.round() as u32, h.round() as u32),
+        _ => (0, 0),
+    }
+}
+
+/// The value of the first `name="..."` (or `'...'`) attribute whose name starts
+/// on a word boundary, or `None`. `viewBox` keeps its case; `width`/`height`
+/// match ASCII case-insensitively, like the Dart regexes.
+fn attr_value(text: &str, name: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + name.len() <= bytes.len() {
+        // `get` keeps every slice on a char boundary (non-ASCII text steps
+        // through one byte at a time but never slices mid-char).
+        let boundary = text.get(i..).is_some();
+        if boundary && (i == 0 || !is_word_byte(bytes[i - 1])) && name_matches_at(text, i, name) {
+            let mut j = i + name.len();
+            while j < bytes.len() && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+                j += 1;
+            }
+            if bytes.get(j) != Some(&b'=') {
+                i += 1;
+                continue;
+            }
+            j += 1;
+            while j < bytes.len() && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+                j += 1;
+            }
+            let quote = *bytes.get(j)?;
+            if quote != b'"' && quote != b'\'' {
+                i += 1;
+                continue;
+            }
+            let start = j + 1;
+            let mut end = start;
+            while end < bytes.len() && bytes[end] != quote {
+                end += 1;
+            }
+            if end < bytes.len() {
+                return Some(text[start..end].to_string());
+            }
+            return None;
+        }
+        i += 1;
+    }
+    None
+}
+
+fn name_matches_at(text: &str, at: usize, name: &str) -> bool {
+    let Some(tail) = text.get(at..) else {
+        return false;
+    };
+    if name == "viewBox" {
+        // Case-sensitive, like the Dart regex.
+        tail.starts_with(name)
+    } else {
+        tail.get(..name.len())
+            .is_some_and(|w| w.eq_ignore_ascii_case(name))
+    }
+}
+
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// The leading `[\d.]+` number of an SVG length (`300px` -> `300`).
+fn leading_number(value: &str) -> Option<f64> {
+    let numeric: String = value
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    if numeric.is_empty() {
+        return None;
+    }
+    numeric.parse::<f64>().ok()
+}
+
 /// Reads the intrinsic (width, height) from an image header, mirroring Dart's
 /// `_decodeImageDimensions`. Unknown formats yield `(0, 0)` ("unknown").
 pub fn image_dimensions(bytes: &[u8]) -> (u32, u32) {
@@ -1499,6 +1638,14 @@ pub fn image_dimensions(bytes: &[u8]) -> (u32, u32) {
             _ => {}
         }
     }
+    // SVG: sniff the XML for `viewBox`, then `width`/`height`, mirroring Dart's
+    // `_decodeSvgDimensions` (viewBox wins; anything unresolved stays unknown).
+    if looks_like_svg(bytes) {
+        let (w, h) = svg_dimensions(bytes);
+        if w > 0 && h > 0 {
+            return (w, h);
+        }
+    }
     // JPEG: scan for a SOF0–SOF15 marker (excluding DHT/JPG/DAC).
     if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
         let mut i = 2usize;
@@ -1543,7 +1690,9 @@ mod tests {
 
     /// Projects with no readable resources (string behaviour only).
     fn project(tree: &BlockTree) -> ChapterDto {
-        project_with(tree, String::new(), |src| (src.to_string(), None))
+        project_with(tree, String::new(), &HashSet::new(), |src| {
+            (src.to_string(), None)
+        })
     }
 
     #[test]
@@ -1630,10 +1779,45 @@ mod tests {
         assert_eq!(image_dimensions(b"not an image"), (0, 0));
     }
 
+    #[test]
+    fn image_dimensions_read_svg_view_box() {
+        // Mirrors Dart's `_decodeSvgDimensions`: viewBox wins, then
+        // width/height; an SVG without either stays unknown.
+        let svg = br#"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150" width="300" height="150">
+  <rect width="300" height="150"/>
+</svg>"#;
+        assert_eq!(image_dimensions(svg), (300, 150));
+        let bare = br#"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#;
+        assert_eq!(image_dimensions(bare), (0, 0));
+        // Not XML at all: still unknown, never a panic.
+        assert_eq!(image_dimensions(b"\xff\xd8\xff junk"), (0, 0));
+    }
+
+    #[test]
+    fn opf_declared_cover_is_full_width() {
+        let tree = styled(
+            "<body><p>See <img id=\"fig1\" src=\"Images/front.png\" alt=\"front\"/> here.</p></body>",
+            "",
+        );
+        let covers: HashSet<String> = ["oebps/images/front.png".to_string()].into_iter().collect();
+        let dto = project_with(&tree, String::new(), &covers, |src| {
+            // Resolved exactly like `project_tree` with an `oebps` chapter dir.
+            (resolve_href("oebps", src), Some(vec![0u8; 8]))
+        });
+        assert_eq!(dto.images.len(), 1);
+        assert!(dto.images[0].full_width);
+        // Without the OPF declaration the same image is not full-width.
+        let plain = project(&tree);
+        assert!(!plain.images[0].full_width);
+    }
+
     /// Splits one document into a chapter per anchor, mirroring the Dart
     /// `splitByAnchors` test of the same name.
     fn split(tree: &BlockTree, entries: &[SplitEntry]) -> Vec<ChapterDto> {
-        project_split_with(tree, String::new(), entries, |src| (src.to_string(), None))
+        project_split_with(tree, String::new(), entries, &HashSet::new(), |src| {
+            (src.to_string(), None)
+        })
     }
 
     fn entry(fragment: Option<&str>, title: &str) -> SplitEntry {
@@ -1649,8 +1833,9 @@ mod tests {
             "<body><p>Intro</p><h2 id=\"two\">Two</h2><p id=\"three\">Three</p></body>",
             "",
         );
-        let (full, anchors) =
-            project_full_with(&tree, String::new(), |src| (src.to_string(), None));
+        let (full, anchors) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
+            (src.to_string(), None)
+        });
         // The break belongs to the previous section, not the anchored one.
         assert_eq!(
             utf16_slice(
@@ -1669,8 +1854,9 @@ mod tests {
     #[test]
     fn legacy_a_name_anchors_resolve() {
         let tree = styled("<body><p>One</p><a name=\"two\">Two</a></body>", "");
-        let (full, anchors) =
-            project_full_with(&tree, String::new(), |src| (src.to_string(), None));
+        let (full, anchors) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
+            (src.to_string(), None)
+        });
         assert!(
             utf16_slice(&full.body, anchors["two"] as usize, full.body.len()).starts_with("Two")
         );
@@ -1682,8 +1868,9 @@ mod tests {
             "<body><p id=\"dup\">First</p><p id=\"dup\">Second</p></body>",
             "",
         );
-        let (full, anchors) =
-            project_full_with(&tree, String::new(), |src| (src.to_string(), None));
+        let (full, anchors) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
+            (src.to_string(), None)
+        });
         assert!(
             utf16_slice(&full.body, anchors["dup"] as usize, full.body.len()).starts_with("First")
         );

@@ -7,7 +7,7 @@
 //! divergence must be a classified ledger entry, not an accident.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -50,6 +50,8 @@ pub fn read_metadata_from(archive: &EpubArchive) -> Result<MetadataDto, EpubErro
         genre,
         series_name,
         series_index,
+        title_sort: opf.title_sort,
+        author_sort: opf.author_sort,
         cover_bytes,
         font_faces,
     })
@@ -68,6 +70,12 @@ pub struct Navigation {
     pub spine: Vec<String>,
     /// Table-of-contents entries, in document order.
     pub toc: Vec<TocEntryDto>,
+    /// Normalised archive keys the OPF flags as the cover image, from both the
+    /// EPUB3 `properties="cover-image"` item and the EPUB2
+    /// `<meta name="cover" content="id">` convention (mirroring Dart's
+    /// `coverHrefs`). The projection marks inline images resolving to one of
+    /// these full-width.
+    pub cover_hrefs: HashSet<String>,
 }
 
 /// Reads the manifest, spine order, and TOC from `path`.
@@ -171,6 +179,7 @@ fn parse_navigation(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Navigat
         manifest,
         spine,
         toc,
+        cover_hrefs: cover_hrefs(opf, opf_path),
     }
 }
 
@@ -271,6 +280,8 @@ fn natural_compare_impl(a: &str, b: &str) -> Ordering {
 struct Opf {
     title: String,
     author: String,
+    title_sort: Option<String>,
+    author_sort: Option<String>,
     description: Option<String>,
     language: Option<String>,
     publisher: Option<String>,
@@ -411,10 +422,28 @@ fn handle(out: &mut Opf, frame: &Frame) {
             if out.title.is_empty() && !text.is_empty() {
                 out.title = text.to_string();
             }
+            // Sort forms from the `opf:file-as` attribute (mirroring Dart's
+            // `_parseOpfMetadata`): the first non-empty one wins.
+            if out.title_sort.is_none() {
+                if let Some(fa) = get(&frame.attrs, "file-as") {
+                    let trimmed = fa.trim();
+                    if !trimmed.is_empty() {
+                        out.title_sort = Some(trimmed.to_string());
+                    }
+                }
+            }
         }
         "creator" => {
             if out.author.is_empty() && !text.is_empty() {
                 out.author = text.to_string();
+            }
+            if out.author_sort.is_none() {
+                if let Some(fa) = get(&frame.attrs, "file-as") {
+                    let trimmed = fa.trim();
+                    if !trimmed.is_empty() {
+                        out.author_sort = Some(trimmed.to_string());
+                    }
+                }
             }
         }
         "description" => {
@@ -546,6 +575,45 @@ fn pick_series(metas: &[Meta]) -> (Option<String>, Option<f64>) {
         }
     }
     (name, index)
+}
+
+/// Normalised archive keys the OPF declares as the cover image.
+///
+/// Mirrors Dart's `coverHrefs`: the EPUB2 `<meta name="cover" content="id">`
+/// manifest href and every EPUB3 `properties="cover-image"` href, each resolved
+/// against the OPF directory. (Unlike [`extract_cover`], no `image/` media-type
+/// check applies — Dart flags the href regardless.)
+fn cover_hrefs(opf: &Opf, opf_path: &str) -> HashSet<String> {
+    let base = opf_dir(opf_path);
+    let mut out = HashSet::new();
+    for meta in &opf.metas {
+        let is_cover_meta = meta
+            .name
+            .as_deref()
+            .map(|n| n.eq_ignore_ascii_case("cover"))
+            .unwrap_or(false);
+        if !is_cover_meta {
+            continue;
+        }
+        let Some(id) = &meta.content else { continue };
+        for item in &opf.items {
+            if item.id != *id {
+                continue;
+            }
+            if let Some(href) = &item.href {
+                out.insert(resolve_href(&base, href));
+            }
+        }
+    }
+    for item in &opf.items {
+        if !has_property(item.properties.as_deref(), "cover-image") {
+            continue;
+        }
+        if let Some(href) = &item.href {
+            out.insert(resolve_href(&base, href));
+        }
+    }
+    out
 }
 
 /// Cover bytes: EPUB3 `properties="cover-image"`, then `meta name="cover"`,
@@ -1034,5 +1102,19 @@ mod tests {
             </metadata></package>"#,
         );
         assert_eq!(opf.description.as_deref(), Some("A B\u{2014}CA"));
+    }
+
+    #[test]
+    fn extracts_file_as_sort_forms() {
+        // Mirrors Dart's `_parseOpfMetadata`: the first non-empty `opf:file-as`
+        // on `title`/`creator` wins.
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+            <dc:title opf:file-as="Book, Minimal">Minimal Book</dc:title>
+            <dc:creator opf:file-as="Author, A.">A. Author</dc:creator>
+            </metadata></package>"#,
+        );
+        assert_eq!(opf.title_sort.as_deref(), Some("Book, Minimal"));
+        assert_eq!(opf.author_sort.as_deref(), Some("Author, A."));
     }
 }

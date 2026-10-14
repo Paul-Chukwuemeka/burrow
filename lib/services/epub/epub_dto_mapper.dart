@@ -51,6 +51,8 @@ abstract final class EpubDtoMapper {
       language: metadata.language,
       publicationDate: metadata.publicationDate,
       rights: metadata.rights,
+      titleSort: metadata.titleSort,
+      authorSort: metadata.authorSort,
       fontFaces: fontFacesFrom(metadata),
     );
   }
@@ -73,6 +75,8 @@ abstract final class EpubDtoMapper {
       language: metadata.language,
       publicationDate: metadata.publicationDate,
       rights: metadata.rights,
+      titleSort: metadata.titleSort,
+      authorSort: metadata.authorSort,
     );
   }
 

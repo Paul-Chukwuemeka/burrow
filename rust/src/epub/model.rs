@@ -55,6 +55,8 @@ pub struct MetadataDto {
     pub genre: Option<String>,
     pub series_name: Option<String>,
     pub series_index: Option<f64>,
+    pub title_sort: Option<String>,
+    pub author_sort: Option<String>,
     pub cover_bytes: Option<Vec<u8>>,
     pub font_faces: Vec<FontFaceDto>,
 }

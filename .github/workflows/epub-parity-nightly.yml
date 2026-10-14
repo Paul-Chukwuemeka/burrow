@@ -38,19 +38,19 @@ jobs:
       - name: resolve corpus path
         id: corpus
         run: |
-          if [ -n "${{ inputs.corpus-path }}" ]; then
-            echo "path=${{ inputs.corpus-path }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=${{ vars.EPUB_REAL_CORPUS_PATH }}" >> "$GITHUB_OUTPUT"
+          path="${{ inputs.corpus-path }}"
+          if [ -z "$path" ]; then
+            path="${{ vars.EPUB_REAL_CORPUS_PATH }}"
           fi
-          if [ -z "$(cat "$GITHUB_OUTPUT")" ]; then
-            echo "path=/mnt/book-corpus" >> "$GITHUB_OUTPUT"
+          if [ -z "$path" ]; then
+            path="/mnt/book-corpus"
           fi
-          echo "corpus: $(grep path "$GITHUB_OUTPUT" | cut -d= -f2-)"
-          test -d "$(grep path "$GITHUB_OUTPUT" | cut -d= -f2-)"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "corpus: $path"
+          test -d "$path"
       - name: parity report over the real-book corpus
         run: |
-          dart tool/epub_parity.dart --corpus "${{ steps.corpus.outputs.path }}" 2>&1 \
+          dart tool/epub_parity.dart --corpus "${{ steps.corpus.outputs.path }}" --report-only 2>&1 \
             | tee parity-report.txt
       - name: upload report
         uses: actions/upload-artifact@v4

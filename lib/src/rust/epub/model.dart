@@ -246,6 +246,8 @@ class MetadataDto {
   final String? genre;
   final String? seriesName;
   final double? seriesIndex;
+  final String? titleSort;
+  final String? authorSort;
   final Uint8List? coverBytes;
   final List<FontFaceDto> fontFaces;
 
@@ -261,6 +263,8 @@ class MetadataDto {
     this.genre,
     this.seriesName,
     this.seriesIndex,
+    this.titleSort,
+    this.authorSort,
     this.coverBytes,
     required this.fontFaces,
   });
@@ -278,6 +282,8 @@ class MetadataDto {
       genre.hashCode ^
       seriesName.hashCode ^
       seriesIndex.hashCode ^
+      titleSort.hashCode ^
+      authorSort.hashCode ^
       coverBytes.hashCode ^
       fontFaces.hashCode;
 
@@ -297,6 +303,8 @@ class MetadataDto {
           genre == other.genre &&
           seriesName == other.seriesName &&
           seriesIndex == other.seriesIndex &&
+          titleSort == other.titleSort &&
+          authorSort == other.authorSort &&
           coverBytes == other.coverBytes &&
           fontFaces == other.fontFaces;
 }

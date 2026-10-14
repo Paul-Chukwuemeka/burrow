@@ -3,9 +3,10 @@
 // `classify` compares two `ParsedDocument`s field by field — per chapter the
 // body, run boundaries/styles, image offsets/`source_key`, and titles, plus
 // the book-level metadata — and sorts every difference against the ledger.
-// The gate is "zero unclassified diffs", not zero diffs: accepted improvements
-// (e.g. Rust deriving untitled-chapter titles) and known Rust bugs are
-// recorded with a reason; anything else fails the gate.
+// The gate is "zero unclassified diffs AND zero bug diffs": accepted
+// improvements (e.g. Rust deriving untitled-chapter titles) pass, known Rust
+// bugs fail the gate even when ledgered (design D7: a Rust bug blocks), and
+// anything else fails as unclassified.
 //
 // Two deliberate blind spots, both structural rather than accidental:
 // * `ImageRun.bytes` is excluded: the Rust engine defers bytes across the FFI
@@ -25,7 +26,8 @@ import 'epub_engine.dart';
 ///
 /// [chapter] is the zero-based chapter index, or null for book-level fields
 /// (`chapterCount`, `parse`, `metadata.*`). Chapter-level [field] is one of
-/// `title`, `body`, `runs`, `images`.
+/// `title`, `body`, `runs`, `images`, or `chapter` (a chapter present on one
+/// side only, past the overlapping prefix).
 class ParityDiff {
   const ParityDiff({
     required this.fixture,
@@ -59,7 +61,11 @@ class ParityDiff {
 ///
 /// [fixture] is a corpus basename or `*` for every fixture; [chapter] is an
 /// index or null for any chapter (and always null for book-level fields).
-/// [classification] is `bug` or `accepted`.
+/// [classification] is `bug` or `accepted`. Optional [dartValue]/[rustValue]
+/// narrow the match to diffs with exactly those reported values (null matches
+/// anything): a wildcard entry can scope itself to one value shape — e.g. the
+/// TOC-less title-derivation entry requires an empty Dart title — so it can
+/// never mask a future regression with different values.
 class LedgerEntry {
   const LedgerEntry({
     required this.fixture,
@@ -67,6 +73,8 @@ class LedgerEntry {
     required this.field,
     required this.classification,
     required this.reason,
+    this.dartValue,
+    this.rustValue,
   });
 
   final String fixture;
@@ -74,6 +82,8 @@ class LedgerEntry {
   final String field;
   final String classification;
   final String reason;
+  final String? dartValue;
+  final String? rustValue;
 
   /// True when this entry classifies [diff]. The first matching entry in
   /// ledger order supplies the reported reason, so fixture-specific entries
@@ -81,7 +91,9 @@ class LedgerEntry {
   bool matches(ParityDiff diff) =>
       (fixture == '*' || fixture == diff.fixture) &&
       (chapter == null || chapter == diff.chapter) &&
-      field == diff.field;
+      field == diff.field &&
+      (dartValue == null || dartValue == diff.dartValue) &&
+      (rustValue == null || rustValue == diff.rustValue);
 }
 
 /// The classified comparison of one fixture.
@@ -103,6 +115,12 @@ class DiffReport {
   /// Diffs with no ledger entry. The CI gate requires this to be empty.
   List<ParityDiff> get unclassified =>
       diffs.where((e) => entryFor(e) == null).toList();
+
+  /// Diffs the ledger classifies as `bug`. The gate requires this to be empty
+  /// too (design D7: a Rust bug blocks): `bug` entries document a known gap
+  /// for triage, they never pass it. Only `accepted` entries pass.
+  List<ParityDiff> get bugs =>
+      diffs.where((e) => entryFor(e)?.classification == 'bug').toList();
 }
 
 /// Compares [dart] against [rust] per the parity contract.
@@ -183,6 +201,28 @@ DiffReport classify(
   final count = dart.chapters.length < rust.chapters.length
       ? dart.chapters.length
       : rust.chapters.length;
+  final maxCount = dart.chapters.length > rust.chapters.length
+      ? dart.chapters.length
+      : rust.chapters.length;
+  // Chapters past the overlapping prefix compare per index: without this, an
+  // engine that appends a phantom chapter (or drops one) would show only the
+  // `chapterCount` diff, and a ledger entry on the count could mask which
+  // side disagrees.
+  for (var i = count; i < maxCount; i++) {
+    diffs.add(
+      ParityDiff(
+        fixture: fixture,
+        chapter: i,
+        field: 'chapter',
+        dartValue: i < dart.chapters.length
+            ? 'present: ${dart.chapters[i].title}'
+            : '<missing>',
+        rustValue: i < rust.chapters.length
+            ? 'present: ${rust.chapters[i].title}'
+            : '<missing>',
+      ),
+    );
+  }
   for (var i = 0; i < count; i++) {
     final d = dart.chapters[i];
     final r = rust.chapters[i];
@@ -270,6 +310,9 @@ Future<DiffReport> compareEngines(
 /// Parses ledger JSON of the shape
 /// `{"version":1,"entries":[{fixture,chapter,field,classification,reason}]}`.
 ///
+/// Entries may also carry optional `dartValue`/`rustValue` strings narrowing
+/// which diff values they classify (see [LedgerEntry]).
+///
 /// `chapter` is an int index or null (any chapter). Throws [FormatException]
 /// on any structural problem, including a classification other than
 /// `bug`/`accepted`.
@@ -288,11 +331,15 @@ List<LedgerEntry> parseLedger(String jsonText) {
     final classification = raw['classification'];
     final reason = raw['reason'];
     final chapter = raw['chapter'];
+    final dartValue = raw['dartValue'];
+    final rustValue = raw['rustValue'];
     if (fixture is! String ||
         field is! String ||
         classification is! String ||
         reason is! String ||
-        (chapter != null && chapter is! int)) {
+        (chapter != null && chapter is! int) ||
+        (dartValue != null && dartValue is! String) ||
+        (rustValue != null && rustValue is! String)) {
       throw const FormatException(
         'ledger entry needs {fixture, chapter, field, classification, reason}',
       );
@@ -307,14 +354,25 @@ List<LedgerEntry> parseLedger(String jsonText) {
         field: field,
         classification: classification,
         reason: reason,
+        dartValue: dartValue as String?,
+        rustValue: rustValue as String?,
       ),
     );
   }
   return entries;
 }
 
-String _coverSummary(List<int>? bytes) =>
-    bytes == null ? '<null>' : '${bytes.length} bytes';
+String _coverSummary(List<int>? bytes) {
+  if (bytes == null) return '<null>';
+  // Length alone cannot tell two covers apart (or catch a truncation that
+  // keeps the length); fold in an FNV-1a hash so a different image is a diff.
+  var hash = 0x811C9DC5;
+  for (final b in bytes) {
+    hash ^= b;
+    hash = (hash * 0x01000193) & 0xFFFFFFFF;
+  }
+  return '${bytes.length} bytes #${hash.toRadixString(16).padLeft(8, '0')}';
+}
 
 String _fontFacesSummary(Map<String, FontFaceInfo> faces) {
   final keys = faces.keys.toList()..sort();

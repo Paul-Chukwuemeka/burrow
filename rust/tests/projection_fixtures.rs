@@ -34,7 +34,7 @@ fn project_fixture(epub: &str, doc: &str) -> ChapterDto {
     let archive = open(epub);
     let navigation = read_navigation_from(&archive).unwrap();
     let tree = parse_styled_document(&archive, &navigation.manifest, doc).unwrap();
-    project_tree(&tree, String::new(), &archive, doc)
+    project_tree(&tree, String::new(), &archive, doc, &navigation.cover_hrefs)
 }
 
 #[test]
@@ -153,7 +153,14 @@ fn split_fixture(epub: &str, doc: &str) -> Vec<ChapterDto> {
         })
         .collect();
     let tree = parse_styled_document(&archive, &navigation.manifest, doc).unwrap();
-    project_split(&tree, String::new(), &entries, &archive, doc)
+    project_split(
+        &tree,
+        String::new(),
+        &entries,
+        &archive,
+        doc,
+        &navigation.cover_hrefs,
+    )
 }
 
 #[test]

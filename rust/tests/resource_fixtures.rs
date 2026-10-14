@@ -33,7 +33,7 @@ fn project_fixture(epub: &str, doc: &str) -> ChapterDto {
     let archive = EpubArchive::open(&fixture(epub)).unwrap();
     let navigation = read_navigation_from(&archive).unwrap();
     let tree = parse_styled_document(&archive, &navigation.manifest, doc).unwrap();
-    project_tree(&tree, String::new(), &archive, doc)
+    project_tree(&tree, String::new(), &archive, doc, &navigation.cover_hrefs)
 }
 
 #[test]

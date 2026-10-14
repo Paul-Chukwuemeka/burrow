@@ -1081,6 +1081,8 @@ impl SseDecode for crate::epub::model::MetadataDto {
         let mut var_genre = <Option<String>>::sse_decode(deserializer);
         let mut var_seriesName = <Option<String>>::sse_decode(deserializer);
         let mut var_seriesIndex = <Option<f64>>::sse_decode(deserializer);
+        let mut var_titleSort = <Option<String>>::sse_decode(deserializer);
+        let mut var_authorSort = <Option<String>>::sse_decode(deserializer);
         let mut var_coverBytes = <Option<Vec<u8>>>::sse_decode(deserializer);
         let mut var_fontFaces = <Vec<crate::epub::model::FontFaceDto>>::sse_decode(deserializer);
         return crate::epub::model::MetadataDto {
@@ -1095,6 +1097,8 @@ impl SseDecode for crate::epub::model::MetadataDto {
             genre: var_genre,
             series_name: var_seriesName,
             series_index: var_seriesIndex,
+            title_sort: var_titleSort,
+            author_sort: var_authorSort,
             cover_bytes: var_coverBytes,
             font_faces: var_fontFaces,
         };
@@ -1619,6 +1623,8 @@ impl flutter_rust_bridge::IntoDart for crate::epub::model::MetadataDto {
             self.genre.into_into_dart().into_dart(),
             self.series_name.into_into_dart().into_dart(),
             self.series_index.into_into_dart().into_dart(),
+            self.title_sort.into_into_dart().into_dart(),
+            self.author_sort.into_into_dart().into_dart(),
             self.cover_bytes.into_into_dart().into_dart(),
             self.font_faces.into_into_dart().into_dart(),
         ]
@@ -2012,6 +2018,8 @@ impl SseEncode for crate::epub::model::MetadataDto {
         <Option<String>>::sse_encode(self.genre, serializer);
         <Option<String>>::sse_encode(self.series_name, serializer);
         <Option<f64>>::sse_encode(self.series_index, serializer);
+        <Option<String>>::sse_encode(self.title_sort, serializer);
+        <Option<String>>::sse_encode(self.author_sort, serializer);
         <Option<Vec<u8>>>::sse_encode(self.cover_bytes, serializer);
         <Vec<crate::epub::model::FontFaceDto>>::sse_encode(self.font_faces, serializer);
     }

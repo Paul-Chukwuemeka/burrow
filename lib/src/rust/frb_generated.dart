@@ -860,8 +860,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MetadataDto dco_decode_metadata_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 13)
-      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return MetadataDto(
       title: dco_decode_String(arr[0]),
       author: dco_decode_String(arr[1]),
@@ -874,8 +874,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       genre: dco_decode_opt_String(arr[8]),
       seriesName: dco_decode_opt_String(arr[9]),
       seriesIndex: dco_decode_opt_box_autoadd_f_64(arr[10]),
-      coverBytes: dco_decode_opt_list_prim_u_8_strict(arr[11]),
-      fontFaces: dco_decode_list_font_face_dto(arr[12]),
+      titleSort: dco_decode_opt_String(arr[11]),
+      authorSort: dco_decode_opt_String(arr[12]),
+      coverBytes: dco_decode_opt_list_prim_u_8_strict(arr[13]),
+      fontFaces: dco_decode_list_font_face_dto(arr[14]),
     );
   }
 
@@ -1460,6 +1462,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_genre = sse_decode_opt_String(deserializer);
     var var_seriesName = sse_decode_opt_String(deserializer);
     var var_seriesIndex = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_titleSort = sse_decode_opt_String(deserializer);
+    var var_authorSort = sse_decode_opt_String(deserializer);
     var var_coverBytes = sse_decode_opt_list_prim_u_8_strict(deserializer);
     var var_fontFaces = sse_decode_list_font_face_dto(deserializer);
     return MetadataDto(
@@ -1474,6 +1478,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       genre: var_genre,
       seriesName: var_seriesName,
       seriesIndex: var_seriesIndex,
+      titleSort: var_titleSort,
+      authorSort: var_authorSort,
       coverBytes: var_coverBytes,
       fontFaces: var_fontFaces,
     );
@@ -1988,6 +1994,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.genre, serializer);
     sse_encode_opt_String(self.seriesName, serializer);
     sse_encode_opt_box_autoadd_f_64(self.seriesIndex, serializer);
+    sse_encode_opt_String(self.titleSort, serializer);
+    sse_encode_opt_String(self.authorSort, serializer);
     sse_encode_opt_list_prim_u_8_strict(self.coverBytes, serializer);
     sse_encode_list_font_face_dto(self.fontFaces, serializer);
   }

@@ -6,8 +6,9 @@
 //! `test/fixtures/epub/`, checks the structural invariants the Dart engine
 //! relies on (one `\u{FFFC}` per image, UTF-16 offsets in range), and pins the
 //! known-divergence behaviours the ledger classifies (nav-first TOC,
-//! all-miss spine fallback, missing-image placeholder, SVG 0x0 intrinsics,
-//! block-markup descriptions, OPF-cover inline `full_width`).
+//! all-miss spine fallback, missing-image placeholder, SVG placeholder with
+//! decoded intrinsics, block-markup descriptions, OPF-cover inline
+//! `full_width`).
 //!
 //! `cargo test` runs with `rust/` as the working directory, so fixtures are
 //! resolved via `CARGO_MANIFEST_DIR` rather than a bare relative path.
@@ -15,8 +16,8 @@
 use rust_lib_burrow::api::epub::{chapter, chapter_count, metadata, open_epub};
 
 /// Every committed synthetic fixture. `generate.py` is the source of truth;
-///
-/// this list must stay in sync with it.
+/// `corpus_list_matches_the_fixture_directory` below fails if this list drifts
+/// from it (findings: the gate must not silently skip a new fixture).
 fn corpus() -> Vec<&'static str> {
     vec![
         "anchor-split.epub",
@@ -48,6 +49,23 @@ fn fixture(name: &str) -> String {
 
 fn utf16_len(s: &str) -> u32 {
     s.encode_utf16().count() as u32
+}
+
+#[test]
+fn corpus_list_matches_the_fixture_directory() {
+    // The gate iterates this list: a fixture missing here is silently never
+    // compared. Fail when the list drifts from `generate.py`'s output.
+    let dir = format!("{}/../test/fixtures/epub", env!("CARGO_MANIFEST_DIR"));
+    let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{dir}: {e}"))
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.to_lowercase().ends_with(".epub"))
+        .collect();
+    on_disk.sort();
+    let mut listed: Vec<String> = corpus().into_iter().map(str::to_string).collect();
+    listed.sort();
+    assert_eq!(listed, on_disk);
 }
 
 #[test]
@@ -127,15 +145,16 @@ fn missing_image_keeps_a_placeholder_without_a_source_key() {
 }
 
 #[test]
-fn svg_image_keeps_a_placeholder_with_unknown_intrinsics() {
+fn svg_image_keeps_a_placeholder_with_decoded_intrinsics() {
     // Ledger (accepted): Dart drops `.svg` `<img>` tags entirely, Rust keeps a
-    // placeholder but reads 0x0 (no SVG viewBox sniffing yet).
+    // placeholder. The intrinsics are no longer 0x0: Rust sniffs the SVG
+    // `viewBox`/`width`/`height` exactly like Dart's `_decodeSvgDimensions`.
     let handle = open_epub(fixture("svg-image.epub")).unwrap();
     let dto = chapter(&handle, 0).unwrap();
     assert_eq!(dto.images.len(), 1);
     let image = &dto.images[0];
     assert!(image.source_key.is_some());
-    assert_eq!((image.intrinsic_w, image.intrinsic_h), (0, 0));
+    assert_eq!((image.intrinsic_w, image.intrinsic_h), (300, 150));
 }
 
 #[test]
@@ -151,11 +170,12 @@ fn rich_meta_description_keeps_paragraph_breaks() {
 }
 
 #[test]
-fn opf_cover_inline_image_is_not_full_width() {
-    // Ledger (bug): Dart marks this image full-width via the OPF `coverHrefs`;
-    // Rust only matches id/filename "cover".
+fn opf_cover_inline_image_is_full_width() {
+    // Fixed (was a ledgered bug): Dart marks this image full-width via the OPF
+    // `coverHrefs`; Rust now honors the same declaration instead of matching
+    // only id/filename "cover".
     let handle = open_epub(fixture("cover-inline.epub")).unwrap();
     let dto = chapter(&handle, 0).unwrap();
     assert_eq!(dto.images.len(), 1);
-    assert!(!dto.images[0].full_width);
+    assert!(dto.images[0].full_width);
 }

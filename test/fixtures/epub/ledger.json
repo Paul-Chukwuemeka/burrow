@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Divergence ledger for the Dart-vs-Rust EPUB parity gate (Task 9). The gate is 'zero unclassified diffs', not zero diffs: every entry classifies one known difference as 'accepted' (a Rust improvement, with a reason) or 'bug' (a known Rust gap). Entry order matters: the first matching entry supplies the reported reason, so fixture-specific entries precede the '*' wildcard.",
+  "comment": "Divergence ledger for the Dart-vs-Rust EPUB parity gate (Task 9). The gate is 'zero unclassified diffs AND zero bug diffs': every entry classifies one known difference as 'accepted' (a Rust improvement, with a reason) or 'bug' (a known Rust gap that still FAILS the gate per design D7). Entry order matters: the first matching entry supplies the reported reason, so fixture-specific entries precede the '*' wildcard. Entries may narrow their match with dartValue/rustValue exact-value predicates.",
   "entries": [
     {
       "fixture": "dual-toc.epub",
@@ -56,21 +56,14 @@
       "chapter": 0,
       "field": "body",
       "classification": "accepted",
-      "reason": "SVG <img>: Dart drops it (.svg is not in its EPUB image-entry map); Rust keeps a placeholder but reads intrinsic 0x0 (no SVG viewBox sniffing). Placeholder policy accepted; the 0x0 intrinsic is a known Rust limitation."
+      "reason": "SVG <img>: Dart drops it (.svg is not in its EPUB image-entry map); Rust keeps a sized U+FFFC placeholder with viewBox-decoded intrinsics. Placeholder policy accepted; both sides' intrinsics now agree."
     },
     {
       "fixture": "svg-image.epub",
       "chapter": 0,
       "field": "images",
       "classification": "accepted",
-      "reason": "SVG <img>: Dart drops it (.svg is not in its EPUB image-entry map); Rust keeps a placeholder but reads intrinsic 0x0 (no SVG viewBox sniffing). Placeholder policy accepted; the 0x0 intrinsic is a known Rust limitation."
-    },
-    {
-      "fixture": "cover-inline.epub",
-      "chapter": 0,
-      "field": "images",
-      "classification": "bug",
-      "reason": "Rust marks fullWidth only by id/filename 'cover'; Dart also honors the OPF cover declaration (coverHrefs). Rust misses OPF-declared covers; known Rust gap."
+      "reason": "SVG <img>: Dart drops it (.svg is not in its EPUB image-entry map); Rust keeps a sized U+FFFC placeholder with viewBox-decoded intrinsics. Placeholder policy accepted; both sides' intrinsics now agree."
     },
     {
       "fixture": "projection.epub",
@@ -83,22 +76,8 @@
       "fixture": "projection.epub",
       "chapter": 0,
       "field": "images",
-      "classification": "bug",
-      "reason": "Rust folds HTML width/height attributes into the image CSS as width/height declarations; Dart keeps them in htmlW/htmlH fields only. Values agree (8x4), so rendering is unaffected; the DTO shape is a known Rust gap."
-    },
-    {
-      "fixture": "minimal.epub",
-      "chapter": null,
-      "field": "metadata.titleSort",
-      "classification": "bug",
-      "reason": "Rust OPF parsing does not extract opf:file-as sort forms yet; Dart does. Known Rust gap (needs a MetadataDto/FRB follow-up)."
-    },
-    {
-      "fixture": "minimal.epub",
-      "chapter": null,
-      "field": "metadata.authorSort",
-      "classification": "bug",
-      "reason": "Rust OPF parsing does not extract opf:file-as sort forms yet; Dart does. Known Rust gap (needs a MetadataDto/FRB follow-up)."
+      "classification": "accepted",
+      "reason": "Rust folds HTML width/height attributes into the image CSS as width/height declarations; Dart keeps them in htmlW/htmlH fields only. Values agree (8x4), so rendering is unaffected; the DTO shape difference is accepted."
     },
     {
       "fixture": "embedded-font.epub",
@@ -161,7 +140,8 @@
       "chapter": null,
       "field": "title",
       "classification": "accepted",
-      "reason": "Rust derives untitled chapters from the document <title>/<h1>; Dart leaves them empty. Derived titles improve navigation; accepted improvement (spec D11)."
+      "dartValue": "",
+      "reason": "Rust derives untitled chapters from the document <title>/<h1>; Dart leaves them empty. Scoped to the TOC-less case by the empty-Dart-title value predicate, so a future TOC title regression (non-empty Dart title) cannot hide here. Derived titles improve navigation; accepted improvement (spec D11)."
     }
   ]
 }

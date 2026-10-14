@@ -163,6 +163,7 @@ fn flat_chapters(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
             &entries,
             &handle.archive,
             key,
+            &handle.navigation.cover_hrefs,
         ));
     }
     let result = out.clone();

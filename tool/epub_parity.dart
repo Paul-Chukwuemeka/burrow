@@ -1,9 +1,10 @@
 // Synthetic EPUB parity gate (Task 9).
 //
 // Compares `DartEpubEngine.parse` against `RustEpubEngine.parse` over a corpus
-// directory and fails on UNCLASSIFIED diffs (see
+// directory and fails on UNCLASSIFIED diffs and on `bug`-classified diffs (see
 // `lib/services/epub/epub_parity.dart` and `test/fixtures/epub/ledger.json`).
-// The gate is "zero unclassified diffs", not zero diffs.
+// The gate is "zero unclassified diffs AND zero bug diffs", not zero diffs:
+// only `accepted` entries pass (design D7: a Rust bug blocks).
 //
 // This script is intentionally `dart:io`-only: the engines themselves need
 // Flutter (they share the reader's parser), so the comparison runs inside
@@ -12,7 +13,11 @@
 //
 // Usage (from the package root):
 //   dart tool/epub_parity.dart --corpus test/fixtures/epub --fail-on-unclassified
-//   dart tool/epub_parity.dart --corpus <dir> [--ledger <file>] [--fail-on-unclassified]
+//   dart tool/epub_parity.dart --corpus <dir> [--ledger <file>] [--fail-on-unclassified] [--report-only]
+//
+// `--report-only` runs the gate in report mode (prints every diff, never
+// fails): the nightly real-book job's mode. `--fail-on-unclassified` is kept
+// as a deprecated alias — strictness is now the default.
 //
 // The real-book corpus is NOT run here: it lives outside git (licensed books)
 // and runs as a scheduled nightly job (see `.github/workflows/`).
@@ -22,6 +27,7 @@ void main(List<String> args) async {
   var corpus = 'test/fixtures/epub';
   var ledger = 'test/fixtures/epub/ledger.json';
   var failOnUnclassified = false;
+  var reportOnly = false;
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--corpus':
@@ -30,6 +36,8 @@ void main(List<String> args) async {
         ledger = _value(args, i++);
       case '--fail-on-unclassified':
         failOnUnclassified = true;
+      case '--report-only':
+        reportOnly = true;
       case '--help' || '-h':
         _usage();
         return;
@@ -65,6 +73,7 @@ void main(List<String> args) async {
       'EPUB_PARITY_CORPUS': corpus,
       'EPUB_PARITY_LEDGER': ledger,
       if (failOnUnclassified) 'EPUB_PARITY_FAIL_ON_UNCLASSIFIED': '1',
+      if (reportOnly) 'EPUB_PARITY_REPORT_ONLY': '1',
     },
     mode: ProcessStartMode.inheritStdio,
   );
@@ -83,6 +92,6 @@ String _value(List<String> args, int i) {
 void _usage() {
   // ignore: avoid_print, CLI usage text.
   print(
-    'Usage: dart tool/epub_parity.dart [--corpus <dir>] [--ledger <file>] [--fail-on-unclassified]',
+    'Usage: dart tool/epub_parity.dart [--corpus <dir>] [--ledger <file>] [--fail-on-unclassified] [--report-only]',
   );
 }
