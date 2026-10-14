@@ -515,19 +515,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Attrs dco_decode_attrs(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return Attrs(
       tag: dco_decode_String(arr[0]),
       id: dco_decode_opt_String(arr[1]),
-      class_: dco_decode_opt_String(arr[2]),
-      src: dco_decode_opt_String(arr[3]),
-      href: dco_decode_opt_String(arr[4]),
-      alt: dco_decode_opt_String(arr[5]),
-      width: dco_decode_opt_String(arr[6]),
-      height: dco_decode_opt_String(arr[7]),
-      style: dco_decode_opt_String(arr[8]),
-      align: dco_decode_opt_String(arr[9]),
+      name: dco_decode_opt_String(arr[2]),
+      class_: dco_decode_opt_String(arr[3]),
+      src: dco_decode_opt_String(arr[4]),
+      href: dco_decode_opt_String(arr[5]),
+      alt: dco_decode_opt_String(arr[6]),
+      width: dco_decode_opt_String(arr[7]),
+      height: dco_decode_opt_String(arr[8]),
+      style: dco_decode_opt_String(arr[9]),
+      align: dco_decode_opt_String(arr[10]),
     );
   }
 
@@ -989,6 +990,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_tag = sse_decode_String(deserializer);
     var var_id = sse_decode_opt_String(deserializer);
+    var var_name = sse_decode_opt_String(deserializer);
     var var_class_ = sse_decode_opt_String(deserializer);
     var var_src = sse_decode_opt_String(deserializer);
     var var_href = sse_decode_opt_String(deserializer);
@@ -1000,6 +1002,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return Attrs(
       tag: var_tag,
       id: var_id,
+      name: var_name,
       class_: var_class_,
       src: var_src,
       href: var_href,
@@ -1628,6 +1631,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.tag, serializer);
     sse_encode_opt_String(self.id, serializer);
+    sse_encode_opt_String(self.name, serializer);
     sse_encode_opt_String(self.class_, serializer);
     sse_encode_opt_String(self.src, serializer);
     sse_encode_opt_String(self.href, serializer);

@@ -13,10 +13,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// cascade can run selector matching. The rest are the HTML attributes the
 /// phase-1 model needs; `src`/`href` are kept **raw**, never resolved or fetched
 /// (D9). `style`/`align` feed the cascade: inline `style=""` declarations and
-/// the `align` presentational hint.
+/// the `align` presentational hint. `name` is kept only so the projection can
+/// resolve legacy `<a name="...">` anchors, exactly like the Dart parser.
 class Attrs {
   final String tag;
   final String? id;
+  final String? name;
   final String? class_;
   final String? src;
   final String? href;
@@ -29,6 +31,7 @@ class Attrs {
   const Attrs({
     required this.tag,
     this.id,
+    this.name,
     this.class_,
     this.src,
     this.href,
@@ -43,6 +46,7 @@ class Attrs {
   int get hashCode =>
       tag.hashCode ^
       id.hashCode ^
+      name.hashCode ^
       class_.hashCode ^
       src.hashCode ^
       href.hashCode ^
@@ -59,6 +63,7 @@ class Attrs {
           runtimeType == other.runtimeType &&
           tag == other.tag &&
           id == other.id &&
+          name == other.name &&
           class_ == other.class_ &&
           src == other.src &&
           href == other.href &&

@@ -120,11 +120,13 @@ pub enum BlockKind {
 /// cascade can run selector matching. The rest are the HTML attributes the
 /// phase-1 model needs; `src`/`href` are kept **raw**, never resolved or fetched
 /// (D9). `style`/`align` feed the cascade: inline `style=""` declarations and
-/// the `align` presentational hint.
+/// the `align` presentational hint. `name` is kept only so the projection can
+/// resolve legacy `<a name="...">` anchors, exactly like the Dart parser.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Attrs {
     pub tag: String,
     pub id: Option<String>,
+    pub name: Option<String>,
     pub class: Option<String>,
     pub src: Option<String>,
     pub href: Option<String>,

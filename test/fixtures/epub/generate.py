@@ -706,6 +706,83 @@ def build_projection() -> None:
     )
 
 
+def build_anchor_split() -> None:
+    # Task 7 fix fixture: a SINGLE spine document holding three chapters,
+    # distinguished only by TOC `#fragment` anchors (the anchor-split case the
+    # per-spine projection regressed on). Each section opens with the heading
+    # its TOC entry names, so the heading strip fires; the second section
+    # carries an `<em>` run (run rebasing), the third an `<img>` (image
+    # rebasing). The third anchor id contains a space while the TOC fragment
+    # is percent-encoded (`sec%202`), pinning the anchor-offset tolerance.
+    ch = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Split Book</title></head>\n"
+        "<body>\n"
+        '<h2 id="part1">Part One</h2>\n'
+        "<p>First body.</p>\n"
+        '<h2 id="part2">Part Two</h2>\n'
+        "<p>Second body with <em>emphasis</em>.</p>\n"
+        '<h2 id="sec 2">Part Three</h2>\n'
+        '<p>Third body <img src="../Images/pic.png" alt="tiny"/></p>\n'
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    nav = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:epub="http://www.idpf.org/2007/ops">\n'
+        "<head><title>Contents</title></head>\n"
+        "<body>\n"
+        '  <nav epub:type="toc">\n'
+        "    <ol>\n"
+        '      <li><a href="Text/all.xhtml#part1">Part One</a></li>\n'
+        '      <li><a href="Text/all.xhtml#part2">Part Two</a></li>\n'
+        '      <li><a href="Text/all.xhtml#sec%202">Part Three</a></li>\n'
+        "    </ol>\n"
+        "  </nav>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Split Book</dc:title>\n"
+        "    <dc:creator>S. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:anchor-split</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="nav" href="nav.xhtml" '
+        'media-type="application/xhtml+xml" properties="nav"/>\n'
+        '    <item id="img1" href="Images/pic.png" media-type="image/png"/>\n'
+        '    <item id="all" href="Text/all.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="all"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "anchor-split.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/nav.xhtml", nav, True),
+            ("OEBPS/Images/pic.png", _png(8, 4, (10, 200, 40)), True),
+            ("OEBPS/Text/all.xhtml", ch, True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -719,6 +796,7 @@ def main() -> None:
     build_repeated_paragraphs()
     build_external_css()
     build_projection()
+    build_anchor_split()
     print("wrote fixtures to", HERE)
 
 

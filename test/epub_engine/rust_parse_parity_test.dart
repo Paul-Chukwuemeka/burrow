@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 const _minimal = 'test/fixtures/epub/minimal.epub';
 const _nav = 'test/fixtures/epub/nav.epub';
 const _ncx = 'test/fixtures/epub/ncx.epub';
+const _anchorSplit = 'test/fixtures/epub/anchor-split.epub';
 
 void main() {
   setUpAll(() async {
@@ -68,5 +69,36 @@ void main() {
     final chapter = rust.chapters.single;
     expect('\u{FFFC}'.allMatches(chapter.body).length, chapter.images.length);
     expect(chapter.images.single.sourceKey, 'oebps/images/pic.png');
+  });
+
+  test('Rust parse splits a single-file book at its TOC anchors', () async {
+    final dart = await const DartEpubEngine().parse(_anchorSplit);
+    final rust = await const RustEpubEngine().parse(_anchorSplit);
+
+    // One chapter per TOC fragment, in document order.
+    expect(rust.chapters, hasLength(3));
+    expect(rust.chapters, hasLength(dart.chapters.length));
+
+    for (var i = 0; i < dart.chapters.length; i++) {
+      final expected = dart.chapters[i];
+      final actual = rust.chapters[i];
+      expect(actual.title, expected.title, reason: 'chapter $i title');
+      expect(actual.body, expected.body, reason: 'chapter $i body');
+      expect(actual.runs, expected.runs, reason: 'chapter $i runs');
+      expect(actual.images, hasLength(expected.images.length),
+          reason: 'chapter $i images');
+      for (var j = 0; j < expected.images.length; j++) {
+        expect(actual.images[j].offset, expected.images[j].offset,
+            reason: 'chapter $i image $j offset');
+        expect(actual.images[j].sourceKey, expected.images[j].sourceKey,
+            reason: 'chapter $i image $j sourceKey');
+      }
+    }
+
+    // The flattened chapter list agrees with the TOC titles.
+    final handle = await openEpub(path: _anchorSplit);
+    expect(await chapterTitles(handle: handle),
+        [for (final c in dart.chapters) c.title]);
+    expect(await chapterCount(handle: handle), dart.chapters.length);
   });
 }

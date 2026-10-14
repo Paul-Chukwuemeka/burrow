@@ -9,7 +9,7 @@ import '../epub/project.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `chapter_title_for`
+// These functions are ignored because they are not marked as `pub`: `chapter_title_for`, `flat_chapters`
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
 ///
@@ -37,11 +37,11 @@ Future<List<TocEntryDto>> toc({required DocumentHandle handle}) =>
 Future<List<String>> spine({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubSpine(handle: handle);
 
-/// Returns the chapter titles in reading order.
+/// Returns the chapter titles in reading order (one per TOC anchor).
 Future<List<String>> chapterTitles({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubChapterTitles(handle: handle);
 
-/// Returns the number of chapters in the spine.
+/// Returns the number of chapters (one per TOC anchor, not per spine file).
 Future<int> chapterCount({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubChapterCount(handle: handle);
 
@@ -69,14 +69,17 @@ Future<BlockTree> blockTree({
 Future<List<FontFaceDto>> fontFaces({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubFontFaces(handle: handle);
 
-/// Projects one spine chapter into today's flat-run model (spec D4/D6).
+/// Projects one chapter into today's flat-run model (spec D4/D6).
 ///
-/// `index` is the spine reading order, as returned by [`spine`]. The projected
-/// `body` carries one `\u{FFFC}` per image, every run/image offset is a Dart
-/// UTF-16 code unit, `%` box lengths stay symbolic, and no resource bytes cross
-/// the boundary (`ImageRunDto::source_key` is the reference Task 8 hydrates).
-/// The chapter's title comes from its first TOC entry, falling back to the
-/// document's own `<title>`/`<h1>`.
+/// `index` is the flattened chapter order: every spine document contributes
+/// one chapter per TOC anchor (in document order), mirroring Dart's
+/// `splitByAnchors`. The projected `body` carries one `\u{FFFC}` per image,
+/// every run/image offset is a Dart UTF-16 code unit, `%` box lengths stay
+/// symbolic, and no resource bytes cross the boundary
+/// (`ImageRunDto::source_key` is the reference Task 8 hydrates). A chapter
+/// whose TOC entry has no fragment keeps the document's first TOC title (or
+/// its own `<title>`/`<h1>` when the book has no TOC entry for it), and a
+/// leading body line repeating the title is dropped.
 Future<ChapterDto> chapter({
   required DocumentHandle handle,
   required int index,

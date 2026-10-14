@@ -7,6 +7,8 @@ use crate::epub::nav;
 use crate::epub::opf::{self, Navigation};
 use crate::epub::project::{self, ChapterDto};
 
+use std::sync::Mutex;
+
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
 ///
 /// Returns the crate version so Dart can verify the FFI bridge is wired up.
@@ -27,6 +29,10 @@ pub struct DocumentHandle {
     archive: EpubArchive,
     metadata: MetadataDto,
     navigation: Navigation,
+    /// The flattened chapter list (one chapter per TOC anchor), computed on
+    /// first use. Every chapter read goes through it so `chapter`,
+    /// `chapter_titles` and `chapter_count` can never disagree.
+    flat: Mutex<Option<Vec<ChapterDto>>>,
 }
 
 /// Opens an EPUB, extracts its metadata, and resolves manifest/spine/TOC,
@@ -41,6 +47,7 @@ pub fn open_epub(path: String) -> Result<DocumentHandle, String> {
         archive,
         metadata,
         navigation,
+        flat: Mutex::new(None),
     })
 }
 
@@ -59,14 +66,17 @@ pub fn spine(handle: &DocumentHandle) -> Result<Vec<String>, String> {
     Ok(handle.navigation.spine.clone())
 }
 
-/// Returns the chapter titles in reading order.
+/// Returns the chapter titles in reading order (one per TOC anchor).
 pub fn chapter_titles(handle: &DocumentHandle) -> Result<Vec<String>, String> {
-    Ok(opf::chapter_titles(&handle.archive, &handle.navigation))
+    Ok(flat_chapters(handle)?
+        .into_iter()
+        .map(|chapter| chapter.title)
+        .collect())
 }
 
-/// Returns the number of chapters in the spine.
+/// Returns the number of chapters (one per TOC anchor, not per spine file).
 pub fn chapter_count(handle: &DocumentHandle) -> Result<u32, String> {
-    Ok(chapter_titles(handle)?.len() as u32)
+    Ok(flat_chapters(handle)?.len() as u32)
 }
 
 /// Opens `path` and extracts metadata without keeping a handle (parity helper).
@@ -92,25 +102,58 @@ pub fn font_faces(handle: &DocumentHandle) -> Result<Vec<FontFaceDto>, String> {
     Ok(handle.metadata.font_faces.clone())
 }
 
-/// Projects one spine chapter into today's flat-run model (spec D4/D6).
+/// Projects one chapter into today's flat-run model (spec D4/D6).
 ///
-/// `index` is the spine reading order, as returned by [`spine`]. The projected
-/// `body` carries one `\u{FFFC}` per image, every run/image offset is a Dart
-/// UTF-16 code unit, `%` box lengths stay symbolic, and no resource bytes cross
-/// the boundary (`ImageRunDto::source_key` is the reference Task 8 hydrates).
-/// The chapter's title comes from its first TOC entry, falling back to the
-/// document's own `<title>`/`<h1>`.
+/// `index` is the flattened chapter order: every spine document contributes
+/// one chapter per TOC anchor (in document order), mirroring Dart's
+/// `splitByAnchors`. The projected `body` carries one `\u{FFFC}` per image,
+/// every run/image offset is a Dart UTF-16 code unit, `%` box lengths stay
+/// symbolic, and no resource bytes cross the boundary
+/// (`ImageRunDto::source_key` is the reference Task 8 hydrates). A chapter
+/// whose TOC entry has no fragment keeps the document's first TOC title (or
+/// its own `<title>`/`<h1>` when the book has no TOC entry for it), and a
+/// leading body line repeating the title is dropped.
 pub fn chapter(handle: &DocumentHandle, index: u32) -> Result<ChapterDto, String> {
-    let key = handle
-        .navigation
-        .spine
-        .get(index as usize)
-        .cloned()
-        .ok_or_else(|| format!("Chapter index out of range: {index}"))?;
-    let title = chapter_title_for(handle, &key);
-    let tree = cascade::parse_styled_document(&handle.archive, &handle.navigation.manifest, &key)
-        .map_err(|e| e.to_string())?;
-    Ok(project::project_tree(&tree, title, &handle.archive, &key))
+    flat_chapters(handle)?
+        .into_iter()
+        .nth(index as usize)
+        .ok_or_else(|| format!("Chapter index out of range: {index}"))
+}
+
+/// The flattened chapter list: every spine document in reading order, each
+/// split at its TOC anchors (Dart's `splitByAnchors` + `_stripDuplicateHeading`
+/// semantics). Computed once and cached on the handle.
+fn flat_chapters(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
+    if let Some(cached) = handle.flat.lock().map_err(|e| e.to_string())?.clone() {
+        return Ok(cached);
+    }
+    let mut out = Vec::new();
+    for key in &handle.navigation.spine {
+        let entries: Vec<project::SplitEntry> = handle
+            .navigation
+            .toc
+            .iter()
+            .filter(|entry| entry.file_key == *key)
+            .map(|entry| project::SplitEntry {
+                fragment: entry.fragment.clone(),
+                title: entry.title.clone(),
+            })
+            .collect();
+        let fallback = chapter_title_for(handle, key);
+        let tree =
+            cascade::parse_styled_document(&handle.archive, &handle.navigation.manifest, key)
+                .map_err(|e| e.to_string())?;
+        out.extend(project::project_split(
+            &tree,
+            fallback,
+            &entries,
+            &handle.archive,
+            key,
+        ));
+    }
+    let result = out.clone();
+    *handle.flat.lock().map_err(|e| e.to_string())? = Some(out);
+    Ok(result)
 }
 
 /// The title for one spine document: its first TOC entry's title, else the

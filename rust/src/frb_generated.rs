@@ -596,6 +596,7 @@ impl SseDecode for crate::epub::model::Attrs {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_tag = <String>::sse_decode(deserializer);
         let mut var_id = <Option<String>>::sse_decode(deserializer);
+        let mut var_name = <Option<String>>::sse_decode(deserializer);
         let mut var_class_ = <Option<String>>::sse_decode(deserializer);
         let mut var_src = <Option<String>>::sse_decode(deserializer);
         let mut var_href = <Option<String>>::sse_decode(deserializer);
@@ -607,6 +608,7 @@ impl SseDecode for crate::epub::model::Attrs {
         return crate::epub::model::Attrs {
             tag: var_tag,
             id: var_id,
+            name: var_name,
             class: var_class_,
             src: var_src,
             href: var_href,
@@ -1256,6 +1258,7 @@ impl flutter_rust_bridge::IntoDart for crate::epub::model::Attrs {
         [
             self.tag.into_into_dart().into_dart(),
             self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
             self.class.into_into_dart().into_dart(),
             self.src.into_into_dart().into_dart(),
             self.href.into_into_dart().into_dart(),
@@ -1658,6 +1661,7 @@ impl SseEncode for crate::epub::model::Attrs {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.tag, serializer);
         <Option<String>>::sse_encode(self.id, serializer);
+        <Option<String>>::sse_encode(self.name, serializer);
         <Option<String>>::sse_encode(self.class, serializer);
         <Option<String>>::sse_encode(self.src, serializer);
         <Option<String>>::sse_encode(self.href, serializer);

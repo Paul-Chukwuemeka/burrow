@@ -218,6 +218,7 @@ fn attrs_of(tag: &str, node: &Handle) -> Attrs {
     for (name, value) in dom::attributes(node) {
         match name.as_str() {
             "id" => attrs.id = Some(value),
+            "name" => attrs.name = Some(value),
             "class" => attrs.class = Some(value),
             "src" => attrs.src = Some(value),
             "href" => attrs.href = Some(value),

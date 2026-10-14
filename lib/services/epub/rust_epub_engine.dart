@@ -26,9 +26,11 @@ class RustEpubEngine implements EpubEngine {
   Future<ParsedDocument> parse(String path) async {
     final handle = await rust.openEpub(path: path);
     final metadata = await rust.metadata(handle: handle);
-    final spine = await rust.spine(handle: handle);
+    // One chapter per TOC anchor, not per spine file: `chapterCount` is the
+    // flattened anchor-split length, matching Dart's `splitByAnchors`.
+    final count = await rust.chapterCount(handle: handle);
     final chapters = <ChapterDto>[];
-    for (var index = 0; index < spine.length; index++) {
+    for (var index = 0; index < count; index++) {
       chapters.add(await rust.chapter(handle: handle, index: index));
     }
     return EpubDtoMapper.toParsedDocument(
