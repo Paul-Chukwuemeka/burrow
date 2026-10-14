@@ -418,10 +418,13 @@ class LibraryService extends ChangeNotifier {
 
   /// Persists the content-engine flag so switching engines stays reversible.
   ///
-  /// [engineId] must be one the factory understands (`dart` or `rust`);
-  /// unknown ids fail on the next open rather than here so a future engine
-  /// can be selected before its build lands.
+  /// [engineId] must be one the factory understands (`dart` or `rust`):
+  /// unknown ids throw here so a typo can never persist a flag that bricks
+  /// the next open.
   Future<void> saveEpubEngine(String engineId) async {
+    if (engineId != dartEpubEngineId && engineId != rustEpubEngineId) {
+      throw ArgumentError.value(engineId, 'engineId', 'Unknown EPUB engine');
+    }
     _epubEngine = engineId;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_epubEngineKey, engineId);

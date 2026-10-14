@@ -234,15 +234,23 @@ class FontFaceDto {
 /// carries the raw cover image (the Dart adapter downscales it later), and
 /// `font_faces` is populated once the CSS cascade lands (Task 6); it is empty
 /// during Task 3.
+///
+/// `dc_type`/`dc_source` carry `dc:type`/`dc:source` under a `dc_` prefix (not
+/// bare `type`/`source`) so neither the Rust keyword `type` nor the FRB
+/// codegen needs raw-identifier support; the Dart adapter maps them onto
+/// `ParsedMetadata.type`/`source`.
 class MetadataDto {
   final String title;
   final String author;
   final String? description;
+  final String? annotation;
   final String? publisher;
   final String? isbn;
   final String? language;
   final String? publicationDate;
   final String? rights;
+  final String? dcType;
+  final String? dcSource;
   final String? genre;
   final String? seriesName;
   final double? seriesIndex;
@@ -255,11 +263,14 @@ class MetadataDto {
     required this.title,
     required this.author,
     this.description,
+    this.annotation,
     this.publisher,
     this.isbn,
     this.language,
     this.publicationDate,
     this.rights,
+    this.dcType,
+    this.dcSource,
     this.genre,
     this.seriesName,
     this.seriesIndex,
@@ -274,11 +285,14 @@ class MetadataDto {
       title.hashCode ^
       author.hashCode ^
       description.hashCode ^
+      annotation.hashCode ^
       publisher.hashCode ^
       isbn.hashCode ^
       language.hashCode ^
       publicationDate.hashCode ^
       rights.hashCode ^
+      dcType.hashCode ^
+      dcSource.hashCode ^
       genre.hashCode ^
       seriesName.hashCode ^
       seriesIndex.hashCode ^
@@ -295,11 +309,14 @@ class MetadataDto {
           title == other.title &&
           author == other.author &&
           description == other.description &&
+          annotation == other.annotation &&
           publisher == other.publisher &&
           isbn == other.isbn &&
           language == other.language &&
           publicationDate == other.publicationDate &&
           rights == other.rights &&
+          dcType == other.dcType &&
+          dcSource == other.dcSource &&
           genre == other.genre &&
           seriesName == other.seriesName &&
           seriesIndex == other.seriesIndex &&

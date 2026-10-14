@@ -1160,6 +1160,47 @@ def build_cover_inline() -> None:
     )
 
 
+def build_annotated_meta() -> None:
+    # Final-fix parity fixture: the OPF carries `calibre:annotation`,
+    # `dc:type` and `dc:source`. The parity differ compares these fields, but
+    # no earlier fixture set them, so the gate passed vacuously while the Rust
+    # DTO dropped them (and the library worker overwrote them with null).
+    # This fixture keeps the gate honest: both engines must agree here.
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Annotated Meta</dc:title>\n"
+        "    <dc:creator>A. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:annotated-meta</dc:identifier>\n'
+        "    <dc:type>Text</dc:type>\n"
+        "    <dc:source>https://example.com/annotated-meta</dc:source>\n"
+        '    <meta name="calibre:annotation" content="A Calibre annotation '
+        'for parity."/>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "annotated-meta.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", _xhtml("One", "First."), True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -1181,6 +1222,7 @@ def main() -> None:
     build_svg_image()
     build_rich_meta()
     build_cover_inline()
+    build_annotated_meta()
     print("wrote fixtures to", HERE)
 
 

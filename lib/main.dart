@@ -7,6 +7,7 @@ import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/dictionary_service.dart';
+import 'services/epub/rust_status.dart';
 import 'services/library_service.dart';
 import 'src/rust/frb_generated.dart';
 import 'theme/burrow_tokens.dart';
@@ -17,10 +18,17 @@ Future<void> main() async {
   // design D8). Its FFI binding must be initialized on this isolate before any
   // engine call — without this every EPUB open and OPF metadata extraction
   // fails with "flutter_rust_bridge has not been initialized".
+  //
+  // A failed init must never brick the EPUB path: the factory falls back to
+  // the Dart engine while [isRustEngineAvailable] is false. The `.so` is
+  // currently built for Android only (Gradle `cargo-ndk` task); iOS packaging
+  // is out of scope for Phase A, so iOS always takes this fallback.
   try {
     await RustLib.init();
+    setRustEngineAvailable(true);
   } catch (e) {
     debugPrint('Rust engine unavailable: $e');
+    setRustEngineAvailable(false);
   }
   runApp(const BurrowApp());
 }

@@ -21,6 +21,7 @@ use rust_lib_burrow::api::epub::{chapter, chapter_count, metadata, open_epub};
 fn corpus() -> Vec<&'static str> {
     vec![
         "anchor-split.epub",
+        "annotated-meta.epub",
         "cover-inline.epub",
         "dangling-spine.epub",
         "dual-toc.epub",

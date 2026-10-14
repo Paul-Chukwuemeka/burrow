@@ -127,11 +127,28 @@ pub fn read_resource(handle: &DocumentHandle, key: String) -> Result<Vec<u8>, St
 /// whose TOC entry has no fragment keeps the document's first TOC title (or
 /// its own `<title>`/`<h1>` when the book has no TOC entry for it), and a
 /// leading body line repeating the title is dropped.
+///
+/// Only the requested chapter is cloned out of the cached flat list: the
+/// whole book is projected once, then each `chapter` call is O(1) under one
+/// lock acquisition (previously every call re-cloned every chapter).
 pub fn chapter(handle: &DocumentHandle, index: u32) -> Result<ChapterDto, String> {
-    flat_chapters(handle)?
-        .into_iter()
-        .nth(index as usize)
+    let mut guard = handle.flat.lock().map_err(|e| e.to_string())?;
+    if guard.is_none() {
+        *guard = Some(build_flat(handle)?);
+    }
+    guard
+        .as_ref()
+        .and_then(|flat| flat.get(index as usize).cloned())
         .ok_or_else(|| format!("Chapter index out of range: {index}"))
+}
+
+/// Drops the Rust side of an opened EPUB early.
+///
+/// Dart calls this in a `try/finally` around `parse`/hydration so a failed or
+/// abandoned open never waits on GC finalizers to release the inflated
+/// archive. Taking the handle by value is what runs the destructor.
+pub fn close_document(handle: DocumentHandle) {
+    drop(handle);
 }
 
 /// The flattened chapter list: every spine document in reading order, each
@@ -141,6 +158,16 @@ fn flat_chapters(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
     if let Some(cached) = handle.flat.lock().map_err(|e| e.to_string())?.clone() {
         return Ok(cached);
     }
+    let out = build_flat(handle)?;
+    let result = out.clone();
+    *handle.flat.lock().map_err(|e| e.to_string())? = Some(out);
+    Ok(result)
+}
+
+/// Projects every spine document; the uncached worker behind [`flat_chapters`]
+/// and [`chapter`]. Takes no lock itself: [`chapter`] calls it while holding
+/// `handle.flat`'s lock, [`flat_chapters`] without holding it.
+fn build_flat(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
     let mut out = Vec::new();
     for key in &handle.navigation.spine {
         let entries: Vec<project::SplitEntry> = handle
@@ -166,9 +193,7 @@ fn flat_chapters(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
             &handle.navigation.cover_hrefs,
         ));
     }
-    let result = out.clone();
-    *handle.flat.lock().map_err(|e| e.to_string())? = Some(out);
-    Ok(result)
+    Ok(out)
 }
 
 /// The title for one spine document: its first TOC entry's title, else the

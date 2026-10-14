@@ -38,22 +38,35 @@ class RustEpubEngine implements EpubEngine {
     }
     try {
       final handle = await rust.openEpub(path: path);
-      final metadata = await rust.metadata(handle: handle);
-      // One chapter per TOC anchor, not per spine file: `chapterCount` is the
-      // flattened anchor-split length, matching Dart's `splitByAnchors`.
-      final count = await rust.chapterCount(handle: handle);
-      final chapters = <ChapterDto>[];
-      for (var index = 0; index < count; index++) {
-        chapters.add(await rust.chapter(handle: handle, index: index));
+      try {
+        final metadata = await rust.metadata(handle: handle);
+        // One chapter per TOC anchor, not per spine file: `chapterCount` is the
+        // flattened anchor-split length, matching Dart's `splitByAnchors`.
+        final count = await rust.chapterCount(handle: handle);
+        final chapters = <ChapterDto>[];
+        for (var index = 0; index < count; index++) {
+          chapters.add(await rust.chapter(handle: handle, index: index));
+        }
+        return EpubDtoMapper.toParsedDocument(
+          chapters: chapters,
+          metadata: metadata,
+          fallbackTitle: titleFromFilename(path),
+        );
+      } finally {
+        // The handle owns the inflated archive on the Rust side: release it
+        // deterministically instead of waiting on GC finalizers. Best-effort
+        // so cleanup can never mask the parse result.
+        try {
+          await rust.closeDocument(handle: handle);
+        } catch (_) {}
       }
-      return EpubDtoMapper.toParsedDocument(
-        chapters: chapters,
-        metadata: metadata,
-        fallbackTitle: titleFromFilename(path),
-      );
     } on FormatException {
       rethrow;
     } catch (e) {
+      // Belt and braces behind the factory fallback: a directly-constructed
+      // engine (or a late dlopen failure) degrades to Dart rather than
+      // bricking the open when the native library is absent.
+      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       if (isRustCorruptEpubFailure(e)) {
         throw FormatException(e.toString());
       }
@@ -81,6 +94,9 @@ class RustEpubEngine implements EpubEngine {
     } on FormatException {
       rethrow;
     } catch (e) {
+      if (isRustNotInitializedFailure(e)) {
+        return DocumentParser.extractMetadata(path);
+      }
       if (isRustCorruptEpubFailure(e)) {
         throw FormatException(e.toString());
       }
@@ -121,7 +137,13 @@ class RustEpubEngine implements EpubEngine {
     final Map<String, Uint8List> bytes;
     try {
       final handle = await rust.openEpub(path: path);
-      bytes = await _readKeys(handle, keys);
+      try {
+        bytes = await _readKeys(handle, keys);
+      } finally {
+        try {
+          await rust.closeDocument(handle: handle);
+        } catch (_) {}
+      }
     } catch (_) {
       return doc;
     }
@@ -163,10 +185,16 @@ class RustEpubEngine implements EpubEngine {
     final Map<String, Uint8List> bytes;
     try {
       final handle = await rust.openEpub(path: path);
-      bytes = await _readKeys(handle, {
-        for (final e in doc.fontFaces.entries)
-          if (e.value.bytes == null && e.value.src.isNotEmpty) e.value.src,
-      });
+      try {
+        bytes = await _readKeys(handle, {
+          for (final e in doc.fontFaces.entries)
+            if (e.value.bytes == null && e.value.src.isNotEmpty) e.value.src,
+        });
+      } finally {
+        try {
+          await rust.closeDocument(handle: handle);
+        } catch (_) {}
+      }
     } catch (_) {
       return doc;
     }
@@ -206,6 +234,10 @@ class RustEpubEngine implements EpubEngine {
   }
 
   /// No-op: the Rust engine writes no disk cache in Phase A.
+  ///
+  /// Deliberately narrows to the Dart namespace: if a future Rust cache
+  /// appears it must get its own namespaced `clearCacheFor` here, or book
+  /// deletion will leak Rust entries. See [DocumentParser.clearCacheForSync].
   @override
   void clearCacheFor(String path) {}
 }
@@ -246,6 +278,18 @@ ParsedDocument _rebuildDoc(
     authorSort: doc.authorSort,
     fontFaces: fontFaces ?? doc.fontFaces,
   );
+}
+
+/// Whether a Rust-backend failure means the native library was never
+/// initialized (`RustLib.init()` failed or was skipped) and the call must
+/// degrade to the Dart engine instead of bricking the open.
+///
+/// Matches the `flutter_rust_bridge has not been initialized` guard the
+/// generated bindings throw before touching the native library. Kept separate
+/// from [isRustCorruptEpubFailure]: that one classifies unreadable books,
+/// this one classifies a missing engine.
+bool isRustNotInitializedFailure(Object error) {
+  return error.toString().contains('has not been initialized');
 }
 
 /// Whether a Rust-backend failure means "permanently unreadable" and must be

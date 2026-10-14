@@ -46,6 +46,14 @@ class BlockDto {
 /// `blocks` is the block-tree arena in its original UTF-16 coordinates (an
 /// additive field per D17); `body`/`runs`/`images` are the phase-1 render
 /// contract and are unchanged from the Dart engine's output shape.
+///
+/// Phase-A policy (final fix): chapters produced by [`split_chapters`] — the
+/// path behind the `chapter()` FFI — carry an **empty** `blocks`. The arena
+/// was cloned once per split chapter and discarded by the Dart adapter, so
+/// crossing it cost O(chapters × tree) for no consumer. The tree itself stays
+/// reachable through the dedicated `block_tree()` FFI (which returns the real
+/// [`BlockTree`](crate::epub::model::BlockTree)); `blocks` here is reserved
+/// for Phase B landing it on the domain `Chapter` with a cache-schema bump.
 class ChapterDto {
   final String title;
   final String body;

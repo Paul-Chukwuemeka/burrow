@@ -42,11 +42,14 @@ pub fn read_metadata_from(archive: &EpubArchive) -> Result<MetadataDto, EpubErro
         title: opf.title,
         author: opf.author,
         description: opf.description,
+        annotation: opf.annotation,
         publisher: opf.publisher,
         isbn,
         language: opf.language,
         publication_date: opf.publication_date,
         rights: opf.rights,
+        dc_type: opf.doc_type,
+        dc_source: opf.doc_source,
         genre,
         series_name,
         series_index,
@@ -254,12 +257,17 @@ fn natural_compare_impl(a: &str, b: &str) -> Ordering {
         if ca.is_ascii_digit() && cb.is_ascii_digit() {
             let mut na: u64 = 0;
             let mut nb: u64 = 0;
+            // Saturate: a 20+ digit run must sort stably, never panic/wrap.
             while ia < ar.len() && ar[ia].is_ascii_digit() {
-                na = na * 10 + (ar[ia] as u64 - '0' as u64);
+                na = na
+                    .saturating_mul(10)
+                    .saturating_add(ar[ia] as u64 - '0' as u64);
                 ia += 1;
             }
             while ib < br.len() && br[ib].is_ascii_digit() {
-                nb = nb * 10 + (br[ib] as u64 - '0' as u64);
+                nb = nb
+                    .saturating_mul(10)
+                    .saturating_add(br[ib] as u64 - '0' as u64);
                 ib += 1;
             }
             if na != nb {
@@ -283,10 +291,19 @@ struct Opf {
     title_sort: Option<String>,
     author_sort: Option<String>,
     description: Option<String>,
+    /// `<meta name="calibre:annotation" content="...">`, mirroring Dart's
+    /// `_parseOpfMetadata` (first match wins, even when `content` is absent).
+    annotation: Option<String>,
+    annotation_seen: bool,
     language: Option<String>,
     publisher: Option<String>,
     publication_date: Option<String>,
     rights: Option<String>,
+    /// `dc:type` / `dc:source` (local names `type`/`source`, any namespace —
+    /// mirroring Dart's `name.local ==` match). Named `doc_*` because `type`
+    /// is a Rust keyword; mapped onto `MetadataDto.dc_type`/`dc_source`.
+    doc_type: Option<String>,
+    doc_source: Option<String>,
     subjects: Vec<String>,
     identifiers: Vec<(Option<String>, String)>,
     metas: Vec<Meta>,
@@ -458,6 +475,8 @@ fn handle(out: &mut Opf, frame: &Frame) {
         "publisher" => set_once(&mut out.publisher, text),
         "date" => set_once(&mut out.publication_date, text),
         "rights" => set_once(&mut out.rights, text),
+        "type" => set_once(&mut out.doc_type, text),
+        "source" => set_once(&mut out.doc_source, text),
         "subject" => {
             if !text.is_empty() {
                 out.subjects.push(text.to_string());
@@ -467,12 +486,24 @@ fn handle(out: &mut Opf, frame: &Frame) {
             get(&frame.attrs, "scheme").map(str::to_string),
             text.to_string(),
         )),
-        "meta" => out.metas.push(Meta {
-            name: get(&frame.attrs, "name").map(str::to_string),
-            content: get(&frame.attrs, "content").map(str::to_string),
-            property: get(&frame.attrs, "property").map(str::to_string),
-            text: text.to_string(),
-        }),
+        "meta" => {
+            // Calibre annotation: the first `<meta
+            // name="calibre:annotation">` wins (mirroring Dart, which breaks
+            // after the first match even when `content` is absent).
+            if !out.annotation_seen
+                && get(&frame.attrs, "name") == Some("calibre:annotation")
+            {
+                out.annotation_seen = true;
+                out.annotation = get(&frame.attrs, "content")
+                    .map(|c| c.trim().to_string());
+            }
+            out.metas.push(Meta {
+                name: get(&frame.attrs, "name").map(str::to_string),
+                content: get(&frame.attrs, "content").map(str::to_string),
+                property: get(&frame.attrs, "property").map(str::to_string),
+                text: text.to_string(),
+            })
+        }
         "item" => {
             if let (Some(id), Some(href)) = (get(&frame.attrs, "id"), get(&frame.attrs, "href")) {
                 out.items.push(Item {
@@ -1116,5 +1147,58 @@ mod tests {
         );
         assert_eq!(opf.title_sort.as_deref(), Some("Book, Minimal"));
         assert_eq!(opf.author_sort.as_deref(), Some("Author, A."));
+    }
+
+    #[test]
+    fn extracts_annotation_type_and_source_like_dart() {
+        // Final-fix Critical 1: `calibre:annotation` + `dc:type` +
+        // `dc:source` must round-trip, mirroring Dart's `_parseOpfMetadata`
+        // (first match wins; `type`/`source` take the first non-empty text).
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <dc:type>Text</dc:type>
+            <dc:source>https://example.com/annotated-meta</dc:source>
+            <meta name="calibre:annotation" content="A Calibre annotation for parity."/>
+            </metadata></package>"#,
+        );
+        assert_eq!(
+            opf.annotation.as_deref(),
+            Some("A Calibre annotation for parity.")
+        );
+        assert_eq!(opf.doc_type.as_deref(), Some("Text"));
+        assert_eq!(
+            opf.doc_source.as_deref(),
+            Some("https://example.com/annotated-meta")
+        );
+    }
+
+    #[test]
+    fn first_annotation_wins_and_absent_fields_stay_none() {
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta name="calibre:annotation" content="first"/>
+            <meta name="calibre:annotation" content="second"/>
+            <dc:type></dc:type>
+            </metadata></package>"#,
+        );
+        assert_eq!(opf.annotation.as_deref(), Some("first"));
+        assert_eq!(opf.doc_type, None);
+        assert_eq!(opf.doc_source, None);
+    }
+
+    #[test]
+    fn annotated_fixture_metadata_round_trips() {
+        let m = read_metadata(&fixture("annotated-meta.epub")).unwrap();
+        assert_eq!(
+            m.annotation.as_deref(),
+            Some("A Calibre annotation for parity.")
+        );
+        assert_eq!(m.dc_type.as_deref(), Some("Text"));
+        assert_eq!(
+            m.dc_source.as_deref(),
+            Some("https://example.com/annotated-meta")
+        );
     }
 }

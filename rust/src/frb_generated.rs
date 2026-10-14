@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -582693537;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1003606001;
 
 // Section: executor
 
@@ -249,6 +249,41 @@ fn wire__crate__api__epub__chapter_titles_impl(
                     }
                     let api_handle_guard = api_handle_guard.unwrap();
                     let output_ok = crate::api::epub::chapter_titles(&*api_handle_guard)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__epub__close_document_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "close_document",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <DocumentHandle>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>({
+                        crate::api::epub::close_document(api_handle);
+                    })?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -1073,11 +1108,14 @@ impl SseDecode for crate::epub::model::MetadataDto {
         let mut var_title = <String>::sse_decode(deserializer);
         let mut var_author = <String>::sse_decode(deserializer);
         let mut var_description = <Option<String>>::sse_decode(deserializer);
+        let mut var_annotation = <Option<String>>::sse_decode(deserializer);
         let mut var_publisher = <Option<String>>::sse_decode(deserializer);
         let mut var_isbn = <Option<String>>::sse_decode(deserializer);
         let mut var_language = <Option<String>>::sse_decode(deserializer);
         let mut var_publicationDate = <Option<String>>::sse_decode(deserializer);
         let mut var_rights = <Option<String>>::sse_decode(deserializer);
+        let mut var_dcType = <Option<String>>::sse_decode(deserializer);
+        let mut var_dcSource = <Option<String>>::sse_decode(deserializer);
         let mut var_genre = <Option<String>>::sse_decode(deserializer);
         let mut var_seriesName = <Option<String>>::sse_decode(deserializer);
         let mut var_seriesIndex = <Option<f64>>::sse_decode(deserializer);
@@ -1089,11 +1127,14 @@ impl SseDecode for crate::epub::model::MetadataDto {
             title: var_title,
             author: var_author,
             description: var_description,
+            annotation: var_annotation,
             publisher: var_publisher,
             isbn: var_isbn,
             language: var_language,
             publication_date: var_publicationDate,
             rights: var_rights,
+            dc_type: var_dcType,
+            dc_source: var_dcSource,
             genre: var_genre,
             series_name: var_seriesName,
             series_index: var_seriesIndex,
@@ -1268,13 +1309,14 @@ fn pde_ffi_dispatcher_primary_impl(
         2 => wire__crate__api__epub__chapter_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__epub__chapter_count_impl(port, ptr, rust_vec_len, data_len),
         4 => wire__crate__api__epub__chapter_titles_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__epub__font_faces_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__epub__metadata_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__epub__open_epub_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__epub__read_metadata_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__epub__read_resource_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__epub__spine_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__epub__toc_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__epub__close_document_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__epub__font_faces_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__epub__metadata_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__epub__open_epub_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__epub__read_metadata_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__epub__read_resource_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__epub__spine_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__epub__toc_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1287,7 +1329,7 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        5 => wire__crate__api__epub__engine_version_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__epub__engine_version_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1615,11 +1657,14 @@ impl flutter_rust_bridge::IntoDart for crate::epub::model::MetadataDto {
             self.title.into_into_dart().into_dart(),
             self.author.into_into_dart().into_dart(),
             self.description.into_into_dart().into_dart(),
+            self.annotation.into_into_dart().into_dart(),
             self.publisher.into_into_dart().into_dart(),
             self.isbn.into_into_dart().into_dart(),
             self.language.into_into_dart().into_dart(),
             self.publication_date.into_into_dart().into_dart(),
             self.rights.into_into_dart().into_dart(),
+            self.dc_type.into_into_dart().into_dart(),
+            self.dc_source.into_into_dart().into_dart(),
             self.genre.into_into_dart().into_dart(),
             self.series_name.into_into_dart().into_dart(),
             self.series_index.into_into_dart().into_dart(),
@@ -2010,11 +2055,14 @@ impl SseEncode for crate::epub::model::MetadataDto {
         <String>::sse_encode(self.title, serializer);
         <String>::sse_encode(self.author, serializer);
         <Option<String>>::sse_encode(self.description, serializer);
+        <Option<String>>::sse_encode(self.annotation, serializer);
         <Option<String>>::sse_encode(self.publisher, serializer);
         <Option<String>>::sse_encode(self.isbn, serializer);
         <Option<String>>::sse_encode(self.language, serializer);
         <Option<String>>::sse_encode(self.publication_date, serializer);
         <Option<String>>::sse_encode(self.rights, serializer);
+        <Option<String>>::sse_encode(self.dc_type, serializer);
+        <Option<String>>::sse_encode(self.dc_source, serializer);
         <Option<String>>::sse_encode(self.genre, serializer);
         <Option<String>>::sse_encode(self.series_name, serializer);
         <Option<f64>>::sse_encode(self.series_index, serializer);

@@ -38,6 +38,14 @@ use std::collections::HashSet;
 /// `blocks` is the block-tree arena in its original UTF-16 coordinates (an
 /// additive field per D17); `body`/`runs`/`images` are the phase-1 render
 /// contract and are unchanged from the Dart engine's output shape.
+///
+/// Phase-A policy (final fix): chapters produced by [`split_chapters`] — the
+/// path behind the `chapter()` FFI — carry an **empty** `blocks`. The arena
+/// was cloned once per split chapter and discarded by the Dart adapter, so
+/// crossing it cost O(chapters × tree) for no consumer. The tree itself stays
+/// reachable through the dedicated `block_tree()` FFI (which returns the real
+/// [`BlockTree`](crate::epub::model::BlockTree)); `blocks` here is reserved
+/// for Phase B landing it on the domain `Chapter` with a cache-schema bump.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ChapterDto {
     pub title: String,
@@ -998,7 +1006,6 @@ pub fn split_chapters(
             body,
             runs,
             images,
-            blocks,
             ..
         } = full;
         return vec![strip_duplicate_heading(ChapterDto {
@@ -1006,7 +1013,7 @@ pub fn split_chapters(
             body,
             runs,
             images,
-            blocks,
+            blocks: Vec::new(),
         })];
     }
 
@@ -1035,7 +1042,10 @@ pub fn split_chapters(
             body: slice.to_string(),
             runs: slice_runs(&full.runs, start, end),
             images: slice_images(&full.images, start, end),
-            blocks: full.blocks.clone(),
+            // Empty by Phase-A policy (see the `ChapterDto` docs): the tree
+            // stays reachable via `block_tree()`, and cloning it per slice
+            // cost O(chapters × tree) for no consumer.
+            blocks: Vec::new(),
         });
     }
     if out.is_empty() {
@@ -1045,7 +1055,7 @@ pub fn split_chapters(
             body: full.body,
             runs: full.runs,
             images: full.images,
-            blocks: full.blocks,
+            blocks: Vec::new(),
         }];
     }
     out.into_iter().map(strip_duplicate_heading).collect()
@@ -1095,7 +1105,8 @@ fn strip_duplicate_heading(ch: ChapterDto) -> ChapterDto {
         body: ch.body[rest_byte..].to_string(),
         runs: slice_runs(&ch.runs, start, body_len),
         images: slice_images(&ch.images, start, body_len),
-        blocks: ch.blocks,
+        // Empty by Phase-A policy (see the `ChapterDto` docs).
+        blocks: Vec::new(),
     }
 }
 

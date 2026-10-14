@@ -45,6 +45,12 @@ await library.saveEpubEngine('rust'); // back to the Rust default
 The choice persists under `burrow.epub.engine.v1` and defaults to `rust`
 when unset.
 
+If the native library fails to load (`RustLib.init()` throws), the app falls
+back to the Dart engine automatically — the EPUB path is never bricked. The
+native `.so` is currently built for Android only (`cargo-ndk` Gradle task);
+**iOS packaging is out of scope for Phase A** (no Xcode runner wired up yet),
+so iOS always runs on the Dart engine until that follow-up lands.
+
 ## Install via ADB
 
 ```bash

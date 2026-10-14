@@ -42,16 +42,24 @@ impl std::error::Error for EpubError {}
 /// carries the raw cover image (the Dart adapter downscales it later), and
 /// `font_faces` is populated once the CSS cascade lands (Task 6); it is empty
 /// during Task 3.
+///
+/// `dc_type`/`dc_source` carry `dc:type`/`dc:source` under a `dc_` prefix (not
+/// bare `type`/`source`) so neither the Rust keyword `type` nor the FRB
+/// codegen needs raw-identifier support; the Dart adapter maps them onto
+/// `ParsedMetadata.type`/`source`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MetadataDto {
     pub title: String,
     pub author: String,
     pub description: Option<String>,
+    pub annotation: Option<String>,
     pub publisher: Option<String>,
     pub isbn: Option<String>,
     pub language: Option<String>,
     pub publication_date: Option<String>,
     pub rights: Option<String>,
+    pub dc_type: Option<String>,
+    pub dc_source: Option<String>,
     pub genre: Option<String>,
     pub series_name: Option<String>,
     pub series_index: Option<f64>,

@@ -9,7 +9,7 @@ import '../epub/project.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `chapter_title_for`, `flat_chapters`
+// These functions are ignored because they are not marked as `pub`: `build_flat`, `chapter_title_for`, `flat_chapters`
 
 /// Smoke-test entry point for the Burrow EPUB engine Rust backend.
 ///
@@ -92,10 +92,22 @@ Future<Uint8List> readResource({
 /// whose TOC entry has no fragment keeps the document's first TOC title (or
 /// its own `<title>`/`<h1>` when the book has no TOC entry for it), and a
 /// leading body line repeating the title is dropped.
+///
+/// Only the requested chapter is cloned out of the cached flat list: the
+/// whole book is projected once, then each `chapter` call is O(1) under one
+/// lock acquisition (previously every call re-cloned every chapter).
 Future<ChapterDto> chapter({
   required DocumentHandle handle,
   required int index,
 }) => RustLib.instance.api.crateApiEpubChapter(handle: handle, index: index);
+
+/// Drops the Rust side of an opened EPUB early.
+///
+/// Dart calls this in a `try/finally` around `parse`/hydration so a failed or
+/// abandoned open never waits on GC finalizers to release the inflated
+/// archive. Taking the handle by value is what runs the destructor.
+Future<void> closeDocument({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiEpubCloseDocument(handle: handle);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}

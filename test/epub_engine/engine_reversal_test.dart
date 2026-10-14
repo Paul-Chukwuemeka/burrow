@@ -85,5 +85,12 @@ void main() {
       await service.saveEpubEngine(rustEpubEngineId);
       expect(service.epubEngine, rustEpubEngineId);
     });
+
+    test('saveEpubEngine rejects unknown ids at save time', () async {
+      final service = await loadWithPrefs({});
+      expect(() => service.saveEpubEngine('nope'), throwsArgumentError);
+      // The rejected save leaves the previous value untouched.
+      expect(service.epubEngine, rustEpubEngineId);
+    });
   });
 }

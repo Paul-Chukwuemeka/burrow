@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -582693537;
+  int get rustContentHash => -1003606001;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -94,6 +94,8 @@ abstract class RustLibApi extends BaseApi {
   Future<List<String>> crateApiEpubChapterTitles({
     required DocumentHandle handle,
   });
+
+  Future<void> crateApiEpubCloseDocument({required DocumentHandle handle});
 
   String crateApiEpubEngineVersion();
 
@@ -271,12 +273,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "chapter_titles", argNames: ["handle"]);
 
   @override
+  Future<void> crateApiEpubCloseDocument({required DocumentHandle handle}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDocumentHandle(
+            handle,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEpubCloseDocumentConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEpubCloseDocumentConstMeta =>
+      const TaskConstMeta(debugName: "close_document", argNames: ["handle"]);
+
+  @override
   String crateApiEpubEngineVersion() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -307,7 +340,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -338,7 +371,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -366,7 +399,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 9,
             port: port_,
           );
         },
@@ -395,7 +428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 10,
             port: port_,
           );
         },
@@ -430,7 +463,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -463,7 +496,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -494,7 +527,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -860,24 +893,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MetadataDto dco_decode_metadata_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return MetadataDto(
       title: dco_decode_String(arr[0]),
       author: dco_decode_String(arr[1]),
       description: dco_decode_opt_String(arr[2]),
-      publisher: dco_decode_opt_String(arr[3]),
-      isbn: dco_decode_opt_String(arr[4]),
-      language: dco_decode_opt_String(arr[5]),
-      publicationDate: dco_decode_opt_String(arr[6]),
-      rights: dco_decode_opt_String(arr[7]),
-      genre: dco_decode_opt_String(arr[8]),
-      seriesName: dco_decode_opt_String(arr[9]),
-      seriesIndex: dco_decode_opt_box_autoadd_f_64(arr[10]),
-      titleSort: dco_decode_opt_String(arr[11]),
-      authorSort: dco_decode_opt_String(arr[12]),
-      coverBytes: dco_decode_opt_list_prim_u_8_strict(arr[13]),
-      fontFaces: dco_decode_list_font_face_dto(arr[14]),
+      annotation: dco_decode_opt_String(arr[3]),
+      publisher: dco_decode_opt_String(arr[4]),
+      isbn: dco_decode_opt_String(arr[5]),
+      language: dco_decode_opt_String(arr[6]),
+      publicationDate: dco_decode_opt_String(arr[7]),
+      rights: dco_decode_opt_String(arr[8]),
+      dcType: dco_decode_opt_String(arr[9]),
+      dcSource: dco_decode_opt_String(arr[10]),
+      genre: dco_decode_opt_String(arr[11]),
+      seriesName: dco_decode_opt_String(arr[12]),
+      seriesIndex: dco_decode_opt_box_autoadd_f_64(arr[13]),
+      titleSort: dco_decode_opt_String(arr[14]),
+      authorSort: dco_decode_opt_String(arr[15]),
+      coverBytes: dco_decode_opt_list_prim_u_8_strict(arr[16]),
+      fontFaces: dco_decode_list_font_face_dto(arr[17]),
     );
   }
 
@@ -1454,11 +1490,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_title = sse_decode_String(deserializer);
     var var_author = sse_decode_String(deserializer);
     var var_description = sse_decode_opt_String(deserializer);
+    var var_annotation = sse_decode_opt_String(deserializer);
     var var_publisher = sse_decode_opt_String(deserializer);
     var var_isbn = sse_decode_opt_String(deserializer);
     var var_language = sse_decode_opt_String(deserializer);
     var var_publicationDate = sse_decode_opt_String(deserializer);
     var var_rights = sse_decode_opt_String(deserializer);
+    var var_dcType = sse_decode_opt_String(deserializer);
+    var var_dcSource = sse_decode_opt_String(deserializer);
     var var_genre = sse_decode_opt_String(deserializer);
     var var_seriesName = sse_decode_opt_String(deserializer);
     var var_seriesIndex = sse_decode_opt_box_autoadd_f_64(deserializer);
@@ -1470,11 +1509,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       title: var_title,
       author: var_author,
       description: var_description,
+      annotation: var_annotation,
       publisher: var_publisher,
       isbn: var_isbn,
       language: var_language,
       publicationDate: var_publicationDate,
       rights: var_rights,
+      dcType: var_dcType,
+      dcSource: var_dcSource,
       genre: var_genre,
       seriesName: var_seriesName,
       seriesIndex: var_seriesIndex,
@@ -1986,11 +2028,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.title, serializer);
     sse_encode_String(self.author, serializer);
     sse_encode_opt_String(self.description, serializer);
+    sse_encode_opt_String(self.annotation, serializer);
     sse_encode_opt_String(self.publisher, serializer);
     sse_encode_opt_String(self.isbn, serializer);
     sse_encode_opt_String(self.language, serializer);
     sse_encode_opt_String(self.publicationDate, serializer);
     sse_encode_opt_String(self.rights, serializer);
+    sse_encode_opt_String(self.dcType, serializer);
+    sse_encode_opt_String(self.dcSource, serializer);
     sse_encode_opt_String(self.genre, serializer);
     sse_encode_opt_String(self.seriesName, serializer);
     sse_encode_opt_box_autoadd_f_64(self.seriesIndex, serializer);
