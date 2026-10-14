@@ -124,21 +124,47 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('turning back into an unlaid chapter shows its last page', (
+  /// Pump until the full-book pagination pass finishes and the reader paints.
+  Future<void> settle(WidgetTester tester) async {
+    for (var i = 0; i < 4000; i++) {
+      final s = _readerState(tester);
+      if (!s.debugLazyRunning && s.debugHasController) break;
+      await tester.pump();
+    }
+    await tester.pump();
+  }
+
+  testWidgets('the initial pass lays out the whole book before the first paint', (
     tester,
   ) async {
-    // Open on the last chapter; the background pass is suspended, so chapter 4
-    // is still a one-page placeholder when the page is turned.
-    book.lastChapter = 5;
-    ReaderScreenState.debugSuspendBackgroundFill = true;
     await mountReader(tester);
     await tester.pump();
 
+    // The full pass is chunked across frames, so nothing has painted yet: no
+    // page view and the book is not fully laid out.
+    expect(
+      find.byType(PageView),
+      findsNothing,
+      reason: 'no pages paint until the whole book is paginated',
+    );
+    expect(_readerState(tester).debugAllReady, isFalse);
+
+    await settle(tester);
+    expect(find.byType(PageView), findsOneWidget);
+    expect(_readerState(tester).debugAllReady, isTrue);
     expect(
       _readerState(tester).debugReadyCount,
-      1,
-      reason: 'only the anchor chapter should be laid out at first paint',
+      _readerState(tester).debugChapterCount,
+      reason: 'every chapter is laid out before the first paint',
     );
+  });
+
+  testWidgets('opening on the last chapter and turning back works', (
+    tester,
+  ) async {
+    book.lastChapter = 5;
+    await mountReader(tester);
+    await settle(tester);
 
     final size = tester.getSize(find.byType(PageView));
     await tester.tapAt(Offset(size.width * 0.15, size.height * 0.5));
@@ -154,22 +180,11 @@ void main() {
     );
   });
 
-  testWidgets('the initial pass lays out only the anchor chapter', (
-    tester,
-  ) async {
-    ReaderScreenState.debugSuspendBackgroundFill = true;
-    await mountReader(tester);
-    await tester.pump();
-
-    expect(_readerState(tester).debugReadyCount, 1);
-  });
-
   testWidgets('turning within a laid-out chapter lays out nothing new', (
     tester,
   ) async {
-    ReaderScreenState.debugSuspendBackgroundFill = true;
     await mountReader(tester);
-    await tester.pump();
+    await settle(tester);
 
     final before = _readerState(tester).debugSyncLayouts;
     final size = tester.getSize(find.byType(PageView));

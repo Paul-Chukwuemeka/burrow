@@ -753,29 +753,20 @@ class ReaderScreenState extends State<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
   }
 
-  // Lay out the chapter being opened synchronously so the first paint doesn't
-  // wait for the whole book — or even the next chapter, which navigation lays
-  // out on demand (see _ensureChapterReady). The remaining chapters fill in
-  // through the background pass below and swap atomically when done, so the
-  // scrubber never shows a half-built layout as final. `_paginationRunning`
-  // stays true until that swap, but the builder shows content as soon as the
-  // controller below exists.
-  _paginateChapterSync(_anchorChapter, viewport, style, scaler);
-  _recomputeFlatIndexes();
-  _setControllerToAnchor(recreate: true);
+  // Delay the first paint until the WHOLE book is paginated (deliberate
+  // product choice). The controller is left null so the "Laying out pages…"
+  // view stays up while the full pass below runs; when it completes,
+  // _applyReflow swaps the complete layout in atomically and only then is the
+  // controller created. There is no anchor-chapter early paint.
   OpenTrace.dump();
-
-  // Show the progress view only when there is truly nothing to show yet
-  // (the builder checks the controller); otherwise keep it for the
-  // background remainder.
   _paginationRunning = true;
 
-  // Build every remaining chapter into the reflow buffer and swap when done.
-  // Seeded from the live set so the anchor layout is reused, not redone.
+  // Build every chapter into the reflow buffer and swap when done. The buffer
+  // starts entirely empty (no anchor pre-layout) so nothing paints until the
+  // whole book is ready.
   _reflowPages = List.of(_paginators);
   _reflowStyles = List.of(_chapterStyles);
   _reflowReady = List.filled(n, false);
-  _reflowReady[_anchorChapter] = true;
   _reflowNext = 0;
   _reflowOrder = fillOrderFor(n, _anchorChapter);
   _reflowSignature = signature;
