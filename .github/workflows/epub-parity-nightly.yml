@@ -1,0 +1,59 @@
+# Real-book EPUB parity report (Task 9, nightly/local job).
+#
+# Runs the same differ as the synthetic gate over a LICENSED corpus that lives
+# outside git (`assets/*.epub` is gitignored) — typically a directory mounted
+# on a self-hosted runner. This job never fails on diffs: it uploads the full
+# parity report as an artifact so new unclassified divergences found in the
+# wild can be triaged into ledger entries or Rust fixes.
+#
+# Configure the corpus location via the `EPUB_REAL_CORPUS_PATH` repository
+# variable (default `/mnt/book-corpus`), or dispatch manually with an explicit
+# path. A local run is the same command:
+#   dart tool/epub_parity.dart --corpus /path/to/books
+name: epub-parity-nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      corpus-path:
+        description: 'Directory of licensed .epub files (not committed)'
+        required: false
+        default: ''
+
+jobs:
+  real-book-report:
+    # Needs the licensed corpus mounted; GitHub-hosted runners do not have it.
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: resolve corpus path
+        id: corpus
+        run: |
+          if [ -n "${{ inputs.corpus-path }}" ]; then
+            echo "path=${{ inputs.corpus-path }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=${{ vars.EPUB_REAL_CORPUS_PATH }}" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -z "$(cat "$GITHUB_OUTPUT")" ]; then
+            echo "path=/mnt/book-corpus" >> "$GITHUB_OUTPUT"
+          fi
+          echo "corpus: $(grep path "$GITHUB_OUTPUT" | cut -d= -f2-)"
+          test -d "$(grep path "$GITHUB_OUTPUT" | cut -d= -f2-)"
+      - name: parity report over the real-book corpus
+        run: |
+          dart tool/epub_parity.dart --corpus "${{ steps.corpus.outputs.path }}" 2>&1 \
+            | tee parity-report.txt
+      - name: upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: epub-parity-report
+          path: parity-report.txt

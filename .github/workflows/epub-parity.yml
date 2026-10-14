@@ -1,0 +1,47 @@
+# Synthetic EPUB parity gate (Task 9).
+#
+# Compares DartEpubEngine.parse vs RustEpubEngine.parse over the committed
+# synthetic corpus and fails on UNCLASSIFIED diffs (the gate is "zero
+# unclassified diffs", not zero diffs). Real books are NOT run here; they run
+# as a scheduled nightly job (epub-parity-nightly.yml) from a licensed
+# location outside git.
+name: epub-parity
+
+on:
+  push:
+    paths:
+      - 'rust/**'
+      - 'lib/services/epub/**'
+      - 'lib/services/document_parser.dart'
+      - 'lib/models/style_run.dart'
+      - 'lib/models/css_style.dart'
+      - 'test/epub_engine/parity_test.dart'
+      - 'test/fixtures/epub/**'
+      - 'tool/epub_parity.dart'
+      - '.github/workflows/epub-parity.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'lib/services/epub/**'
+      - 'lib/services/document_parser.dart'
+      - 'lib/models/style_run.dart'
+      - 'lib/models/css_style.dart'
+      - 'test/epub_engine/parity_test.dart'
+      - 'test/fixtures/epub/**'
+      - 'tool/epub_parity.dart'
+      - '.github/workflows/epub-parity.yml'
+
+jobs:
+  synthetic-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: synthetic corpus gate (fail on unclassified diffs)
+        run: dart tool/epub_parity.dart --corpus test/fixtures/epub --fail-on-unclassified

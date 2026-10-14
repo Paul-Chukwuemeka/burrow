@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "comment": "Divergence ledger for the Dart-vs-Rust EPUB parity gate (Task 9). The gate is 'zero unclassified diffs', not zero diffs: every entry classifies one known difference as 'accepted' (a Rust improvement, with a reason) or 'bug' (a known Rust gap). Entry order matters: the first matching entry supplies the reported reason, so fixture-specific entries precede the '*' wildcard.",
+  "entries": [
+    {
+      "fixture": "dual-toc.epub",
+      "chapter": 0,
+      "field": "title",
+      "classification": "accepted",
+      "reason": "Rust prefers the EPUB3 nav document; Dart prefers the NCX. Both TOCs are valid; nav-first follows the EPUB3 canonical-TOC precedence."
+    },
+    {
+      "fixture": "dual-toc.epub",
+      "chapter": 1,
+      "field": "title",
+      "classification": "accepted",
+      "reason": "Rust prefers the EPUB3 nav document; Dart prefers the NCX. Both TOCs are valid; nav-first follows the EPUB3 canonical-TOC precedence."
+    },
+    {
+      "fixture": "no-spine.epub",
+      "chapter": 0,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "Spine fallback order: Rust natural-sorts the manifest XHTML entries; Dart uses manifest insertion order. Natural order (ch2 before ch10) is the accepted improvement."
+    },
+    {
+      "fixture": "no-spine.epub",
+      "chapter": 1,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "Spine fallback order: Rust natural-sorts the manifest XHTML entries; Dart uses manifest insertion order. Natural order (ch2 before ch10) is the accepted improvement."
+    },
+    {
+      "fixture": "dangling-spine.epub",
+      "chapter": null,
+      "field": "parse",
+      "classification": "accepted",
+      "reason": "Rust falls back to the natural-sorted manifest list when every spine idref misses; Dart throws 'EPUB contains no readable text'. The fallback keeps damaged books readable; accepted improvement."
+    },
+    {
+      "fixture": "missing-image.epub",
+      "chapter": 0,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "Rust keeps a sized U+FFFC placeholder for an unresolvable <img>; Dart drops the image. The placeholder preserves layout and offsets; accepted policy (Task 8)."
+    },
+    {
+      "fixture": "missing-image.epub",
+      "chapter": 0,
+      "field": "images",
+      "classification": "accepted",
+      "reason": "Rust keeps a sized U+FFFC placeholder for an unresolvable <img>; Dart drops the image. The placeholder preserves layout and offsets; accepted policy (Task 8)."
+    },
+    {
+      "fixture": "svg-image.epub",
+      "chapter": 0,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "SVG <img>: Dart drops it (.svg is not in its EPUB image-entry map); Rust keeps a placeholder but reads intrinsic 0x0 (no SVG viewBox sniffing). Placeholder policy accepted; the 0x0 intrinsic is a known Rust limitation."
+    },
+    {
+      "fixture": "svg-image.epub",
+      "chapter": 0,
+      "field": "images",
+      "classification": "accepted",
+      "reason": "SVG <img>: Dart drops it (.svg is not in its EPUB image-entry map); Rust keeps a placeholder but reads intrinsic 0x0 (no SVG viewBox sniffing). Placeholder policy accepted; the 0x0 intrinsic is a known Rust limitation."
+    },
+    {
+      "fixture": "cover-inline.epub",
+      "chapter": 0,
+      "field": "images",
+      "classification": "bug",
+      "reason": "Rust marks fullWidth only by id/filename 'cover'; Dart also honors the OPF cover declaration (coverHrefs). Rust misses OPF-declared covers; known Rust gap."
+    },
+    {
+      "fixture": "projection.epub",
+      "chapter": 0,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "Whitespace around block breaks: Dart flushes inter-block whitespace as a pending space before the image placeholder (trailing space after the blockquote); Rust's block tree drops inter-block whitespace. Cosmetic one-space edge; accepted."
+    },
+    {
+      "fixture": "projection.epub",
+      "chapter": 0,
+      "field": "images",
+      "classification": "bug",
+      "reason": "Rust folds HTML width/height attributes into the image CSS as width/height declarations; Dart keeps them in htmlW/htmlH fields only. Values agree (8x4), so rendering is unaffected; the DTO shape is a known Rust gap."
+    },
+    {
+      "fixture": "minimal.epub",
+      "chapter": null,
+      "field": "metadata.titleSort",
+      "classification": "bug",
+      "reason": "Rust OPF parsing does not extract opf:file-as sort forms yet; Dart does. Known Rust gap (needs a MetadataDto/FRB follow-up)."
+    },
+    {
+      "fixture": "minimal.epub",
+      "chapter": null,
+      "field": "metadata.authorSort",
+      "classification": "bug",
+      "reason": "Rust OPF parsing does not extract opf:file-as sort forms yet; Dart does. Known Rust gap (needs a MetadataDto/FRB follow-up)."
+    },
+    {
+      "fixture": "embedded-font.epub",
+      "chapter": null,
+      "field": "metadata.fontFaces",
+      "classification": "accepted",
+      "reason": "Rust normalizes font src keys (lowercase + percent-decode); Dart preserves manifest case. Both resolve; normalized keys are the cross-FFI reference form (D15)."
+    },
+    {
+      "fixture": "external-css.epub",
+      "chapter": null,
+      "field": "metadata.fontFaces",
+      "classification": "accepted",
+      "reason": "Rust normalizes font src keys (lowercase + percent-decode); Dart preserves manifest case. Both resolve; normalized keys are the cross-FFI reference form (D15)."
+    },
+    {
+      "fixture": "external-css.epub",
+      "chapter": 0,
+      "field": "runs",
+      "classification": "accepted",
+      "reason": "Rust applies real node extents and presentational hints (body font-family run; align=text-align): Dart's substring cascade misses ranges spanning block breaks and never implements align hints. Accepted improvement (spec D11)."
+    },
+    {
+      "fixture": "malformed.epub",
+      "chapter": 0,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "Unclosed-tag recovery differs by one newline: Dart's regex parser and Rust's HTML5 parser place the break differently. Both recover readable text; byte-equality is not expected for malformed input."
+    },
+    {
+      "fixture": "opaque-cover.epub",
+      "chapter": null,
+      "field": "metadata.cover",
+      "classification": "accepted",
+      "reason": "Rust resolves the OPF cover href against the OPF directory; Dart looks it up bare and only finds covers whose filename contains 'cover'. Rust's resolution is the accepted improvement."
+    },
+    {
+      "fixture": "cover-inline.epub",
+      "chapter": null,
+      "field": "metadata.cover",
+      "classification": "accepted",
+      "reason": "Rust resolves the OPF cover href against the OPF directory; Dart looks it up bare and only finds covers whose filename contains 'cover'. Rust's resolution is the accepted improvement."
+    },
+    {
+      "fixture": "scripted.epub",
+      "chapter": 0,
+      "field": "body",
+      "classification": "accepted",
+      "reason": "Remote/unresolvable <img>: Dart drops it (keeping the flushed space and extra break); Rust keeps a placeholder with no source key. Same placeholder policy as missing-image; accepted."
+    },
+    {
+      "fixture": "scripted.epub",
+      "chapter": 0,
+      "field": "images",
+      "classification": "accepted",
+      "reason": "Remote/unresolvable <img>: Dart drops it (keeping the flushed space and extra break); Rust keeps a placeholder with no source key. Same placeholder policy as missing-image; accepted."
+    },
+    {
+      "fixture": "*",
+      "chapter": null,
+      "field": "title",
+      "classification": "accepted",
+      "reason": "Rust derives untitled chapters from the document <title>/<h1>; Dart leaves them empty. Derived titles improve navigation; accepted improvement (spec D11)."
+    }
+  ]
+}
