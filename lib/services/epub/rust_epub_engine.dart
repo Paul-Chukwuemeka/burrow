@@ -30,6 +30,12 @@ class RustEpubEngine implements EpubEngine {
 
   @override
   Future<ParsedDocument> parse(String path) async {
+    // The reader opens every reflowable format through this seam, so non-EPUB
+    // books (TXT today) fall back to the Dart implementation rather than
+    // failing as "not a valid EPUB" — mirroring [extractMetadata].
+    if (formatFromExtension(path) != BookFormat.epub) {
+      return DocumentParser.parse(path);
+    }
     try {
       final handle = await rust.openEpub(path: path);
       final metadata = await rust.metadata(handle: handle);

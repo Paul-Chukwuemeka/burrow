@@ -4,8 +4,8 @@ import 'epub_engine.dart';
 /// The [EpubEngine] backed by the existing Dart [DocumentParser].
 ///
 /// A pure delegation: routing the reader through this adapter must not change
-/// behaviour, so the whole `flutter test` suite stays green when the engine
-/// flag is `dart` (the default).
+/// behaviour, so the suite stays green when the engine flag is switched back
+/// to `dart` (the reversible fallback).
 class DartEpubEngine implements EpubEngine {
   const DartEpubEngine();
 

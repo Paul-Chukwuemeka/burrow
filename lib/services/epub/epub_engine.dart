@@ -4,8 +4,8 @@ import '../document_parser.dart';
 /// `epub_engine_factory.dart`).
 ///
 /// [dartEpubEngineId] is the id the Dart parser stamps into its disk-cache keys
-/// (see [DocumentParser.engineId]); [rustEpubEngineId] is reserved for the
-/// native engine that replaces the stub in a later task.
+/// (see [DocumentParser.engineId]); [rustEpubEngineId] selects the native
+/// engine, which is the default (see `LibraryService.epubEngine`).
 const String dartEpubEngineId = DocumentParser.engineId;
 const String rustEpubEngineId = 'rust';
 
