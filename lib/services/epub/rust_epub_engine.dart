@@ -30,20 +30,29 @@ class RustEpubEngine implements EpubEngine {
 
   @override
   Future<ParsedDocument> parse(String path) async {
-    final handle = await rust.openEpub(path: path);
-    final metadata = await rust.metadata(handle: handle);
-    // One chapter per TOC anchor, not per spine file: `chapterCount` is the
-    // flattened anchor-split length, matching Dart's `splitByAnchors`.
-    final count = await rust.chapterCount(handle: handle);
-    final chapters = <ChapterDto>[];
-    for (var index = 0; index < count; index++) {
-      chapters.add(await rust.chapter(handle: handle, index: index));
+    try {
+      final handle = await rust.openEpub(path: path);
+      final metadata = await rust.metadata(handle: handle);
+      // One chapter per TOC anchor, not per spine file: `chapterCount` is the
+      // flattened anchor-split length, matching Dart's `splitByAnchors`.
+      final count = await rust.chapterCount(handle: handle);
+      final chapters = <ChapterDto>[];
+      for (var index = 0; index < count; index++) {
+        chapters.add(await rust.chapter(handle: handle, index: index));
+      }
+      return EpubDtoMapper.toParsedDocument(
+        chapters: chapters,
+        metadata: metadata,
+        fallbackTitle: titleFromFilename(path),
+      );
+    } on FormatException {
+      rethrow;
+    } catch (e) {
+      if (isRustCorruptEpubFailure(e)) {
+        throw FormatException(e.toString());
+      }
+      rethrow;
     }
-    return EpubDtoMapper.toParsedDocument(
-      chapters: chapters,
-      metadata: metadata,
-      fallbackTitle: titleFromFilename(path),
-    );
   }
 
   /// Extracts only metadata and cover bytes via the Rust OPF reader.
@@ -57,11 +66,20 @@ class RustEpubEngine implements EpubEngine {
     if (formatFromExtension(path) != BookFormat.epub) {
       return DocumentParser.extractMetadata(path);
     }
-    final metadata = await rust.readMetadata(path: path);
-    return EpubDtoMapper.toParsedMetadata(
-      metadata,
-      fallbackTitle: titleFromFilename(path),
-    );
+    try {
+      final metadata = await rust.readMetadata(path: path);
+      return EpubDtoMapper.toParsedMetadata(
+        metadata,
+        fallbackTitle: titleFromFilename(path),
+      );
+    } on FormatException {
+      rethrow;
+    } catch (e) {
+      if (isRustCorruptEpubFailure(e)) {
+        throw FormatException(e.toString());
+      }
+      rethrow;
+    }
   }
 
   /// Reads one archive entry's bytes through the Rust handle (spec D15).
@@ -222,6 +240,26 @@ ParsedDocument _rebuildDoc(
     authorSort: doc.authorSort,
     fontFaces: fontFaces ?? doc.fontFaces,
   );
+}
+
+/// Whether a Rust-backend failure means "permanently unreadable" and must be
+/// surfaced as a [FormatException] — the class the library metadata worker
+/// treats as complete-and-skipped (no retry on next launch).
+///
+/// The Rust FFI stringifies `EpubError`, so a corrupt EPUB surfaces as a
+/// thrown `String` ("Not a valid EPUB file") rather than the
+/// [FormatException] the Dart engine throws for the same file. Matching is
+/// deliberately narrow — only the `Invalid` ("Not a valid EPUB file") and
+/// `TooLarge` payloads, which mirror Dart's `FormatException`s — so
+/// genuinely-transient failures (IO errors such as "Cannot open EPUB: ...")
+/// are rethrown unchanged and still retry. An existing [FormatException]
+/// needs no translation and returns false.
+bool isRustCorruptEpubFailure(Object error) {
+  if (error is FormatException) return false;
+  final message = error.toString();
+  return message.contains('Not a valid EPUB file') ||
+      message.contains('EPUB file too large') ||
+      message.contains('decompressed size exceeds');
 }
 
 /// The filename-derived title, matching `DocumentParser._titleFromFilename`.
