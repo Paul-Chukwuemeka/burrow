@@ -265,8 +265,8 @@ impl Stylesheet {
         let mut parser = StylesheetParserImpl { base_dir };
         let mut sheet = Stylesheet::default();
         {
-            let mut rules = StyleSheetParser::new(&mut input, &mut parser);
-            while let Some(item) = rules.next() {
+            let rules = StyleSheetParser::new(&mut input, &mut parser);
+            for item in rules {
                 match item {
                     Ok(RuleOutput::Style {
                         selectors,
@@ -486,11 +486,7 @@ impl<'i> DeclarationParser<'i> for FontFaceParser {
         let value = read_raw_value(input)?;
         match name.to_ascii_lowercase().as_str() {
             "font-family" => self.family = Some(unquote(value)),
-            "src" => {
-                if self.src.is_none() {
-                    self.src = extract_url(value);
-                }
-            }
+            "src" if self.src.is_none() => self.src = extract_url(value),
             _ => {}
         }
         Ok(())
@@ -524,12 +520,10 @@ fn parse_declarations<'i, P, D, E>(input: &mut CssParser<'i>, parser: &mut P) ->
 where
     P: RuleBodyItemParser<'i, D, E>,
 {
-    let mut body: RuleBodyParser<'_, '_, P, D, E> = RuleBodyParser::new(input, parser);
+    let body: RuleBodyParser<'_, '_, P, D, E> = RuleBodyParser::new(input, parser);
     let mut out = Vec::new();
-    while let Some(item) = body.next() {
-        if let Ok(declaration) = item {
-            out.push(declaration);
-        }
+    for declaration in body.flatten() {
+        out.push(declaration);
     }
     out
 }
