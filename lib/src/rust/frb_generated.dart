@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -670787007;
+  int get rustContentHash => -582693537;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -106,6 +106,11 @@ abstract class RustLibApi extends BaseApi {
   Future<DocumentHandle> crateApiEpubOpenEpub({required String path});
 
   Future<MetadataDto> crateApiEpubReadMetadata({required String path});
+
+  Future<Uint8List> crateApiEpubReadResource({
+    required DocumentHandle handle,
+    required String key,
+  });
 
   Future<List<String>> crateApiEpubSpine({required DocumentHandle handle});
 
@@ -409,6 +414,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "read_metadata", argNames: ["path"]);
 
   @override
+  Future<Uint8List> crateApiEpubReadResource({
+    required DocumentHandle handle,
+    required String key,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerDocumentHandle(
+            handle,
+            serializer,
+          );
+          sse_encode_String(key, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_8_strict,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiEpubReadResourceConstMeta,
+        argValues: [handle, key],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEpubReadResourceConstMeta => const TaskConstMeta(
+    debugName: "read_resource",
+    argNames: ["handle", "key"],
+  );
+
+  @override
   Future<List<String>> crateApiEpubSpine({required DocumentHandle handle}) {
     return handler.executeNormal(
       NormalTask(
@@ -421,7 +463,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -452,7 +494,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },

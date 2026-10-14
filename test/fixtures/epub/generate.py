@@ -706,8 +706,121 @@ def build_projection() -> None:
     )
 
 
-def build_anchor_split() -> None:
-    # Task 7 fix fixture: a SINGLE spine document holding three chapters,
+def build_missing_image() -> None:
+    # Task 8 fixture: `ch1.xhtml` references `Images/ghost.png`, which is
+    # deliberately NOT in the archive. The projection must keep a sized
+    # placeholder (an `ImageRun` with `source_key=None`) instead of failing
+    # the book; `read_resource` for the missing key must error so the Dart
+    # lazy loader skips it.
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Missing</title></head>\n"
+        "<body>\n"
+        "<h1>Missing</h1>\n"
+        "<p>Before <img src=\"Images/ghost.png\" alt=\"ghost\"/> after.</p>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Missing Image</dc:title>\n"
+        "    <dc:creator>M. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:missing-image</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "missing-image.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+        ],
+    )
+
+
+def build_embedded_font() -> None:
+    # Task 8 fixture: an external stylesheet declaring one `@font-face`
+    # whose file exists in the archive. `font_faces` must expose the family
+    # with a resolvable `src` key; `read_resource` materialises its bytes.
+    css = (
+        "@font-face {\n"
+        "  font-family: 'Burrow Serif';\n"
+        '  src: url("../fonts/burrow.woff2") format("woff2");\n'
+        "}\n"
+        "p { font-family: 'Burrow Serif', serif; }\n"
+    ).encode("utf-8")
+
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head>\n"
+        "<title>Fonts</title>\n"
+        '<link rel="stylesheet" type="text/css" href="styles/main.css"/>\n'
+        "</head>\n"
+        "<body>\n"
+        "<h1>Fonts</h1>\n"
+        "<p>Set in Burrow Serif.</p>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Embedded Font</dc:title>\n"
+        "    <dc:creator>F. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:embedded-font</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="css1" href="styles/main.css" media-type="text/css"/>\n'
+        '    <item id="font1" href="fonts/burrow.woff2" '
+        'media-type="font/woff2"/>\n'
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "embedded-font.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+            ("OEBPS/styles/main.css", css, True),
+            # A placeholder font file so the resolved src points at a real
+            # entry (the cascade stores the reference; Task 8 loads the bytes).
+            ("OEBPS/fonts/burrow.woff2", b"wOF2\x00\x01\x00\x00dummy", True),
+        ],
+    )
+
+
+def build_anchor_split() -> None:    # Task 7 fix fixture: a SINGLE spine document holding three chapters,
     # distinguished only by TOC `#fragment` anchors (the anchor-split case the
     # per-spine projection regressed on). Each section opens with the heading
     # its TOC entry names, so the heading strip fires; the second section
@@ -797,6 +910,8 @@ def main() -> None:
     build_external_css()
     build_projection()
     build_anchor_split()
+    build_missing_image()
+    build_embedded_font()
     print("wrote fixtures to", HERE)
 
 

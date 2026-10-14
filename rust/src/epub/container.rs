@@ -86,6 +86,17 @@ impl EpubArchive {
         self.read(raw)
     }
 
+    /// Reads one resource entry by reference (spec D15).
+    ///
+    /// `key` is a normalised archive key such as an `ImageRunDto::source_key`
+    /// or a `FontFaceDto::src`; it is normalised again so a mixed-case or
+    /// percent-encoded caller cannot miss. Returns `None` when the entry is
+    /// absent — the caller (projection or lazy hydration) degrades to a sized
+    /// placeholder / skipped font instead of failing the book.
+    pub fn read_resource(&self, key: &str) -> Option<Vec<u8>> {
+        self.read_by_key(&normalize_key(key))
+    }
+
     /// Resolves `href` against `base_dir` (an archive directory such as
     /// `OEBPS`), then reads the matching entry. Percent-decoding and the
     /// directory walk are tolerant, matching the Dart parser.

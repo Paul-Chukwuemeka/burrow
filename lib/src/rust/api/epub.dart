@@ -69,6 +69,18 @@ Future<BlockTree> blockTree({
 Future<List<FontFaceDto>> fontFaces({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubFontFaces(handle: handle);
 
+/// Reads one archive entry's bytes by reference (spec D15).
+///
+/// `key` is a normalised archive key — an `ImageRunDto::source_key` or a
+/// `FontFaceDto::src` — so image/font bytes cross the FFI on demand instead
+/// of at parse time. Errors when the entry is absent; the Dart lazy loader
+/// treats that as "skip" (a sized placeholder / skipped font), never as a
+/// failed book.
+Future<Uint8List> readResource({
+  required DocumentHandle handle,
+  required String key,
+}) => RustLib.instance.api.crateApiEpubReadResource(handle: handle, key: key);
+
 /// Projects one chapter into today's flat-run model (spec D4/D6).
 ///
 /// `index` is the flattened chapter order: every spine document contributes

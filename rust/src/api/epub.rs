@@ -102,6 +102,20 @@ pub fn font_faces(handle: &DocumentHandle) -> Result<Vec<FontFaceDto>, String> {
     Ok(handle.metadata.font_faces.clone())
 }
 
+/// Reads one archive entry's bytes by reference (spec D15).
+///
+/// `key` is a normalised archive key — an `ImageRunDto::source_key` or a
+/// `FontFaceDto::src` — so image/font bytes cross the FFI on demand instead
+/// of at parse time. Errors when the entry is absent; the Dart lazy loader
+/// treats that as "skip" (a sized placeholder / skipped font), never as a
+/// failed book.
+pub fn read_resource(handle: &DocumentHandle, key: String) -> Result<Vec<u8>, String> {
+    handle
+        .archive
+        .read_resource(&key)
+        .ok_or_else(|| format!("Resource not found: {key}"))
+}
+
 /// Projects one chapter into today's flat-run model (spec D4/D6).
 ///
 /// `index` is the flattened chapter order: every spine document contributes
