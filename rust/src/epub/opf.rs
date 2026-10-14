@@ -13,9 +13,9 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
 use super::container::{self, normalize_key, resolve_href, EpubArchive};
+use super::css;
 use super::model::{EpubError, FontFaceDto, MetadataDto, TocEntryDto};
 use super::nav;
-use super::css;
 
 /// Extracts metadata and cover bytes from `path` without parsing chapters.
 pub fn read_metadata(path: &str) -> Result<MetadataDto, EpubError> {
@@ -445,9 +445,7 @@ fn handle(out: &mut Opf, frame: &Frame) {
             text: text.to_string(),
         }),
         "item" => {
-            if let (Some(id), Some(href)) =
-                (get(&frame.attrs, "id"), get(&frame.attrs, "href"))
-            {
+            if let (Some(id), Some(href)) = (get(&frame.attrs, "id"), get(&frame.attrs, "href")) {
                 out.items.push(Item {
                     id: id.to_string(),
                     href: Some(href.to_string()),
@@ -640,36 +638,302 @@ fn opf_dir(path: &str) -> String {
     }
 }
 
-/// Strips markup and normalises whitespace, matching the shape of
-/// `DocumentParser.htmlToText` closely enough for metadata parity.
+/// Strips markup and normalises whitespace, mirroring
+/// `DocumentParser.htmlToText` exactly: block tags become newlines, remaining
+/// tags are stripped, entities decoded, whitespace collapsed.
 fn html_to_text(html: &str) -> String {
-    let mut stripped = String::with_capacity(html.len());
-    let mut in_tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            c if !in_tag => stripped.push(c),
-            _ => {}
+    let s = strip_non_content(html);
+    let s = replace_block_tags(&s);
+    let s = strip_tags(&s);
+    let s = decode_html_entities(&s);
+    collapse_html_whitespace(&s)
+}
+
+/// Removes `<!-- -->` comments and whole `head`/`style`/`script` elements, so
+/// their bodies never survive tag stripping as raw text (matching Dart's
+/// `_stripNonContent`). An unclosed element is left untouched.
+fn strip_non_content(html: &str) -> String {
+    let mut s = strip_comments(html);
+    for tag in ["head", "style", "script"] {
+        s = strip_element(&s, tag);
+    }
+    s
+}
+
+fn strip_comments(html: &str) -> String {
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if html[i..].starts_with("<!--") {
+            if let Some(end) = html[i..].find("-->") {
+                i += end + 3;
+                continue;
+            }
+        }
+        // Copy one char (byte-safe: the needle is pure ASCII).
+        let ch = html[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// Removes `<tag ...>...</close>` spans (ASCII case-insensitive), leaving the
+/// text untouched when the element never closes.
+fn strip_element(html: &str, tag: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some((open_start, content_start)) = find_open_tag(rest, tag) {
+        if let Some(close_end) = find_close_tag(&rest[content_start..], tag) {
+            out.push_str(&rest[..open_start]);
+            rest = &rest[content_start + close_end..];
+        } else {
+            break;
         }
     }
-    let decoded = decode_entities(&stripped);
-    collapse_whitespace(&decoded)
+    out.push_str(rest);
+    out
 }
 
-fn decode_entities(s: &str) -> String {
-    s.replace("&nbsp;", "\u{00A0}")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
+/// Finds `<tag ...>` (ASCII case-insensitive) at or after the start of `s`.
+/// Returns the open tag's start and the offset where its content begins.
+fn find_open_tag(s: &str, tag: &str) -> Option<(usize, usize)> {
+    let mut i = 0;
+    while i < s.len() {
+        let rel = find_ascii_insensitive(&s[i..], "<")?;
+        let mut j = i + rel + 1;
+        if matches!(s.as_bytes().get(j), Some(b'/')) {
+            i = j + 1;
+            continue;
+        }
+        if ascii_tag_name(&s[j..]) == Some(tag.len())
+            && tag_eq_ascii(&s[j..j + tag.len()], tag)
+            && is_tag_boundary(s.as_bytes().get(j + tag.len()))
+        {
+            j += tag.len();
+            while j < s.len() && s.as_bytes()[j] != b'>' {
+                j += 1;
+            }
+            if j < s.len() {
+                return Some((i + rel, j + 1));
+            }
+            return None;
+        }
+        i = j + 1;
+    }
+    None
 }
 
-/// Collapses runs of spaces/tabs to one space and trims; matches the Dart
-/// `htmlToText` whitespace pass for single-line metadata.
-fn collapse_whitespace(s: &str) -> String {
+/// Finds `</tag ...>` (ASCII case-insensitive) and returns the offset just
+/// past its `>`, relative to `s`. An unterminated close tag does not match.
+fn find_close_tag(s: &str, tag: &str) -> Option<usize> {
+    let mut i = 0;
+    while i < s.len() {
+        let rel = find_ascii_insensitive(&s[i..], "</")?;
+        let mut j = i + rel + 2;
+        while matches!(s.as_bytes().get(j), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+            j += 1;
+        }
+        if tag_eq_ascii(s.get(j..j + tag.len()).unwrap_or(""), tag)
+            && is_tag_boundary(s.as_bytes().get(j + tag.len()))
+        {
+            j += tag.len();
+            while j < s.len() && s.as_bytes()[j] != b'>' {
+                j += 1;
+            }
+            if j < s.len() {
+                return Some(j + 1);
+            }
+            return None;
+        }
+        i = j + 1;
+    }
+    None
+}
+
+/// Byte offset of `needle` in `haystack`, matching ASCII case-insensitively.
+/// Both are pure ASCII here, so byte offsets are char boundaries.
+fn find_ascii_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    let h = haystack.as_bytes();
+    let n = needle.as_bytes();
+    if n.is_empty() || n.len() > h.len() {
+        return None;
+    }
+    (0..=h.len() - n.len()).find(|&i| h[i..i + n.len()].eq_ignore_ascii_case(n))
+}
+
+fn tag_eq_ascii(s: &str, tag: &str) -> bool {
+    s.as_bytes().eq_ignore_ascii_case(tag.as_bytes())
+}
+
+/// The length of the ASCII alphanumeric run at the start of `s`, if any.
+fn ascii_tag_name(s: &str) -> Option<usize> {
+    let len: usize = s.bytes().take_while(u8::is_ascii_alphanumeric).count();
+    if len == 0 {
+        None
+    } else {
+        Some(len)
+    }
+}
+
+/// True when `b` ends a tag name (Dart's `\b`): anything but a word char.
+fn is_tag_boundary(b: Option<&u8>) -> bool {
+    !matches!(b, Some(c) if c.is_ascii_alphanumeric() || *c == b'_')
+}
+
+/// Block tags whose open/close each contribute a newline, mirroring Dart's
+/// `_blockTagRe` (`</?(p|div|h[1-6]|li|tr|br|section|article|blockquote)\b[^>]*>`,
+/// case-insensitive). An unterminated `<` is kept literally.
+fn replace_block_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while i < html.len() {
+        let bytes = html.as_bytes();
+        if bytes[i] != b'<' {
+            let ch = html[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
+        }
+        let mut j = i + 1;
+        if matches!(bytes.get(j), Some(b'/')) {
+            j += 1;
+        }
+        let name_len = ascii_tag_name(html.get(j..).unwrap_or(""));
+        let mut matched = false;
+        if let Some(len) = name_len {
+            let name = html[j..j + len].to_ascii_lowercase();
+            if is_block_tag_name(&name) && is_tag_boundary(bytes.get(j + len)) {
+                let mut k = j + len;
+                while k < html.len() && bytes[k] != b'>' {
+                    k += 1;
+                }
+                if k < html.len() {
+                    out.push('\n');
+                    i = k + 1;
+                    matched = true;
+                }
+            }
+        }
+        if !matched {
+            out.push('<');
+            i += 1;
+        }
+    }
+    out
+}
+
+fn is_block_tag_name(name: &str) -> bool {
+    matches!(
+        name,
+        "p" | "div"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "li"
+            | "tr"
+            | "br"
+            | "section"
+            | "article"
+            | "blockquote"
+    )
+}
+
+/// Removes every `<...>` span; an unterminated `<` is kept (matching Dart's
+/// `<[^>]*>` strip).
+fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while i < html.len() {
+        if html.as_bytes()[i] != b'<' {
+            let ch = html[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
+        }
+        match html[i..].find('>') {
+            Some(rel) => i += rel + 1,
+            None => {
+                out.push_str(&html[i..]);
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Decodes the entities Dart's `_decodeEntities` recognises (named + decimal +
+/// hex); anything else — including unknown named entities — stays literal.
+/// `&nbsp;` becomes a plain space, not U+00A0.
+fn decode_html_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        rest = &rest[amp..];
+        let Some(semi) = rest.find(';') else {
+            out.push_str(rest);
+            break;
+        };
+        // An intervening `&` or whitespace ends the candidate (Dart's regex
+        // only matches `&name;` with no gaps).
+        let body = &rest[1..semi];
+        if body.contains('&') || body.contains(char::is_whitespace) {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        }
+        match decode_entity_body(body) {
+            Some(text) => {
+                out.push_str(&text);
+                rest = &rest[semi + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn decode_entity_body(body: &str) -> Option<String> {
+    match body {
+        "amp" => Some("&".to_string()),
+        "lt" => Some("<".to_string()),
+        "gt" => Some(">".to_string()),
+        "quot" => Some("\"".to_string()),
+        "apos" => Some("'".to_string()),
+        "nbsp" => Some(" ".to_string()),
+        "mdash" => Some("\u{2014}".to_string()),
+        "ndash" => Some("\u{2013}".to_string()),
+        "hellip" => Some("\u{2026}".to_string()),
+        "lsquo" => Some("\u{2018}".to_string()),
+        "rsquo" => Some("\u{2019}".to_string()),
+        "ldquo" => Some("\u{201C}".to_string()),
+        "rdquo" => Some("\u{201D}".to_string()),
+        _ => {
+            let digits = body
+                .strip_prefix("#x")
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+                .or_else(|| body.strip_prefix('#').and_then(|d| d.parse::<u32>().ok()))?;
+            if digits <= 0x10FFFF && !(0xD800..=0xDFFF).contains(&digits) {
+                char::from_u32(digits).map(|c| c.to_string())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Collapses whitespace exactly like Dart's `htmlToText`: horizontal runs to
+/// one space, spaces after newlines dropped, 3+ newlines to two, then trim.
+fn collapse_html_whitespace(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut prev_space = false;
     for ch in s.chars() {
@@ -683,7 +947,32 @@ fn collapse_whitespace(s: &str) -> String {
             prev_space = false;
         }
     }
-    out.trim().to_string()
+    // `\n[ \t]+` -> `\n`.
+    let mut nospace = String::with_capacity(out.len());
+    let mut chars = out.chars().peekable();
+    while let Some(ch) = chars.next() {
+        nospace.push(ch);
+        if ch == '\n' {
+            while matches!(chars.peek(), Some(' ' | '\t')) {
+                chars.next();
+            }
+        }
+    }
+    // `\n{3,}` -> `\n\n`.
+    let mut collapsed = String::with_capacity(nospace.len());
+    let mut run = 0;
+    for ch in nospace.chars() {
+        if ch == '\n' {
+            run += 1;
+            if run <= 2 {
+                collapsed.push(ch);
+            }
+        } else {
+            run = 0;
+            collapsed.push(ch);
+        }
+    }
+    collapsed.trim().to_string()
 }
 
 #[cfg(test)]
@@ -694,7 +983,10 @@ mod tests {
     /// Fixtures live at the repo root (`test/fixtures/epub/`); `cargo test`
     /// runs with `rust/` as the working directory.
     fn fixture(name: &str) -> String {
-        format!("{}/../test/fixtures/epub/{name}", env!("CARGO_MANIFEST_DIR"))
+        format!(
+            "{}/../test/fixtures/epub/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        )
     }
 
     #[test]
@@ -713,5 +1005,34 @@ mod tests {
     #[test]
     fn percent_encoded_paths_do_not_throw() {
         assert!(read_metadata(&fixture("percent-path.epub")).is_ok());
+    }
+
+    #[test]
+    fn description_with_escaped_block_markup_keeps_paragraph_breaks() {
+        // Dart's `htmlToText` turns block tags into newlines; the Rust port
+        // must too (parity item 7). `innerText` unescapes the entities first,
+        // so `parse_opf` sees literal `<p>` tags here.
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <dc:description>&lt;p&gt;First para.&lt;/p&gt;&lt;p&gt;Second para.&lt;/p&gt;</dc:description>
+            </metadata></package>"#,
+        );
+        assert_eq!(
+            opf.description.as_deref(),
+            Some("First para.\n\nSecond para.")
+        );
+    }
+
+    #[test]
+    fn description_entities_match_the_dart_decoder() {
+        // `&nbsp;` decodes to a plain space (not U+00A0), like Dart.
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <dc:description>A&nbsp;B&mdash;C&#65;</dc:description>
+            </metadata></package>"#,
+        );
+        assert_eq!(opf.description.as_deref(), Some("A B\u{2014}CA"));
     }
 }
