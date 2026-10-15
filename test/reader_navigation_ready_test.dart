@@ -5,6 +5,7 @@ import 'package:burrow/models/book.dart';
 import 'package:burrow/screens/reader_screen.dart';
 import 'package:burrow/services/brightness_controller.dart';
 import 'package:burrow/services/library_service.dart';
+import 'package:burrow/src/rust/frb_generated.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -52,6 +53,12 @@ String _visibleText(WidgetTester tester) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // The reader parses through the Rust engine, which needs its FFI binding
+  // initialized once per file (there is no Dart fallback anymore).
+  setUpAll(() async {
+    await RustLib.init();
+  });
 
   late Directory tmp;
   late db.AppDatabase database;

@@ -47,21 +47,20 @@ class ComicPageProvider implements ComicPageSource {
 
   final LinkedHashMap<int, Uint8List> _cache = LinkedHashMap();
 
-  /// Maximum compressed CBZ size (matches `DocumentParser`).
+  /// Maximum compressed CBZ size.
   ///
   /// Kept as a local constant (instead of importing the parser's) so the
   /// reader path can never silently lose its guard if the parser changes.
   static const _maxCompressedBytes = 500 * 1024 * 1024;
 
-  /// Maximum total decompressed bytes (matches `DocumentParser`).
+  /// Maximum total decompressed bytes.
   static const _maxDecompressedBytes = 512 * 1024 * 1024;
 
   /// Opens a CBZ archive and builds page metadata without reading image bytes.
   ///
   /// Rejects oversized archives before decoding so a 500 MB CBZ or a
   /// highly-compressible zip-bomb cannot OOM the reader on low-end Android.
-  /// (Round 12 added these guards to `DocumentParser`, but this is the actual
-  /// reader path, so they are replicated here.)
+  /// (Round 12 added these guards here on the actual reader path.)
   ///
   /// TODO(#38): `ZipDecoder().decodeBytes()` decompresses all entries into
   /// memory upfront. For large CBZ files this is O(archive_size). A proper

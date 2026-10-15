@@ -310,7 +310,7 @@ class EpubCssParser {
   }
 
   /// Lowercase + percent-decode [path] for map keys. Falls back to the raw
-  /// path when decoding throws (bare `%`), mirroring `DocumentParser`.
+  /// path when decoding throws (bare `%`).
   static String _normalizeKey(String path) {
     try {
       return Uri.decodeComponent(path).toLowerCase();

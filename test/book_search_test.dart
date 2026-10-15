@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:burrow/services/book_search.dart';
-import 'package:burrow/services/document_parser.dart';
+import 'package:burrow/models/document.dart';
 
 void main() {
   group('BookSearch', () {

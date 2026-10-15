@@ -1,5 +1,5 @@
 import 'package:burrow/models/reader_settings.dart';
-import 'package:burrow/services/document_parser.dart';
+import 'package:burrow/models/document.dart';
 import 'package:burrow/services/paginator.dart';
 import 'package:burrow/widgets/toc_sheet.dart';
 import 'package:flutter/material.dart';

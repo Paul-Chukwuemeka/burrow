@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:burrow/services/document_parser.dart';
 import 'package:burrow/utils/comic_archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,11 +32,12 @@ void main() {
       }
     });
 
-    test('matches DocumentParser.isImageEntry', () {
-      const names = ['a.jpg', 'b.TXT', 'c.webp', 'd', 'e.PNG'];
-      for (final n in names) {
-        expect(isImageEntry(n), DocumentParser.isImageEntry(n), reason: n);
-      }
+    test('is case-insensitive on extensions', () {
+      expect(isImageEntry('a.jpg'), isTrue);
+      expect(isImageEntry('b.TXT'), isFalse);
+      expect(isImageEntry('c.webp'), isTrue);
+      expect(isImageEntry('d'), isFalse);
+      expect(isImageEntry('e.PNG'), isTrue);
     });
   });
 
@@ -65,19 +65,15 @@ void main() {
       ]);
     });
 
-    test('matches DocumentParser.naturalCompare', () {
+    test('orders numeric segments numerically', () {
       const pairs = [
-        ('10.jpg', '2.jpg'),
-        ('a1b2.jpg', 'a1b10.jpg'),
-        ('Page2.JPG', 'page10.jpg'),
-        ('same.jpg', 'same.jpg'),
+        ('10.jpg', '2.jpg', 1),
+        ('a1b2.jpg', 'a1b10.jpg', -1),
+        ('Page2.JPG', 'page10.jpg', -1),
+        ('same.jpg', 'same.jpg', 0),
       ];
-      for (final (a, b) in pairs) {
-        expect(
-          naturalCompare(a, b).sign,
-          DocumentParser.naturalCompare(a, b).sign,
-          reason: '$a vs $b',
-        );
+      for (final (a, b, sign) in pairs) {
+        expect(naturalCompare(a, b).sign, sign, reason: '$a vs $b');
       }
     });
   });
@@ -153,18 +149,13 @@ void main() {
       );
     });
 
-    test('matches DocumentParser.decodeImageDimensions', () {
-      final inputs = [
-        Uint8List(0),
-        Uint8List.fromList([1, 2, 3, 4]),
-        Uint8List.fromList(utf8.encode('<svg viewBox="0 0 5 6"></svg>')),
-      ];
-      for (final bytes in inputs) {
-        expect(
-          decodeImageDimensions(bytes),
-          DocumentParser.decodeImageDimensions(bytes),
-        );
-      }
+    test('decodes a small SVG viewBox', () {
+      expect(
+        decodeImageDimensions(
+          Uint8List.fromList(utf8.encode('<svg viewBox="0 0 5 6"></svg>')),
+        ),
+        (5, 6),
+      );
     });
   });
 }

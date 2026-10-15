@@ -126,10 +126,9 @@ void main() {
   });
 
   test('loadComicPages opens a CBR through the content-engine seam', () async {
-    // The non-CBZ branch parses via `createEpubEngine(library.epubEngine)`,
-    // never `DocumentParser` directly (retire-dart-engine Task 6). The
-    // fixture archives `page10` before `page2`, so only a natural sort yields
-    // three pages in order.
+    // The non-CBZ branch parses via `createEpubEngine(library.epubEngine)`
+    // (retire-dart-engine Task 6). The fixture archives `page10` before
+    // `page2`, so only a natural sort yields three pages in order.
     await RustLib.init();
     final ctrl = ComicReaderController(
       book: Book(

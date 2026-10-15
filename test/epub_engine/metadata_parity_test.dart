@@ -1,13 +1,13 @@
-// Metadata-parity test (Task 10, spec criterion 12).
+// Metadata-parity test (retire-dart-engine Task 7).
 //
 // One OPF implementation must serve both library population
 // (`EpubEngine.extractMetadata`, used by the library worker and the
 // edit-book refetch) and the reader (`EpubEngine.parse`): metadata from the
-// two paths must agree. The Rust engine additionally stays total over every
+// two paths must agree. The engine additionally stays total over every
 // library format: non-EPUB formats have no OPF, so they are served natively
 // by the `extractMetadataTxt/Cbz/Cbr/Pdf` ports rather than failing as
-// "not a valid EPUB" (see `non_epub_metadata_test.dart` for the field-by-field
-// parity).
+// "not a valid EPUB" (see `non_epub_metadata_test.dart` for the
+// field-by-field goldens).
 import 'dart:io';
 
 import 'package:burrow/services/epub/epub_engine_factory.dart';
@@ -21,18 +21,14 @@ void main() {
     await RustLib.init();
   });
 
-  for (final engineId in [dartEpubEngineId, rustEpubEngineId]) {
-    test(
-      'library and reader metadata come from one OPF implementation ($engineId)',
+  test('library and reader metadata come from one OPF implementation',
       () async {
-        final engine = createEpubEngine(engineId);
-        final meta = await engine.extractMetadata(_fixture);
-        final doc = await engine.parse(_fixture);
-        expect(meta.title, doc.title);
-        expect(meta.author, doc.author);
-      },
-    );
-  }
+    final engine = createEpubEngine(rustEpubEngineId);
+    final meta = await engine.extractMetadata(_fixture);
+    final doc = await engine.parse(_fixture);
+    expect(meta.title, doc.title);
+    expect(meta.author, doc.author);
+  });
 
   test('rust engine serves non-EPUB metadata natively', () async {
     final engine = createEpubEngine(rustEpubEngineId);

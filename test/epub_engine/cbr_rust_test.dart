@@ -2,15 +2,15 @@
 //
 // For the committed `mini.cbr` fixture (authored with `rars`' own writer by
 // `rust/examples/build_cbr_fixture.rs` — no local RAR encoder exists),
-// `RustEpubEngine.parse` (via the FFI `parseCbr` port of
-// `DocumentParser._parseComicBook`'s CBR branch) must list pages
+// `RustEpubEngine.parse` (via the FFI `parseCbr` comic port) must list pages
 // natural-sorted with intrinsic dimensions and the first page's bytes as the
 // cover. The fixture archives `page10` before `page2`, so only a natural
 // sort yields `page1, page2, page10` (Review Focus #3).
 //
-// There is deliberately NO Dart-vs-Rust parity test here: the Dart `rar`
-// plugin resolves to a `MethodChannel` off Android, which has no binding on
-// the host, so `DartEpubEngine` cannot open a valid CBR under `flutter test`.
+// There is deliberately NO cross-engine parity test here: the retired Dart
+// `rar` plugin resolved to a `MethodChannel` off Android, which has no binding
+// on the host, so the Dart engine could never open a valid CBR under
+// `flutter test`.
 // Parity against an externally-produced CBR (and a device run with a
 // user-supplied CBR) remains an open coverage gap — see the Task 3 report.
 //

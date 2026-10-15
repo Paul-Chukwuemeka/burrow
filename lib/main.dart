@@ -14,15 +14,16 @@ import 'theme/burrow_tokens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // The default content engine is the native Rust parser (engine flag `rust`,
-  // design D8). Its FFI binding must be initialized on this isolate before any
-  // engine call — without this every EPUB open and OPF metadata extraction
-  // fails with "flutter_rust_bridge has not been initialized".
+  // The default content engine is the native Rust parser. Its FFI binding must
+  // be initialized on this isolate before any engine call — without this
+  // every EPUB open and OPF metadata extraction fails with
+  // "flutter_rust_bridge has not been initialized".
   //
-  // A failed init must never brick the EPUB path: the factory falls back to
-  // the Dart engine while [isRustEngineAvailable] is false. The `.so` is
-  // currently built for Android only (Gradle `cargo-ndk` task); iOS packaging
-  // is out of scope for Phase A, so iOS always takes this fallback.
+  // The availability flag is recorded for diagnostics; there is no Dart
+  // fallback anymore (the Dart engine was retired), so a failed init surfaces
+  // FFI errors to the caller instead of bricking on a missing engine. The
+  // `.so` is currently built for Android only (Gradle `cargo-ndk` task); iOS
+  // packaging is out of scope for Phase A.
   try {
     await RustLib.init();
     setRustEngineAvailable(true);

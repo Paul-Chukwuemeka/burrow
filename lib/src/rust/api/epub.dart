@@ -61,10 +61,10 @@ Future<MetadataDto> extractMetadataTxt({required String path}) =>
 /// Extracts CBZ metadata without parsing pages (the CBZ leg of non-EPUB
 /// metadata parity).
 ///
-/// Ports `DocumentParser._extractCbzMetadata`: only the first (natural-sorted)
-/// page's bytes cross as the cover; the Dart adapter downscales it, exactly
-/// like the Dart metadata path. Error strings match Dart's `FormatException`
-/// messages verbatim so the Dart adapter can translate them back.
+/// Reads the CBZ cover (first natural-sorted page) without parsing pages.
+///
+/// Only the first (natural-sorted) page's bytes cross as the cover; the
+/// engine adapter downscales it on the metadata path.
 Future<MetadataDto> extractMetadataCbz({required String path}) =>
     RustLib.instance.api.crateApiEpubExtractMetadataCbz(path: path);
 
@@ -150,7 +150,7 @@ Future<void> closeDocument({required DocumentHandle handle}) =>
 /// Decoding is UTF-8 with a Latin-1 fallback when replacement chars dominate,
 /// and chapters follow `chapterizeTxt` (heading regex + 3-blank-line runs).
 /// Chapters carry no runs or images; the filename-derived title is applied
-/// Dart-side, matching `DocumentParser._parseTxt`.
+/// Dart-side.
 Future<List<ChapterDto>> parseTxt({required String path}) =>
     RustLib.instance.api.crateApiEpubParseTxt(path: path);
 
@@ -158,10 +158,9 @@ Future<List<ChapterDto>> parseTxt({required String path}) =>
 /// of retiring the Dart engine).
 ///
 /// Each image entry becomes one page (title, raw entry name, bytes, intrinsic
-/// size); the cover is the first page's bytes, un-downscaled exactly like
-/// `DocumentParser._parseComicBook`. Error strings match that method's
-/// `FormatException` messages verbatim so the Dart adapter can translate them
-/// back. Unlike the EPUB path there is no handle: page bytes cross by value
+/// size); the cover is the first page's bytes, un-downscaled. Error strings
+/// match the engine adapter's `FormatException` messages verbatim so corrupt
+/// archives surface as permanent failures. Unlike the EPUB path there is no handle: page bytes cross by value
 /// because comics have no OPF for on-demand hydration.
 Future<ParsedComicDto> parseCbz({required String path}) =>
     RustLib.instance.api.crateApiEpubParseCbz(path: path);

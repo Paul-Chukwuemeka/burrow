@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import 'document_parser.dart';
+import '../models/document.dart';
 
 /// A single match in a book.
 @immutable

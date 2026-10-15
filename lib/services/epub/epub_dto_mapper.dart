@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/style_run.dart';
-import 'package:burrow/services/document_parser.dart';
+import 'package:burrow/models/document.dart';
 import 'package:burrow/services/epub_css_parser.dart';
 import 'package:burrow/utils/cover_prep.dart';
 import 'package:burrow/src/rust/epub/model.dart';

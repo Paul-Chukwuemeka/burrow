@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 /// Comic/zip archive helpers shared by the reader and the metadata paths.
 ///
-/// Moved verbatim out of `DocumentParser` (`_isImage`, `_naturalCompare`,
-/// `_RichTextBuilder._decodeImageDimensions` and its SVG helpers) so callers
-/// no longer depend on the Dart parse engine (which is being retired).
-/// Pure Dart; no `DocumentParser` dependency.
+/// Moved verbatim out of the retired Dart parser (`_isImage`,
+/// `_naturalCompare`, `_RichTextBuilder._decodeImageDimensions` and its SVG
+/// helpers) so callers no longer depend on the Dart parse engine.
+/// Pure Dart.
 
 const _imageExtensions = {
   '.jpg',

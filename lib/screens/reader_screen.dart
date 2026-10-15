@@ -20,7 +20,7 @@ import '../models/reader_settings.dart';
 import '../models/style_run.dart';
 import '../services/book_search.dart';
 import '../services/comic_page_provider.dart';
-import '../services/document_parser.dart';
+import '../models/document.dart';
 import '../services/epub/epub_engine_factory.dart';
 import '../services/epub_css_parser.dart';
 import '../services/library_service.dart';

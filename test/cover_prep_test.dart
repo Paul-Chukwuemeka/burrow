@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:burrow/services/document_parser.dart';
-import 'package:burrow/utils/comic_archive.dart' as comic;
 import 'package:burrow/utils/cover_prep.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -62,21 +60,18 @@ void main() {
       expect(math.max(decoded!.width, decoded.height), lessThanOrEqualTo(480));
     });
 
-    test('odd dimensions (panorama) degrade gracefully and match DocumentParser',
-        () {
+    test('odd dimensions (panorama) degrade gracefully', () {
       final pano = Uint8List.fromList(
         img.encodePng(img.Image(width: 3000, height: 50)),
       );
       final util = prepareCover(pano);
-      final legacy = DocumentParser.prepareCover(pano);
       expect(util, isNotNull);
-      expect(util, orderedEquals(legacy!));
       final decoded = img.decodeImage(util!);
       expect(decoded, isNotNull);
       expect(math.max(decoded!.width, decoded.height), lessThanOrEqualTo(480));
     });
 
-    test('matches DocumentParser.prepareCover on every input class', () {
+    test('is idempotent across every input class', () {
       final big = Uint8List.fromList(
         img.encodePng(img.Image(width: 100, height: 900)),
       );
@@ -88,17 +83,11 @@ void main() {
         big,
       ];
       for (final input in inputs) {
-        final a = prepareCover(input);
-        final b = DocumentParser.prepareCover(input);
-        if (a == null || b == null) {
-          expect(a, isNull);
-          expect(b, isNull);
-        } else {
-          expect(a, orderedEquals(b));
-        }
+        // A second pass over the output must be a fixpoint: covers are never
+        // re-encoded into something different.
+        final once = prepareCover(input);
+        expect(prepareCover(once), once == null ? isNull : orderedEquals(once));
       }
-      // comic_archive import is used below; silence unused-import lints.
-      expect(comic.isImageEntry('page1.jpg'), isTrue);
     });
   });
 }

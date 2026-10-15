@@ -15,10 +15,11 @@ import '../models/book_stats.dart';
 import 'package:drift/drift.dart' show Value;
 import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
+import '../models/document.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
 import '../utils/cover_prep.dart';
-import 'document_parser.dart';
+import 'epub/epub_cache.dart';
 import 'epub/epub_engine_factory.dart';
 import 'missing_matcher.dart';
 
@@ -53,7 +54,6 @@ class LibraryService extends ChangeNotifier {
   static const _filtersKey = 'burrow.library.filters.v1';
   static const _comicsOrganizedKey = 'burrow.comics.organized.v1';
   static const _seriesCleanupKey = 'burrow.comics.seriesCleanup.v1';
-  static const _epubEngineKey = 'burrow.epub.engine.v1';
 
   db.AppDatabase? _db;
   final List<Book> _books = [];
@@ -61,14 +61,13 @@ class LibraryService extends ChangeNotifier {
   final Set<String> _missingIds = {};
   bool _storageUnavailable = false;
 
-  /// Content engine id persisted under [_epubEngineKey] (design D8).
+  /// Content engine id (retire-dart-engine Task 7).
   ///
-  /// Defaults to the Rust engine; flipping it back to `dart` is a reversible
-  /// flag, not a revert. Read once in [load] so the reader can pick an engine
-  /// synchronously on the open path.
-  String _epubEngine = rustEpubEngineId;
-
-  String get epubEngine => _epubEngine;
+  /// The Dart engine is retired: this is always the Rust engine. A stale
+  /// `dart` value persisted by an older build is normalized to Rust at
+  /// [load], and [createEpubEngine] rejects `dart` outright, so the reader
+  /// and metadata worker can never resolve a removed engine.
+  String get epubEngine => rustEpubEngineId;
 
   Set<String> get missingIds => Set.unmodifiable(_missingIds);
   bool get storageUnavailable => _storageUnavailable;
@@ -291,8 +290,9 @@ class LibraryService extends ChangeNotifier {
     // Library layout preference.
     libraryLayout = prefs.getString(_layoutKey) ?? 'grid';
 
-    // Content-engine flag (default Rust; the Dart engine stays available).
-    _epubEngine = prefs.getString(_epubEngineKey) ?? rustEpubEngineId;
+    // The engine flag is retired: the Rust engine is the only engine. A stale
+    // `dart` value persisted by an older build is ignored (there is nothing
+    // to read back — the getter always returns Rust).
 
     // First-run onboarding state.
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;
@@ -305,17 +305,14 @@ class LibraryService extends ChangeNotifier {
     unawaited(reconcileMissingFiles());
 
     // Sweep stale/orphaned parsed-document cache entries (and earlier cache
-    // schema versions) in the background. Keep every engine's namespace valid
-    // so the sweep never deletes the other engine's cache (design D13).
-    // NOTE (Task 6): `pruneCache` is deliberately NOT on the per-engine
-    // [EpubEngine] seam — it sweeps all engines' namespaces at once, so it
-    // cannot belong to one engine. It stays a `DocumentParser` static until
-    // Task 7 relocates the cache helpers (with the domain types) to a
-    // dedicated cache util.
+    // schema versions) in the background. The sweep covers every engine
+    // namespace at once — the Rust namespace plus orphaned entries from the
+    // retired Dart engine — so it stays on the engine-agnostic [EpubCache]
+    // util rather than the per-engine [EpubEngine] seam.
     unawaited(
-      DocumentParser.pruneCache(
+      EpubCache.prune(
         [for (final b in _books) b.path],
-        engineIds: const [dartEpubEngineId, rustEpubEngineId],
+        engineIds: const [rustEpubEngineId, legacyDartEngineId],
       ),
     );
 
@@ -419,21 +416,6 @@ class LibraryService extends ChangeNotifier {
     libraryLayout = layout;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_layoutKey, layout);
-    notifyListeners();
-  }
-
-  /// Persists the content-engine flag so switching engines stays reversible.
-  ///
-  /// [engineId] must be one the factory understands (`dart` or `rust`):
-  /// unknown ids throw here so a typo can never persist a flag that bricks
-  /// the next open.
-  Future<void> saveEpubEngine(String engineId) async {
-    if (engineId != dartEpubEngineId && engineId != rustEpubEngineId) {
-      throw ArgumentError.value(engineId, 'engineId', 'Unknown EPUB engine');
-    }
-    _epubEngine = engineId;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_epubEngineKey, engineId);
     notifyListeners();
   }
 
@@ -1036,8 +1018,8 @@ class LibraryService extends ChangeNotifier {
     ParsedMetadata doc;
     try {
       // Library metadata comes from the same engine (and the same OPF
-      // implementation) as the reader, behind the reversible engine flag.
-      doc = await createEpubEngine(_epubEngine).extractMetadata(book.path);
+      // implementation) as the reader.
+      doc = await createEpubEngine(epubEngine).extractMetadata(book.path);
     } on FormatException {
       debugPrint('Metadata parse skip (format): ${book.title}');
       book.metadataComplete = true;
@@ -1245,10 +1227,12 @@ class LibraryService extends ChangeNotifier {
     // document cache key needs path + mtime + size, so drop it before the
     // source file itself is removed. Sync-only: batch selection deletes run
     // under testWidgets' FakeAsync zone, where async disk IO never
-    // completes (see [EpubEngine.clearCacheFor]). The Rust engine writes no
-    // cache entry in Phase A, so its no-op is equivalent; any orphaned entry
-    // from the other engine's namespace is swept by `pruneCache` at startup.
-    createEpubEngine(_epubEngine).clearCacheFor(book.path);
+    // completes (see [EpubEngine.clearCacheFor]). The seam call clears every
+    // engine namespace at once — the Rust namespace plus orphaned entries
+    // from the retired Dart engine — so deletion never leaks the other
+    // namespace's entries (any stragglers are swept by [EpubCache.prune] at
+    // startup).
+    createEpubEngine(epubEngine).clearCacheFor(book.path);
     final cover = book.coverPath;
     if (cover != null) {
       try {
@@ -1335,7 +1319,9 @@ class LibraryService extends ChangeNotifier {
     if (_db != null) {
       await _db!.updateBook(db.bookToCompanionForUpdate(updated));
     }
-    createEpubEngine(_epubEngine).clearCacheFor(old.path);
+    // The old path's entries in every engine namespace are dropped (see the
+    // delete path above).
+    createEpubEngine(epubEngine).clearCacheFor(old.path);
     _missingIds.remove(id);
     _invalidateSortCache();
     notifyListeners();

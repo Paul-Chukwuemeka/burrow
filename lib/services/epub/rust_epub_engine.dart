@@ -6,9 +6,10 @@ import 'package:burrow/src/rust/api/epub.dart' as rust;
 import 'package:burrow/src/rust/epub/project.dart' show ChapterDto;
 
 import '../../models/book.dart';
+import '../../models/document.dart';
 import '../../utils/book_title.dart';
-import '../document_parser.dart';
 import '../epub_css_parser.dart';
+import 'epub_cache.dart';
 import 'epub_dto_mapper.dart';
 import 'epub_engine.dart';
 
@@ -20,47 +21,37 @@ import 'epub_engine.dart';
 /// Dart UTF-16 code unit, `%` lengths stay symbolic, and image bytes stay empty
 /// until on-demand hydration (D15): [hydrateImages]/[hydrateFonts] fetch them
 /// through the Rust handle via [readResource] instead of re-reading the
-/// archive with Dart.
+/// archive.
 ///
-/// Phase A keeps the disk cache Dart-only: Rust writes no cache entry, so
-/// [clearCacheFor] is a no-op rather than deleting the Dart engine's entry from
-/// under it.
+/// The engine writes no disk cache: [clearCacheFor] deletes orphaned entries
+/// from the retired Dart engine's namespace (plus any entry under the Rust
+/// namespace) rather than managing live entries.
 class RustEpubEngine implements EpubEngine {
   const RustEpubEngine();
 
   @override
   Future<ParsedDocument> parse(String path) async {
-    // TXT is parsed natively through the FFI `parseTxt` port of
-    // `DocumentParser._parseTxt`/`chapterizeTxt`. Every other non-EPUB format
-    // still falls back to the Dart implementation for now.
-    if (formatFromExtension(path) == BookFormat.txt) {
+    // Every known format has a native parser; `formatFromExtension` is total
+    // (unknown extensions fall through to `txt`), so there is no fallback.
+    final format = formatFromExtension(path);
+    if (format == BookFormat.txt) {
       return _parseTxt(path);
     }
     // CBZ/CBR comics are parsed natively through the FFI `parseCbz`/`parseCbr`
-    // ports of the `_parseComicBook` branches. PDF is parsed natively through
-    // the FFI `parsePdf` port of the `_parseIsolate` PDF stub (rendering stays
-    // in `pdfrx`; the engine only returns the empty-chapter stub).
-    final format = formatFromExtension(path);
+    // ports. PDF is parsed natively through the FFI `parsePdf` port (rendering
+    // stays in `pdfrx`; the engine only returns the empty-chapter stub).
     if (format == BookFormat.cbz || format == BookFormat.cbr) {
       return _parseComic(path, format);
     }
     if (format == BookFormat.pdf) {
       return _parsePdf(path);
     }
-    // The reader opens every reflowable format through this seam, so any
-    // future non-EPUB format still falls back to the Dart implementation
-    // rather than failing as "not a valid EPUB" — mirroring
-    // [extractMetadata]. Every known format (TXT/CBZ/CBR/PDF) already routes
-    // to Rust above; this is belt and braces behind the factory fallback.
-    if (formatFromExtension(path) != BookFormat.epub) {
-      return DocumentParser.parse(path);
-    }
     try {
       final handle = await rust.openEpub(path: path);
       try {
         final metadata = await rust.metadata(handle: handle);
         // One chapter per TOC anchor, not per spine file: `chapterCount` is the
-        // flattened anchor-split length, matching Dart's `splitByAnchors`.
+        // flattened anchor-split length.
         final count = await rust.chapterCount(handle: handle);
         final chapters = <ChapterDto>[];
         for (var index = 0; index < count; index++) {
@@ -82,10 +73,6 @@ class RustEpubEngine implements EpubEngine {
     } on FormatException {
       rethrow;
     } catch (e) {
-      // Belt and braces behind the factory fallback: a directly-constructed
-      // engine (or a late dlopen failure) degrades to Dart rather than
-      // bricking the open when the native library is absent.
-      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       if (isRustCorruptEpubFailure(e)) {
         throw FormatException(e.toString());
       }
@@ -96,10 +83,8 @@ class RustEpubEngine implements EpubEngine {
   /// Parses a TXT book through the Rust engine.
   ///
   /// Chapters carry no runs or images, so the DTOs map straight onto
-  /// [Chapter]; the title is filename-derived exactly like
-  /// `DocumentParser._parseTxt`. A missing native library degrades to Dart,
-  /// while corrupt TXT (too large / empty) surfaces as a [FormatException]
-  /// like the Dart engine.
+  /// [Chapter]; the title is filename-derived. Corrupt TXT (too large /
+  /// empty) surfaces as a [FormatException].
   Future<ParsedDocument> _parseTxt(String path) async {
     try {
       final chapters = await rust.parseTxt(path: path);
@@ -109,7 +94,6 @@ class RustEpubEngine implements EpubEngine {
         chapters: [for (final c in chapters) EpubDtoMapper.toChapter(c)],
       );
     } catch (e) {
-      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       if (isRustCorruptTxtFailure(e)) {
         throw FormatException(e.toString());
       }
@@ -120,14 +104,9 @@ class RustEpubEngine implements EpubEngine {
   /// Parses a CBZ/CBR comic through the Rust engine.
   ///
   /// Each image entry becomes a chapter holding a single full-width `ImageRun`
-  /// over a lone `\uFFFC`, with the first page's bytes as the cover —
-  /// exactly like `DocumentParser._parseComicBook` (whose cover is
-  /// un-downscaled on the parse path, so no `prepareCover` here). CBZ entries
-  /// come from the Rust ZIP reader, CBR entries from the pure-Rust `rars`
-  /// crate; the Dart `rar` plugin is never touched from this path (it stays
-  /// as the Dart engine's CBR backend until its own retirement task). A
-  /// missing native library degrades to Dart, while corrupt comics surface
-  /// as a [FormatException] like the Dart engine.
+  /// over a lone `\uFFFC`, with the first page's bytes as the cover. CBZ
+  /// entries come from the Rust ZIP reader, CBR entries from the pure-Rust
+  /// `rars` crate. Corrupt comics surface as a [FormatException].
   Future<ParsedDocument> _parseComic(String path, BookFormat format) async {
     try {
       final parsed = format == BookFormat.cbr
@@ -151,7 +130,6 @@ class RustEpubEngine implements EpubEngine {
         coverBytes: parsed.coverBytes,
       );
     } catch (e) {
-      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       if (format == BookFormat.cbr
           ? isRustCorruptCbrFailure(e)
           : isRustCorruptCbzFailure(e)) {
@@ -163,58 +141,41 @@ class RustEpubEngine implements EpubEngine {
 
   /// Parses a PDF book through the Rust engine.
   ///
-  /// Neither engine reflows PDF — rendering stays in `pdfrx`. The Dart
-  /// isolate's PDF branch returns an empty-chapter stub without reading the
-  /// file (filename-derived title, empty author, one `Chapter('', '')`, no
-  /// cover bytes — the cover renders via `pdf_cover.dart`), and the FFI
-  /// `parsePdf` port returns the same single empty chapter, so the mapped
-  /// document is identical by construction. A missing native library degrades
-  /// to Dart; the stub itself never fails, so no `FormatException`
-  /// translation is needed (unlike TXT/CBZ/CBR, Dart throws nothing for PDF).
+  /// Neither engine reflows PDF — rendering stays in `pdfrx`. The FFI
+  /// `parsePdf` port returns a single empty chapter, so the mapped document
+  /// is the empty-chapter stub (filename-derived title, empty author, one
+  /// `Chapter('', '')`, no cover bytes — the cover renders via
+  /// `pdf_cover.dart`). The stub itself never fails, so no `FormatException`
+  /// translation is needed.
   Future<ParsedDocument> _parsePdf(String path) async {
-    try {
-      final chapters = await rust.parsePdf(path: path);
-      return ParsedDocument(
-        title: titleFromFilename(path),
-        author: '',
-        chapters: [for (final c in chapters) EpubDtoMapper.toChapter(c)],
-      );
-    } catch (e) {
-      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
-      rethrow;
-    }
+    final chapters = await rust.parsePdf(path: path);
+    return ParsedDocument(
+      title: titleFromFilename(path),
+      author: '',
+      chapters: [for (final c in chapters) EpubDtoMapper.toChapter(c)],
+    );
   }
 
   /// Extracts only metadata and cover bytes via the Rust OPF reader.
   ///
   /// Every format routes to Rust: EPUBs read the OPF manifest, while TXT/CBZ/
-  /// CBR/PDF go through the `extractMetadataTxt/Cbz/Cbr/Pdf` ports of
-  /// `DocumentParser._extractMetadataIsolate`'s per-format branches
+  /// CBR/PDF go through the `extractMetadataTxt/Cbz/Cbr/Pdf` ports
   /// (filename-derived title, first-page comic cover, deferred CBR cover).
-  /// The mapped metadata (including the downscaled cover) matches the Dart
-  /// engine field by field. A missing native library degrades to Dart; corrupt
-  /// books surface as a [FormatException] like the Dart engine.
+  /// Corrupt books surface as a [FormatException].
   @override
   Future<ParsedMetadata> extractMetadata(String path) async {
-    final format = formatFromExtension(path);
-    if (format == BookFormat.epub) {
-      return _extractEpubMetadata(path);
+    switch (formatFromExtension(path)) {
+      case BookFormat.epub:
+        return _extractEpubMetadata(path);
+      case BookFormat.txt:
+        return _extractTxtMetadata(path);
+      case BookFormat.cbz:
+        return _extractCbzMetadata(path);
+      case BookFormat.cbr:
+        return _extractCbrMetadata(path);
+      case BookFormat.pdf:
+        return _extractPdfMetadata(path);
     }
-    if (format == BookFormat.txt) {
-      return _extractTxtMetadata(path);
-    }
-    if (format == BookFormat.cbz) {
-      return _extractCbzMetadata(path);
-    }
-    if (format == BookFormat.cbr) {
-      return _extractCbrMetadata(path);
-    }
-    if (format == BookFormat.pdf) {
-      return _extractPdfMetadata(path);
-    }
-    // Belt and braces behind the factory fallback: an unknown extension still
-    // degrades to the Dart implementation rather than failing.
-    return DocumentParser.extractMetadata(path);
   }
 
   Future<ParsedMetadata> _extractEpubMetadata(String path) async {
@@ -227,9 +188,6 @@ class RustEpubEngine implements EpubEngine {
     } on FormatException {
       rethrow;
     } catch (e) {
-      if (isRustNotInitializedFailure(e)) {
-        return DocumentParser.extractMetadata(path);
-      }
       if (isRustCorruptEpubFailure(e)) {
         throw FormatException(e.toString());
       }
@@ -239,28 +197,20 @@ class RustEpubEngine implements EpubEngine {
 
   /// Extracts TXT metadata through the FFI `extractMetadataTxt` port.
   ///
-  /// The file is never read on either side (filename-derived title, empty
-  /// author, no cover), so only a missing native library needs handling.
+  /// The file is never read (filename-derived title, empty author, no cover).
   Future<ParsedMetadata> _extractTxtMetadata(String path) async {
-    try {
-      final metadata = await rust.extractMetadataTxt(path: path);
-      return EpubDtoMapper.toParsedMetadata(
-        metadata,
-        fallbackTitle: titleFromFilename(path),
-      );
-    } catch (e) {
-      if (isRustNotInitializedFailure(e)) {
-        return DocumentParser.extractMetadata(path);
-      }
-      rethrow;
-    }
+    final metadata = await rust.extractMetadataTxt(path: path);
+    return EpubDtoMapper.toParsedMetadata(
+      metadata,
+      fallbackTitle: titleFromFilename(path),
+    );
   }
 
   /// Extracts CBZ metadata through the FFI `extractMetadataCbz` port.
   ///
   /// Only the first (natural-sorted) page's bytes cross as the cover; the
-  /// mapper downscales them exactly like the Dart metadata path. Corrupt
-  /// archives surface as a [FormatException] like the Dart engine.
+  /// mapper downscales them exactly like the metadata path. Corrupt archives
+  /// surface as a [FormatException].
   Future<ParsedMetadata> _extractCbzMetadata(String path) async {
     try {
       final metadata = await rust.extractMetadataCbz(path: path);
@@ -271,9 +221,6 @@ class RustEpubEngine implements EpubEngine {
     } on FormatException {
       rethrow;
     } catch (e) {
-      if (isRustNotInitializedFailure(e)) {
-        return DocumentParser.extractMetadata(path);
-      }
       if (isRustCorruptCbzFailure(e)) {
         throw FormatException(e.toString());
       }
@@ -283,42 +230,27 @@ class RustEpubEngine implements EpubEngine {
 
   /// Extracts CBR metadata through the FFI `extractMetadataCbr` port.
   ///
-  /// Like the Dart engine, the archive is never touched: metadata carries only
-  /// the filename-derived title and series, with the cover deferred (null)
-  /// until the comic is opened.
+  /// The archive is never touched: metadata carries only the filename-derived
+  /// title and series, with the cover deferred (null) until the comic is
+  /// opened.
   Future<ParsedMetadata> _extractCbrMetadata(String path) async {
-    try {
-      final metadata = await rust.extractMetadataCbr(path: path);
-      return EpubDtoMapper.toParsedMetadata(
-        metadata,
-        fallbackTitle: titleFromFilename(path),
-      );
-    } catch (e) {
-      if (isRustNotInitializedFailure(e)) {
-        return DocumentParser.extractMetadata(path);
-      }
-      rethrow;
-    }
+    final metadata = await rust.extractMetadataCbr(path: path);
+    return EpubDtoMapper.toParsedMetadata(
+      metadata,
+      fallbackTitle: titleFromFilename(path),
+    );
   }
 
   /// Extracts PDF metadata through the FFI `extractMetadataPdf` port.
   ///
-  /// The file is never read on either side (filename-derived title, empty
-  /// author, no cover — the cover renders via `pdf_cover.dart`), so only a
-  /// missing native library needs handling.
+  /// The file is never read (filename-derived title, empty author, no cover —
+  /// the cover renders via `pdf_cover.dart`).
   Future<ParsedMetadata> _extractPdfMetadata(String path) async {
-    try {
-      final metadata = await rust.extractMetadataPdf(path: path);
-      return EpubDtoMapper.toParsedMetadata(
-        metadata,
-        fallbackTitle: titleFromFilename(path),
-      );
-    } catch (e) {
-      if (isRustNotInitializedFailure(e)) {
-        return DocumentParser.extractMetadata(path);
-      }
-      rethrow;
-    }
+    final metadata = await rust.extractMetadataPdf(path: path);
+    return EpubDtoMapper.toParsedMetadata(
+      metadata,
+      fallbackTitle: titleFromFilename(path),
+    );
   }
 
   /// Reads one archive entry's bytes through the Rust handle (spec D15).
@@ -452,13 +384,19 @@ class RustEpubEngine implements EpubEngine {
     return out;
   }
 
-  /// No-op: the Rust engine writes no disk cache in Phase A.
+  /// Deletes every engine's cache entry for [path].
   ///
-  /// Deliberately narrows to the Dart namespace: if a future Rust cache
-  /// appears it must get its own namespaced `clearCacheFor` here, or book
-  /// deletion will leak Rust entries. See [EpubEngine.clearCacheFor].
+  /// The Rust engine writes no entries of its own; this clears the Rust
+  /// namespace plus orphaned entries from the retired Dart engine's namespace
+  /// (see [legacyDartEngineId]), so book deletion never leaks the other
+  /// namespace's entries. See [EpubEngine.clearCacheFor].
   @override
-  void clearCacheFor(String path) {}
+  void clearCacheFor(String path) {
+    EpubCache.clearFor(
+      path,
+      engineIds: const [rustEpubEngineId, legacyDartEngineId],
+    );
+  }
 }
 
 /// True when at least one font still needs its bytes materialised.
@@ -499,30 +437,16 @@ ParsedDocument _rebuildDoc(
   );
 }
 
-/// Whether a Rust-backend failure means the native library was never
-/// initialized (`RustLib.init()` failed or was skipped) and the call must
-/// degrade to the Dart engine instead of bricking the open.
-///
-/// Matches the `flutter_rust_bridge has not been initialized` guard the
-/// generated bindings throw before touching the native library. Kept separate
-/// from [isRustCorruptEpubFailure]: that one classifies unreadable books,
-/// this one classifies a missing engine.
-bool isRustNotInitializedFailure(Object error) {
-  return error.toString().contains('has not been initialized');
-}
-
 /// Whether a Rust-backend failure means "permanently unreadable" and must be
 /// surfaced as a [FormatException] — the class the library metadata worker
 /// treats as complete-and-skipped (no retry on next launch).
 ///
 /// The Rust FFI stringifies `EpubError`, so a corrupt EPUB surfaces as a
-/// thrown `String` ("Not a valid EPUB file") rather than the
-/// [FormatException] the Dart engine throws for the same file. Matching is
-/// deliberately narrow — only the `Invalid` ("Not a valid EPUB file") and
-/// `TooLarge` payloads, which mirror Dart's `FormatException`s — so
-/// genuinely-transient failures (IO errors such as "Cannot open EPUB: ...")
-/// are rethrown unchanged and still retry. An existing [FormatException]
-/// needs no translation and returns false.
+/// thrown `String` ("Not a valid EPUB file") rather than a [FormatException].
+/// Matching is deliberately narrow — only the `Invalid` ("Not a valid EPUB
+/// file") and `TooLarge` payloads — so genuinely-transient failures (IO errors
+/// such as "Cannot open EPUB: ...") are rethrown unchanged and still retry.
+/// An existing [FormatException] needs no translation and returns false.
 bool isRustCorruptEpubFailure(Object error) {
   if (error is FormatException) return false;
   final message = error.toString();
@@ -533,8 +457,7 @@ bool isRustCorruptEpubFailure(Object error) {
 
 /// Whether a Rust TXT failure means "permanently unreadable" and must be
 /// surfaced as a [FormatException] — mirroring [isRustCorruptEpubFailure] for
-/// the TXT messages (`Text file too large`, `File is empty`), which match
-/// `DocumentParser._parseTxt`'s `FormatException`s verbatim. Transient
+/// the TXT messages (`Text file too large`, `File is empty`). Transient
 /// failures (IO errors such as "Cannot open text file: ...") are rethrown
 /// unchanged and still retry. An existing [FormatException] needs no
 /// translation and returns false.
@@ -548,8 +471,7 @@ bool isRustCorruptTxtFailure(Object error) {
 /// Whether a Rust CBZ failure means "permanently unreadable" and must be
 /// surfaced as a [FormatException] — mirroring [isRustCorruptEpubFailure] for
 /// the CBZ messages (`CBZ file too large`, `Not a valid CBZ...`, `No images
-/// found in comic archive`), which match `DocumentParser._parseComicBook`'s
-/// `FormatException`s verbatim. Transient failures (such as `Entry not
+/// found in comic archive`). Transient failures (such as `Entry not
 /// found: ...`) are rethrown unchanged and still retry. An existing
 /// [FormatException] needs no translation and returns false.
 bool isRustCorruptCbzFailure(Object error) {
@@ -564,11 +486,10 @@ bool isRustCorruptCbzFailure(Object error) {
 /// Whether a Rust CBR failure means "permanently unreadable" and must be
 /// surfaced as a [FormatException] — mirroring [isRustCorruptCbzFailure] for
 /// the CBR messages (`CBR file too large`, `Not a valid CBR...`, `Failed to
-/// extract CBR archive`, `No images found in comic archive`), which match
-/// `DocumentParser._parseComicBook`'s CBR `FormatException`s verbatim.
-/// Transient failures (such as `Entry not found: ...`) are rethrown unchanged
-/// and still retry. An existing [FormatException] needs no translation and
-/// returns false.
+/// extract CBR archive`, `No images found in comic archive`). Transient
+/// failures (such as `Entry not found: ...`) are rethrown unchanged and still
+/// retry. An existing [FormatException] needs no translation and returns
+/// false.
 bool isRustCorruptCbrFailure(Object error) {
   if (error is FormatException) return false;
   final message = error.toString();
@@ -579,7 +500,7 @@ bool isRustCorruptCbrFailure(Object error) {
       message.contains('decompressed size exceeds');
 }
 
-/// The filename-derived title, matching `DocumentParser._titleFromFilename`.
+/// The filename-derived title.
 String titleFromFilename(String path) {
   final base = path.split(Platform.pathSeparator).last;
   final dot = base.lastIndexOf('.');

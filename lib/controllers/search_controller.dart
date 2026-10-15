@@ -3,7 +3,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../models/book.dart';
 import '../services/book_search.dart';
-import '../services/document_parser.dart';
+import '../models/document.dart';
 
 class ReaderSearchController extends ChangeNotifier {
   ReaderSearchController({required this.book});

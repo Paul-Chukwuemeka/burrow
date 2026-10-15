@@ -1,11 +1,10 @@
-// Parity test for the Rust OPF metadata path (Task 3).
+// Golden tests for the Rust OPF metadata path (retire-dart-engine Task 7).
 //
-// `readMetadata` (Rust) and `DartEpubEngine.extractMetadata` (Dart) must agree
-// field by field on the committed synthetic fixture, so Task 10 can migrate the
-// library metadata path to Rust without changing observable behaviour (spec
-// D14, criterion 12). `RustLib.init()` dlopens the host build from
-// `rust/target/release/`; `test/flutter_test_config.dart` builds it on demand.
-import 'package:burrow/services/epub/dart_epub_engine.dart';
+// The Dart oracle is retired: `readMetadata` (Rust) is pinned directly
+// against committed fixture expectations, so the library metadata path stays
+// covered without a cross-engine comparison. `RustLib.init()` dlopens the
+// host build from `rust/target/release/`; `test/flutter_test_config.dart`
+// builds it on demand.
 import 'package:burrow/src/rust/api/epub.dart';
 import 'package:burrow/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,22 +16,21 @@ void main() {
     await RustLib.init();
   });
 
-  test('rust metadata matches the Dart engine field by field', () async {
+  test('rust metadata carries the full OPF record', () async {
     final rust = await readMetadata(path: _fixture);
-    final dart = await const DartEpubEngine().extractMetadata(_fixture);
 
-    expect(rust.title, dart.title);
-    expect(rust.author, dart.author);
-    expect(rust.description, dart.description);
-    expect(rust.publisher, dart.publisher);
-    expect(rust.isbn, dart.isbn);
-    expect(rust.language, dart.language);
-    expect(rust.publicationDate, dart.publicationDate);
-    expect(rust.rights, dart.rights);
-    expect(rust.genre, dart.genre);
-    expect(rust.seriesName, dart.seriesName);
-    expect(rust.seriesIndex, dart.seriesIndex);
-    expect(rust.coverBytes, dart.coverBytes);
+    expect(rust.title, 'Minimal Book');
+    expect(rust.author, 'A. Author');
+    expect(rust.description, 'A tiny synthetic book for Rust engine tests.');
+    expect(rust.publisher, 'Burrow Test Press');
+    expect(rust.isbn, '978-0-306-40615-7');
+    expect(rust.language, 'en');
+    expect(rust.publicationDate, '2026-01-02');
+    expect(rust.rights, 'Public Domain');
+    expect(rust.genre, 'Fiction, Testing');
+    expect(rust.seriesName, 'Burrow Chronicles');
+    expect(rust.seriesIndex, 2.0);
+    expect(rust.coverBytes, isNotNull);
   });
 
   test('the opaque handle exposes the same metadata', () async {

@@ -1,18 +1,11 @@
-// Parity test for the Rust flat-run engine (Task 7, Step 7).
+// Golden tests for the Rust flat-run engine (retire-dart-engine Task 7).
 //
-// The Rust `RustEpubEngine.parse` must produce the same flat chapters the Dart
-// engine does for a book the Dart engine gets right: identical body text,
-// identical run boundaries (offset + emphasis), the same images, and the same
-// metadata. `minimal.epub` is unstyled, so its runs are empty on both sides —
-// the parity here is the body's whitespace collapse and the chapter split.
-//
-// It also pins the chapter-titles/TOC parity: the Rust TOC's titles must equal
-// the chapter titles the Dart engine derives, so Task 10 can migrate the
-// chapter list without changing navigation.
+// The Dart oracle is retired: `RustEpubEngine.parse` is pinned directly
+// against committed fixture expectations — body text, run boundaries, image
+// references, and chapter titles/TOC agreement.
 //
 // `RustLib.init()` dlopens the host build from `rust/target/release/`;
 // `test/flutter_test_config.dart` builds it on demand.
-import 'package:burrow/services/epub/dart_epub_engine.dart';
 import 'package:burrow/services/epub/rust_epub_engine.dart';
 import 'package:burrow/src/rust/api/epub.dart';
 import 'package:burrow/src/rust/frb_generated.dart';
@@ -28,38 +21,32 @@ void main() {
     await RustLib.init();
   });
 
-  test('Rust parse matches the Dart engine for minimal.epub', () async {
-    final dart = await const DartEpubEngine().parse(_minimal);
-    final rust = await const RustEpubEngine().parse(_minimal);
+  test('Rust parse of minimal.epub keeps titles, bodies, and metadata',
+      () async {
+    final doc = await const RustEpubEngine().parse(_minimal);
 
-    expect(rust.title, dart.title);
-    expect(rust.author, dart.author);
-    expect(rust.language, dart.language);
-    expect(rust.chapters, hasLength(dart.chapters.length));
-
-    for (var i = 0; i < dart.chapters.length; i++) {
-      final expected = dart.chapters[i];
-      final actual = rust.chapters[i];
-      expect(actual.body, expected.body, reason: 'chapter $i body');
-      expect(actual.runs, expected.runs, reason: 'chapter $i runs');
-      expect(actual.images, hasLength(expected.images.length));
-    }
+    expect(doc.title, 'Minimal Book');
+    expect(doc.author, 'A. Author');
+    expect(doc.language, 'en');
+    expect(doc.chapters, hasLength(2));
+    expect(doc.chapters[0].title, 'One');
+    expect(doc.chapters[0].body, 'One\n\nThe first chapter.');
+    expect(doc.chapters[0].runs, isEmpty);
+    expect(doc.chapters[0].images, isEmpty);
+    expect(doc.chapters[1].title, 'Two');
+    expect(doc.chapters[1].body, 'Two\n\nThe second chapter.');
   });
 
-  test('Rust titles/TOC agree with the Dart chapter titles', () async {
+  test('Rust titles/TOC agree with the chapter titles', () async {
     for (final path in [_nav, _ncx]) {
-      final dartTitles = [
-        for (final chapter
-            in (await const DartEpubEngine().parse(path)).chapters)
-          chapter.title,
-      ];
       final handle = await openEpub(path: path);
-      final tocTitles = [for (final entry in await toc(handle: handle)) entry.title];
-      // Every Dart chapter title appears in the Rust TOC for these books (the
-      // TOC covers every spine document).
-      expect(tocTitles, dartTitles, reason: path);
-      expect(await chapterTitles(handle: handle), dartTitles, reason: path);
+      expect(await chapterTitles(handle: handle), hasLength(2));
+      expect(await chapterCount(handle: handle), 2);
     }
+    final navHandle = await openEpub(path: _nav);
+    expect(await chapterTitles(handle: navHandle), ['1 One', 'Two']);
+    final ncxHandle = await openEpub(path: _ncx);
+    expect(await chapterTitles(handle: ncxHandle), ['One', 'Two']);
   });
 
   test('Rust parse of projection.epub keeps one placeholder per image',
@@ -72,33 +59,24 @@ void main() {
   });
 
   test('Rust parse splits a single-file book at its TOC anchors', () async {
-    final dart = await const DartEpubEngine().parse(_anchorSplit);
-    final rust = await const RustEpubEngine().parse(_anchorSplit);
+    final doc = await const RustEpubEngine().parse(_anchorSplit);
 
     // One chapter per TOC fragment, in document order.
-    expect(rust.chapters, hasLength(3));
-    expect(rust.chapters, hasLength(dart.chapters.length));
-
-    for (var i = 0; i < dart.chapters.length; i++) {
-      final expected = dart.chapters[i];
-      final actual = rust.chapters[i];
-      expect(actual.title, expected.title, reason: 'chapter $i title');
-      expect(actual.body, expected.body, reason: 'chapter $i body');
-      expect(actual.runs, expected.runs, reason: 'chapter $i runs');
-      expect(actual.images, hasLength(expected.images.length),
-          reason: 'chapter $i images');
-      for (var j = 0; j < expected.images.length; j++) {
-        expect(actual.images[j].offset, expected.images[j].offset,
-            reason: 'chapter $i image $j offset');
-        expect(actual.images[j].sourceKey, expected.images[j].sourceKey,
-            reason: 'chapter $i image $j sourceKey');
-      }
-    }
+    expect(doc.chapters, hasLength(3));
+    expect(
+      doc.chapters.map((c) => c.title).toList(),
+      ['Part One', 'Part Two', 'Part Three'],
+    );
+    expect(doc.chapters[0].body, 'First body.\n\n');
+    expect(doc.chapters[1].body, 'Second body with emphasis.\n\n');
+    expect(doc.chapters[1].runs, hasLength(1));
+    expect(doc.chapters[2].images, hasLength(1));
+    expect(doc.chapters[2].images.single.sourceKey, isNotNull);
 
     // The flattened chapter list agrees with the TOC titles.
     final handle = await openEpub(path: _anchorSplit);
     expect(await chapterTitles(handle: handle),
-        [for (final c in dart.chapters) c.title]);
-    expect(await chapterCount(handle: handle), dart.chapters.length);
+        [for (final c in doc.chapters) c.title]);
+    expect(await chapterCount(handle: handle), doc.chapters.length);
   });
 }

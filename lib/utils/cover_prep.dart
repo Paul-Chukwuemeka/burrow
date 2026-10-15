@@ -8,8 +8,8 @@ import 'comic_archive.dart' show decodeImageDimensions;
 /// library does not decode (or store) multi-megapixel originals. Returns the
 /// original bytes when decoding fails or the image is already small.
 ///
-/// Moved verbatim out of `DocumentParser.prepareCover`/`_downscaleCover` so
-/// callers no longer depend on the Dart parse engine (which is being retired).
+/// Moved verbatim out of the retired Dart parser (`prepareCover`/
+/// `_downscaleCover`) so callers no longer depend on the Dart parse engine.
 /// Odd, oversized, or unreadable inputs degrade to the raw bytes; this never
 /// throws.
 Uint8List? prepareCover(

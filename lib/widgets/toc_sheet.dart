@@ -3,7 +3,7 @@ import 'package:pdfrx/pdfrx.dart' show PdfOutlineNode;
 
 import '../db/database.dart' as db;
 import '../models/reader_settings.dart';
-import '../services/document_parser.dart';
+import '../models/document.dart';
 import '../services/paginator.dart';
 
 /// Bottom sheet with tabbed Contents | Bookmarks view.

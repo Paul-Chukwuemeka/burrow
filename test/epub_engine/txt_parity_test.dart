@@ -1,66 +1,77 @@
-// Parity test for the Rust TXT parser (retire-dart-engine Task 1).
+// Golden tests for the Rust TXT parser (retire-dart-engine Task 7).
 //
-// For each committed `.txt` fixture, `RustEpubEngine.parse` (via the FFI
-// `parseTxt` port of `DocumentParser._parseTxt`/`chapterizeTxt`) must equal
-// `DartEpubEngine.parse` on title, per-chapter title/body, and runs/images
-// (TXT chapters carry no runs or images, but the assertions pin that).
-// Fixtures cover plain UTF-8, heading/blank-run splits, and the
-// Latin-1/BOM fallback.
+// The Dart oracle is retired: `RustEpubEngine.parse` is pinned directly
+// against committed fixture expectations — filename-derived title, chapter
+// splits, and the empty-file rejection. Fixtures cover plain UTF-8,
+// heading/blank-run splits, and the Latin-1/BOM fallback.
 //
 // `RustLib.init()` dlopens the host build from `rust/target/release/`;
 // `test/flutter_test_config.dart` builds it on demand.
 import 'dart:io';
 
-import 'package:burrow/services/epub/dart_epub_engine.dart';
 import 'package:burrow/services/epub/rust_epub_engine.dart';
 import 'package:burrow/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-const _fixtures = [
-  'test/fixtures/epub/plain.txt',
-  'test/fixtures/epub/chapters.txt',
-  'test/fixtures/epub/latin1-bom.txt',
-];
 
 void main() {
   setUpAll(() async {
     await RustLib.init();
   });
 
-  for (final path in _fixtures) {
-    test('Rust TXT parse matches the Dart engine for $path', () async {
-      final dart = await const DartEpubEngine().parse(path);
-      final rust = await const RustEpubEngine().parse(path);
+  test('plain UTF-8 parses as a single untitled chapter', () async {
+    const path = 'test/fixtures/epub/plain.txt';
+    final doc = await const RustEpubEngine().parse(path);
 
-      expect(rust.title, dart.title);
-      expect(rust.author, dart.author);
-      expect(rust.chapters, hasLength(dart.chapters.length));
+    expect(doc.title, 'plain');
+    expect(doc.author, isEmpty);
+    expect(doc.chapters, hasLength(1));
+    expect(doc.chapters.single.title, isEmpty);
+    expect(
+      doc.chapters.single.body,
+      'The burrow was quiet in the morning.\n\n'
+      'A second paragraph follows here, plain and simple.\n',
+    );
+    expect(doc.chapters.single.runs, isEmpty);
+    expect(doc.chapters.single.images, isEmpty);
+  });
 
-      for (var i = 0; i < dart.chapters.length; i++) {
-        final expected = dart.chapters[i];
-        final actual = rust.chapters[i];
-        expect(actual.title, expected.title, reason: 'chapter $i title');
-        expect(actual.body, expected.body, reason: 'chapter $i body');
-        expect(actual.runs, expected.runs, reason: 'chapter $i runs');
-        expect(
-          actual.images,
-          hasLength(expected.images.length),
-          reason: 'chapter $i images',
-        );
-      }
-    });
-  }
+  test('headings and blank runs split chapters with titles', () async {
+    const path = 'test/fixtures/epub/chapters.txt';
+    final doc = await const RustEpubEngine().parse(path);
 
-  test('Rust TXT parse rejects an empty file like the Dart engine', () async {
-    final tmp = await Directory.systemTemp.createTemp('burrow_txt_parity');
+    expect(doc.title, 'chapters');
+    expect(
+      doc.chapters.map((c) => c.title).toList(),
+      ['Chapter 1: The Beginning', 'Chapter 2: The Middle', 'PART II'],
+    );
+    expect(
+      doc.chapters.map((c) => c.body).toList(),
+      [
+        'Once upon a time in the burrow.\n\nMore of the first chapter.',
+        'Something happened in the middle.',
+        'The second part begins here.',
+      ],
+    );
+  });
+
+  test('Latin-1/BOM fixture decodes without throwing', () async {
+    const path = 'test/fixtures/epub/latin1-bom.txt';
+    final doc = await const RustEpubEngine().parse(path);
+
+    expect(doc.title, 'latin1-bom');
+    expect(doc.chapters, hasLength(1));
+    expect(
+      doc.chapters.single.body,
+      'ï»¿Café crème brûlée.\n\nNaïve notes from the burrow.\n',
+    );
+  });
+
+  test('an empty file is rejected as a FormatException', () async {
+    final tmp = await Directory.systemTemp.createTemp('burrow_txt_golden');
     addTearDown(() => tmp.deleteSync(recursive: true));
     final empty = File('${tmp.path}/empty.txt')..writeAsStringSync('   \n  ');
     await expectLater(
       const RustEpubEngine().parse(empty.path),
-      throwsA(isA<FormatException>()),
-    );
-    await expectLater(
-      const DartEpubEngine().parse(empty.path),
       throwsA(isA<FormatException>()),
     );
   });
