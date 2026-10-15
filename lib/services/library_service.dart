@@ -307,6 +307,11 @@ class LibraryService extends ChangeNotifier {
     // Sweep stale/orphaned parsed-document cache entries (and earlier cache
     // schema versions) in the background. Keep every engine's namespace valid
     // so the sweep never deletes the other engine's cache (design D13).
+    // NOTE (Task 6): `pruneCache` is deliberately NOT on the per-engine
+    // [EpubEngine] seam — it sweeps all engines' namespaces at once, so it
+    // cannot belong to one engine. It stays a `DocumentParser` static until
+    // Task 7 relocates the cache helpers (with the domain types) to a
+    // dedicated cache util.
     unawaited(
       DocumentParser.pruneCache(
         [for (final b in _books) b.path],
@@ -1240,8 +1245,10 @@ class LibraryService extends ChangeNotifier {
     // document cache key needs path + mtime + size, so drop it before the
     // source file itself is removed. Sync-only: batch selection deletes run
     // under testWidgets' FakeAsync zone, where async disk IO never
-    // completes (see DocumentParser.clearCacheForSync).
-    DocumentParser.clearCacheForSync(book.path);
+    // completes (see [EpubEngine.clearCacheFor]). The Rust engine writes no
+    // cache entry in Phase A, so its no-op is equivalent; any orphaned entry
+    // from the other engine's namespace is swept by `pruneCache` at startup.
+    createEpubEngine(_epubEngine).clearCacheFor(book.path);
     final cover = book.coverPath;
     if (cover != null) {
       try {
@@ -1328,7 +1335,7 @@ class LibraryService extends ChangeNotifier {
     if (_db != null) {
       await _db!.updateBook(db.bookToCompanionForUpdate(updated));
     }
-    await DocumentParser.clearCacheFor(old.path);
+    createEpubEngine(_epubEngine).clearCacheFor(old.path);
     _missingIds.remove(id);
     _invalidateSortCache();
     notifyListeners();

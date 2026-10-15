@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import '../models/book.dart';
 import '../models/reader_settings.dart';
 import '../services/comic_page_provider.dart';
-import '../services/document_parser.dart';
+import '../services/epub/epub_engine_factory.dart';
 import '../services/library_service.dart';
 
 class ComicReaderController extends ChangeNotifier {
@@ -137,7 +137,10 @@ class ComicReaderController extends ChangeNotifier {
         return;
       }
 
-      final doc = await DocumentParser.parse(book.path);
+      // Non-CBZ comics (CBR) parse through the active content engine behind
+      // the reversible engine flag; the `dart` engine keeps the legacy
+      // behaviour.
+      final doc = await createEpubEngine(library.epubEngine).parse(book.path);
       final pages = <Uint8List>[];
       for (final chapter in doc.chapters) {
         for (final img in chapter.images) {

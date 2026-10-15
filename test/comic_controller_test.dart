@@ -7,6 +7,7 @@ import 'package:burrow/models/book.dart';
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/services/comic_page_provider.dart';
 import 'package:burrow/services/library_service.dart';
+import 'package:burrow/src/rust/frb_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Book _comic() => Book(
@@ -122,6 +123,34 @@ void main() {
     expect(ctrl.comicError, isNot(contains('Exception')));
     ctrl.dispose();
     tmp.deleteSync(recursive: true);
+  });
+
+  test('loadComicPages opens a CBR through the content-engine seam', () async {
+    // The non-CBZ branch parses via `createEpubEngine(library.epubEngine)`,
+    // never `DocumentParser` directly (retire-dart-engine Task 6). The
+    // fixture archives `page10` before `page2`, so only a natural sort yields
+    // three pages in order.
+    await RustLib.init();
+    final ctrl = ComicReaderController(
+      book: Book(
+        id: 'cbr1',
+        title: 'Mini CBR',
+        author: '',
+        path: 'test/fixtures/epub/mini.cbr',
+        format: BookFormat.cbr,
+        addedAt: 1,
+      ),
+      settings: ReaderSettings(),
+      library: LibraryService(),
+    );
+    await ctrl.loadComicPages();
+    expect(ctrl.comicError, isNull);
+    expect(ctrl.comicLoading, isFalse);
+    expect(ctrl.comicPages, hasLength(3));
+    for (final page in ctrl.comicPages) {
+      expect(page, isNotEmpty);
+    }
+    ctrl.dispose();
   });
 }
 

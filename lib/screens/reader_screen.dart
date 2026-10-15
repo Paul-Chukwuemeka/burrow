@@ -320,12 +320,11 @@ class ReaderScreenState extends State<ReaderScreen>
       final engine = createEpubEngine(widget.library.epubEngine);
       var doc = await engine.parse(_book.path);
       OpenTrace.span('parse', sw.elapsed);
-      // The Rust engine defers font bytes across the FFI (D15): materialise
-      // them through the Rust handle before `loadEmbeddedFonts`, or embedded
-      // fonts silently never load on the Rust path.
-      if (engine is RustEpubEngine) {
-        doc = await engine.hydrateFonts(doc, _book.path);
-      }
+      // Engines that defer font bytes across the parse boundary (Rust defers
+      // them across the FFI, D15) materialise them here before
+      // `loadEmbeddedFonts`, or embedded fonts silently never load. Engines
+      // that embed font bytes at parse time return the document unchanged.
+      doc = await engine.hydrateFonts(doc, _book.path);
       // Load embedded fonts (e.g. from @font-face rules in EPUB stylesheets).
       if (doc.fontFaces.isNotEmpty) {
         sw.reset();
@@ -346,14 +345,12 @@ class ReaderScreenState extends State<ReaderScreen>
       setState(() => _doc = doc);
       // The cache-hit path defers inline-image bytes; hydrate them after the
       // first paint so the open never waits on them. Only swap if the reader
-      // is still showing this same document. The Rust path hydrates through
-      // its own handle (D15) so a Rust open never pays a second full-archive
-      // Dart inflate; the Dart path keeps its isolate re-read.
-      final hydrator = engine is RustEpubEngine
-          ? engine.hydrateImages(doc, _book.path)
-          : DocumentParser.hydrateImages(doc, _book.path);
+      // is still showing this same document. Hydration goes through the
+      // active engine (D15): Rust reads through its own handle so a Rust open
+      // never pays a second full-archive Dart inflate; Dart re-reads the
+      // archive in an isolate.
       unawaited(
-        hydrator.then((hydrated) {
+        engine.hydrateImages(doc, _book.path).then((hydrated) {
           if (mounted && identical(_doc, doc)) setState(() => _doc = hydrated);
         }),
       );

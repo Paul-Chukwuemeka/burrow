@@ -339,6 +339,7 @@ class RustEpubEngine implements EpubEngine {
   /// moved or damaged source degrades one image instead of failing the whole
   /// open. Never throws; returns [doc] unchanged when nothing is deferred or
   /// the book cannot be opened.
+  @override
   Future<ParsedDocument> hydrateImages(
     ParsedDocument doc,
     String path,
@@ -393,6 +394,7 @@ class RustEpubEngine implements EpubEngine {
   /// font degrades to the fallback stack instead of failing the book. Never
   /// throws; returns [doc] unchanged when nothing is deferred or the book
   /// cannot be opened.
+  @override
   Future<ParsedDocument> hydrateFonts(
     ParsedDocument doc,
     String path,
@@ -454,7 +456,7 @@ class RustEpubEngine implements EpubEngine {
   ///
   /// Deliberately narrows to the Dart namespace: if a future Rust cache
   /// appears it must get its own namespaced `clearCacheFor` here, or book
-  /// deletion will leak Rust entries. See [DocumentParser.clearCacheForSync].
+  /// deletion will leak Rust entries. See [EpubEngine.clearCacheFor].
   @override
   void clearCacheFor(String path) {}
 }

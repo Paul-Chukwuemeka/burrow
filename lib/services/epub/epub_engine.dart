@@ -28,6 +28,22 @@ abstract class EpubEngine {
   /// Synchronous and best-effort: call sites include batch deletes that run
   /// inside a `FakeAsync` zone where async disk IO never completes.
   void clearCacheFor(String path);
+
+  /// Fills deferred inline-image bytes from the source file.
+  ///
+  /// Runs off the open path (after the first paint). A missing entry leaves
+  /// that image's bytes empty — the renderer shows a sized placeholder — so
+  /// a moved or damaged source degrades one image instead of failing the
+  /// whole open. Never throws; returns [doc] unchanged when nothing is
+  /// deferred or the book cannot be opened.
+  Future<ParsedDocument> hydrateImages(ParsedDocument doc, String path);
+
+  /// Fills deferred `@font-face` bytes from the source file.
+  ///
+  /// Engines that embed font bytes at parse time return [doc] unchanged.
+  /// Never throws; returns [doc] unchanged when nothing is deferred or the
+  /// book cannot be opened.
+  Future<ParsedDocument> hydrateFonts(ParsedDocument doc, String path);
 }
 
 /// Disk-cache key for [path] as seen by [engineId] (design D13).

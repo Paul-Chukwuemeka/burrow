@@ -18,4 +18,14 @@ class DartEpubEngine implements EpubEngine {
 
   @override
   void clearCacheFor(String path) => DocumentParser.clearCacheForSync(path);
+
+  @override
+  Future<ParsedDocument> hydrateImages(ParsedDocument doc, String path) =>
+      DocumentParser.hydrateImages(doc, path);
+
+  /// The Dart engine embeds font bytes at parse time, so there is never
+  /// anything deferred to materialise.
+  @override
+  Future<ParsedDocument> hydrateFonts(ParsedDocument doc, String path) async =>
+      doc;
 }
