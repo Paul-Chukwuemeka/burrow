@@ -17,6 +17,7 @@ import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
 import '../utils/book_title.dart';
 import '../utils/comic_series.dart';
+import '../utils/cover_prep.dart';
 import 'document_parser.dart';
 import 'epub/epub_engine_factory.dart';
 import 'missing_matcher.dart';
@@ -1471,7 +1472,7 @@ class LibraryService extends ChangeNotifier {
   Future<void> setCoverIfMissing(Book book, List<int> bytes) async {
     final target = _books.where((b) => b.id == book.id).firstOrNull ?? book;
     if (target.coverPath != null || bytes.isEmpty) return;
-    final prepared = DocumentParser.prepareCover(bytes) ?? bytes;
+    final prepared = prepareCover(bytes) ?? bytes;
     final path = await _saveCover(prepared);
     if (path == null) return;
     target.coverPath = path;

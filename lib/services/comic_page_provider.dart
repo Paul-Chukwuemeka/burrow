@@ -3,8 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-
-import 'document_parser.dart';
+import 'package:burrow/utils/comic_archive.dart';
 
 /// Read access to comic page bytes, decoupled from how they are fetched so
 /// the reader controller can be tested with an in-memory fake.
@@ -95,9 +94,9 @@ class ComicPageProvider implements ComicPageSource {
     }
 
     final entries = archive.files
-        .where((f) => f.isFile && DocumentParser.isImageEntry(f.name))
+        .where((f) => f.isFile && isImageEntry(f.name))
         .toList();
-    entries.sort((a, b) => DocumentParser.naturalCompare(a.name, b.name));
+    entries.sort((a, b) => naturalCompare(a.name, b.name));
 
     if (entries.isEmpty) {
       throw const FormatException('No images found in comic archive');
@@ -107,7 +106,7 @@ class ComicPageProvider implements ComicPageSource {
     for (var i = 0; i < entries.length; i++) {
       final entry = entries[i];
       final content = entry.content as List<int>;
-      final (w, h) = DocumentParser.decodeImageDimensions(
+      final (w, h) = decodeImageDimensions(
         Uint8List.fromList(content),
       );
       pageMetas.add(

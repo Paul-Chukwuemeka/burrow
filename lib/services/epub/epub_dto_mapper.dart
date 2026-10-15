@@ -4,6 +4,7 @@ import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/document_parser.dart';
 import 'package:burrow/services/epub_css_parser.dart';
+import 'package:burrow/utils/cover_prep.dart';
 import 'package:burrow/src/rust/epub/model.dart';
 import 'package:burrow/src/rust/epub/project.dart' as rust;
 
@@ -41,7 +42,7 @@ abstract final class EpubDtoMapper {
       title: metadata.title.isEmpty ? fallbackTitle : metadata.title,
       author: metadata.author,
       chapters: chapters.map(toChapter).toList(),
-      coverBytes: DocumentParser.prepareCover(metadata.coverBytes),
+      coverBytes: prepareCover(metadata.coverBytes),
       description: metadata.description,
       annotation: metadata.annotation,
       genre: metadata.genre,
@@ -68,7 +69,7 @@ abstract final class EpubDtoMapper {
     return ParsedMetadata(
       title: metadata.title.isEmpty ? fallbackTitle : metadata.title,
       author: metadata.author,
-      coverBytes: DocumentParser.prepareCover(metadata.coverBytes),
+      coverBytes: prepareCover(metadata.coverBytes),
       description: metadata.description,
       annotation: metadata.annotation,
       genre: metadata.genre,
