@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../epub/cascade.dart';
+import '../epub/comic.dart';
 import '../epub/model.dart';
 import '../epub/project.dart';
 import '../frb_generated.dart';
@@ -118,6 +119,18 @@ Future<void> closeDocument({required DocumentHandle handle}) =>
 /// Dart-side, matching `DocumentParser._parseTxt`.
 Future<List<ChapterDto>> parseTxt({required String path}) =>
     RustLib.instance.api.crateApiEpubParseTxt(path: path);
+
+/// Parses a CBZ comic into natural-sorted pages plus the cover (the CBZ half
+/// of retiring the Dart engine).
+///
+/// Each image entry becomes one page (title, raw entry name, bytes, intrinsic
+/// size); the cover is the first page's bytes, un-downscaled exactly like
+/// `DocumentParser._parseComicBook`. Error strings match that method's
+/// `FormatException` messages verbatim so the Dart adapter can translate them
+/// back. Unlike the EPUB path there is no handle: page bytes cross by value
+/// because comics have no OPF for on-demand hydration.
+Future<ParsedComicDto> parseCbz({required String path}) =>
+    RustLib.instance.api.crateApiEpubParseCbz(path: path);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}

@@ -36,6 +36,11 @@ class RustEpubEngine implements EpubEngine {
     if (formatFromExtension(path) == BookFormat.txt) {
       return _parseTxt(path);
     }
+    // CBZ comics are parsed natively through the FFI `parseCbz` port of the
+    // `_parseComicBook` CBZ branch. CBR/PDF still fall back to Dart for now.
+    if (formatFromExtension(path) == BookFormat.cbz) {
+      return _parseCbz(path);
+    }
     // The reader opens every reflowable format through this seam, so other
     // non-EPUB books (PDF/comics today) fall back to the Dart implementation
     // rather than failing as "not a valid EPUB" — mirroring
@@ -99,6 +104,43 @@ class RustEpubEngine implements EpubEngine {
     } catch (e) {
       if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       if (isRustCorruptTxtFailure(e)) {
+        throw FormatException(e.toString());
+      }
+      rethrow;
+    }
+  }
+
+  /// Parses a CBZ comic through the Rust engine.
+  ///
+  /// Each image entry becomes a chapter holding a single full-width `ImageRun`
+  /// over a lone `\uFFFC`, with the first page's bytes as the cover —
+  /// exactly like `DocumentParser._parseComicBook`'s CBZ branch (whose cover
+  /// is un-downscaled on the parse path, so no `prepareCover` here). A missing
+  /// native library degrades to Dart, while corrupt CBZs surface as a
+  /// [FormatException] like the Dart engine.
+  Future<ParsedDocument> _parseCbz(String path) async {
+    try {
+      final parsed = await rust.parseCbz(path: path);
+      return ParsedDocument(
+        title: titleFromFilename(path),
+        author: '',
+        chapters: [
+          for (final page in parsed.pages)
+            Chapter(page.title, '\uFFFC', const [], [
+              ImageRun(
+                offset: 0,
+                bytes: page.imageBytes,
+                intrinsicWidth: page.width,
+                intrinsicHeight: page.height,
+                fullWidth: true,
+              ),
+            ]),
+        ],
+        coverBytes: parsed.coverBytes,
+      );
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
+      if (isRustCorruptCbzFailure(e)) {
         throw FormatException(e.toString());
       }
       rethrow;
@@ -355,6 +397,22 @@ bool isRustCorruptTxtFailure(Object error) {
   final message = error.toString();
   return message.contains('Text file too large') ||
       message.contains('File is empty');
+}
+
+/// Whether a Rust CBZ failure means "permanently unreadable" and must be
+/// surfaced as a [FormatException] — mirroring [isRustCorruptEpubFailure] for
+/// the CBZ messages (`CBZ file too large`, `Not a valid CBZ...`, `No images
+/// found in comic archive`), which match `DocumentParser._parseComicBook`'s
+/// `FormatException`s verbatim. Transient failures (such as `Entry not
+/// found: ...`) are rethrown unchanged and still retry. An existing
+/// [FormatException] needs no translation and returns false.
+bool isRustCorruptCbzFailure(Object error) {
+  if (error is FormatException) return false;
+  final message = error.toString();
+  return message.contains('CBZ file too large') ||
+      message.contains('Not a valid CBZ') ||
+      message.contains('No images found in comic archive') ||
+      message.contains('decompressed size exceeds');
 }
 
 /// The filename-derived title, matching `DocumentParser._titleFromFilename`.

@@ -1201,6 +1201,35 @@ def build_annotated_meta() -> None:
     )
 
 
+def _write_cbz(path: Path, entries: list[tuple[str, bytes]]) -> None:
+    """Writes a deterministic CBZ (plain ZIP of images). Entries are stored
+    in the given order, which the tests deliberately scramble so only a
+    natural sort yields `page1, page2, page10`."""
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in entries:
+            info = zipfile.ZipInfo(name, date_time=_FIXED_DATE)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            zf.writestr(info, data)
+
+
+def build_mini_cbz() -> None:
+    # Task 2 (retire-dart-engine) fixture: three PNG pages with distinct
+    # intrinsic sizes, archived out of order (`page10` first) so the expected
+    # `page1, page2, page10` order only holds under a natural sort (Dart's
+    # `_naturalCompare`, Review Focus #3). `notes.txt` pins the image-entry
+    # filter: it must not become a chapter.
+    _write_cbz(
+        HERE / "mini.cbz",
+        [
+            ("page10.png", _png(6, 8, (30, 30, 200)),),
+            ("notes.txt", b"Not a page.\n",),
+            ("page2.png", _png(8, 6, (30, 120, 30)),),
+            ("page1.png", _png(4, 4, (200, 30, 30)),),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -1223,6 +1252,7 @@ def main() -> None:
     build_rich_meta()
     build_cover_inline()
     build_annotated_meta()
+    build_mini_cbz()
     print("wrote fixtures to", HERE)
 
 

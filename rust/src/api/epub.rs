@@ -1,6 +1,7 @@
 //! FFI surface for the Rust EPUB engine.
 
 use crate::epub::cascade;
+use crate::epub::comic::{self, ParsedComicDto};
 use crate::epub::container::EpubArchive;
 use crate::epub::model::{BlockTree, FontFaceDto, MetadataDto, TocEntryDto};
 use crate::epub::nav;
@@ -161,6 +162,19 @@ pub fn close_document(handle: DocumentHandle) {
 /// Dart-side, matching `DocumentParser._parseTxt`.
 pub fn parse_txt(path: String) -> Result<Vec<ChapterDto>, String> {
     txt::parse_txt(&path)
+}
+
+/// Parses a CBZ comic into natural-sorted pages plus the cover (the CBZ half
+/// of retiring the Dart engine).
+///
+/// Each image entry becomes one page (title, raw entry name, bytes, intrinsic
+/// size); the cover is the first page's bytes, un-downscaled exactly like
+/// `DocumentParser._parseComicBook`. Error strings match that method's
+/// `FormatException` messages verbatim so the Dart adapter can translate them
+/// back. Unlike the EPUB path there is no handle: page bytes cross by value
+/// because comics have no OPF for on-demand hydration.
+pub fn parse_cbz(path: String) -> Result<ParsedComicDto, String> {
+    comic::parse_cbz(&path)
 }
 
 /// The flattened chapter list: every spine document in reading order, each

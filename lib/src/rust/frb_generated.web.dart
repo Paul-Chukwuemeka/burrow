@@ -10,6 +10,7 @@ import 'api/epub.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'epub/cascade.dart';
+import 'epub/comic.dart';
 import 'epub/model.dart';
 import 'epub/project.dart';
 import 'frb_generated.dart';
@@ -85,6 +86,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChapterDto dco_decode_chapter_dto(dynamic raw);
 
   @protected
+  ComicPageDto dco_decode_comic_page_dto(dynamic raw);
+
+  @protected
   ComputedStyle dco_decode_computed_style(dynamic raw);
 
   @protected
@@ -116,6 +120,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ChapterDto> dco_decode_list_chapter_dto(dynamic raw);
+
+  @protected
+  List<ComicPageDto> dco_decode_list_comic_page_dto(dynamic raw);
 
   @protected
   List<FontFaceDto> dco_decode_list_font_face_dto(dynamic raw);
@@ -158,6 +165,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  ParsedComicDto dco_decode_parsed_comic_dto(dynamic raw);
 
   @protected
   (int, int) dco_decode_record_u_32_u_32(dynamic raw);
@@ -242,6 +252,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChapterDto sse_decode_chapter_dto(SseDeserializer deserializer);
 
   @protected
+  ComicPageDto sse_decode_comic_page_dto(SseDeserializer deserializer);
+
+  @protected
   ComputedStyle sse_decode_computed_style(SseDeserializer deserializer);
 
   @protected
@@ -273,6 +286,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ChapterDto> sse_decode_list_chapter_dto(SseDeserializer deserializer);
+
+  @protected
+  List<ComicPageDto> sse_decode_list_comic_page_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<FontFaceDto> sse_decode_list_font_face_dto(SseDeserializer deserializer);
@@ -319,6 +337,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  ParsedComicDto sse_decode_parsed_comic_dto(SseDeserializer deserializer);
 
   @protected
   (int, int) sse_decode_record_u_32_u_32(SseDeserializer deserializer);
@@ -408,6 +429,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_chapter_dto(ChapterDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_comic_page_dto(ComicPageDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_computed_style(ComputedStyle self, SseSerializer serializer);
 
   @protected
@@ -443,6 +467,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_chapter_dto(
     List<ChapterDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_comic_page_dto(
+    List<ComicPageDto> self,
     SseSerializer serializer,
   );
 
@@ -512,6 +542,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_parsed_comic_dto(
+    ParsedComicDto self,
     SseSerializer serializer,
   );
 

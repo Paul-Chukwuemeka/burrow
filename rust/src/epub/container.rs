@@ -24,6 +24,11 @@ pub const MAX_COMPRESSED_BYTES: u64 = 100 * 1024 * 1024;
 /// real OOM guard is on the sum of the entries' uncompressed sizes.
 pub const MAX_DECOMPRESSED_BYTES: u128 = 512 * 1024 * 1024;
 
+/// Maximum compressed CBZ size, mirroring
+/// `DocumentParser.maxComicCompressedBytes` (comics legitimately run larger
+/// than EPUBs, so the cap is 500 MB rather than 100 MB).
+pub const MAX_COMIC_COMPRESSED_BYTES: u64 = 500 * 1024 * 1024;
+
 /// An opened EPUB ZIP with a normalised name → raw entry-name index.
 pub struct EpubArchive {
     archive: Mutex<ZipArchive<File>>,
@@ -36,17 +41,52 @@ pub struct EpubArchive {
 impl EpubArchive {
     /// Opens `path`, rejecting oversized archives before parsing.
     pub fn open(path: &str) -> Result<Self, EpubError> {
-        let file = File::open(path)
-            .map_err(|e| EpubError::Io(format!("Cannot open EPUB: {e}")))?;
+        Self::open_with(
+            path,
+            MAX_COMPRESSED_BYTES,
+            "EPUB file too large (limit 100 MB)",
+            "Not a valid EPUB file",
+            |e| EpubError::Io(format!("Cannot open EPUB: {e}")),
+        )
+    }
+
+    /// Opens a CBZ comic archive, reusing the same ZIP reader and size guards
+    /// with the comic's limits and messages.
+    ///
+    /// Error strings match `DocumentParser._parseComicBook`'s `FormatException`
+    /// messages verbatim: unreadable files are "Not a valid CBZ file" (Dart
+    /// catches the read failure the same way), unparseable bytes are "Not a
+    /// valid CBZ/ZIP archive", and the decompressed-size message is shared
+    /// with the EPUB path.
+    pub fn open_comic(path: &str) -> Result<Self, EpubError> {
+        Self::open_with(
+            path,
+            MAX_COMIC_COMPRESSED_BYTES,
+            "CBZ file too large (limit 500 MB)",
+            "Not a valid CBZ/ZIP archive",
+            |_| EpubError::Invalid("Not a valid CBZ file".to_string()),
+        )
+    }
+
+    /// The shared ZIP opener behind [`EpubArchive::open`] and
+    /// [`EpubArchive::open_comic`]: `too_large_msg`/`invalid_msg` are the
+    /// format's verbatim Dart messages, and `io_error` maps an OS failure to
+    /// the format's "unreadable file" error.
+    fn open_with(
+        path: &str,
+        max_compressed: u64,
+        too_large_msg: &str,
+        invalid_msg: &str,
+        io_error: impl FnOnce(std::io::Error) -> EpubError,
+    ) -> Result<Self, EpubError> {
+        let file = File::open(path).map_err(io_error)?;
         let compressed = file.metadata().map(|m| m.len()).unwrap_or(0);
-        if compressed > MAX_COMPRESSED_BYTES {
-            return Err(EpubError::TooLarge(
-                "EPUB file too large (limit 100 MB)".to_string(),
-            ));
+        if compressed > max_compressed {
+            return Err(EpubError::TooLarge(too_large_msg.to_string()));
         }
 
-        let archive = ZipArchive::new(file)
-            .map_err(|_| EpubError::Invalid("Not a valid EPUB file".to_string()))?;
+        let archive =
+            ZipArchive::new(file).map_err(|_| EpubError::Invalid(invalid_msg.to_string()))?;
 
         if let Some(total) = archive.decompressed_size() {
             if total > MAX_DECOMPRESSED_BYTES {
