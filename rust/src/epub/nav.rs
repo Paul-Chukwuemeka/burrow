@@ -244,9 +244,11 @@ fn parse_dom(xml: &str) -> Option<El> {
         }
     }
     // Tolerate unclosed elements at EOF: fold the stack bottom-up instead of
-    // dropping it, so an unclosed root still yields a tree. `root` is only
-    // set here when it isn't already (a second root after a closed first one
-    // keeps the old behaviour: the first document element wins).
+    // dropping it, so an unclosed root still yields a tree. When no root
+    // closed yet, the folded stack becomes the root; when a root already
+    // closed (kept in `root`), trailing unclosed elements are dropped.
+    // Note: two *closed* roots last-win (`attach` overwrites `root`); only
+    // the unclosed-trailing case keeps the first.
     while stack.len() > 1 {
         if let Some(el) = stack.pop() {
             attach(&mut stack, &mut root, el);

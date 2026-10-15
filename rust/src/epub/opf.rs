@@ -364,7 +364,7 @@ fn frame_of(e: &quick_xml::events::BytesStart<'_>) -> Frame {
         })
         .collect();
     Frame {
-        name: e.local_name().as_ref().to_string(),
+        name: e.local_name().as_ref().to_ascii_lowercase(),
         attrs,
         text: String::new(),
     }
@@ -400,7 +400,28 @@ fn parse_opf(xml: &str) -> Opf {
                     append_entity(&mut top.text, &e);
                 }
             }
-            Ok(Event::End(_)) => {
+            Ok(Event::End(e)) => {
+                // Match the end tag against the stack so an unclosed element
+                // cannot close the wrong parent (mirroring `nav::parse_dom`).
+                // Frames unclosed above the match fold upward in order: each
+                // is handled with its own text, which then still reaches its
+                // parent. A stray end tag with no open match is ignored
+                // instead of popping an innocent element. Well-formed input
+                // always matches the stack top with nothing above it, so its
+                // result is identical to a blind pop.
+                let end_name = e.local_name();
+                let end_name = end_name.as_ref().to_ascii_lowercase();
+                let Some(idx) = stack.iter().rposition(|f| f.name == end_name) else {
+                    continue;
+                };
+                while stack.len() > idx + 1 {
+                    if let Some(frame) = stack.pop() {
+                        handle(&mut out, &frame);
+                        if let Some(parent) = stack.last_mut() {
+                            parent.text.push_str(&frame.text);
+                        }
+                    }
+                }
                 if let Some(frame) = stack.pop() {
                     handle(&mut out, &frame);
                     if let Some(parent) = stack.last_mut() {
@@ -412,6 +433,15 @@ fn parse_opf(xml: &str) -> Opf {
             // Tolerate malformed OPF: keep what parsed.
             Err(_) => break,
             _ => {}
+        }
+    }
+    // Tolerate unclosed elements at EOF: drain the stack bottom-up so
+    // unclosed metadata is still `handle()`d and text still propagates
+    // upward, instead of silently dropping what was parsed.
+    while let Some(frame) = stack.pop() {
+        handle(&mut out, &frame);
+        if let Some(parent) = stack.last_mut() {
+            parent.text.push_str(&frame.text);
         }
     }
     out
@@ -1200,5 +1230,52 @@ mod tests {
             m.dc_source.as_deref(),
             Some("https://example.com/annotated-meta")
         );
+    }
+
+    #[test]
+    fn truncated_opf_keeps_unclosed_metadata() {
+        // Recovery: a file cut off before `</package>` (unclosed
+        // `<dc:creator>`, unclosed ancestors) must still yield the
+        // metadata parsed so far.
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Truncated Title</dc:title>
+            <dc:creator>Truncated Author"#,
+        );
+        assert_eq!(opf.title, "Truncated Title");
+        assert_eq!(opf.author, "Truncated Author");
+    }
+
+    #[test]
+    fn unclosed_title_still_parses_at_eof() {
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Unclosed Title"#,
+        );
+        assert_eq!(opf.title, "Unclosed Title");
+    }
+
+    #[test]
+    fn stray_end_tag_does_not_close_the_wrong_parent() {
+        // `</bogus>` must not pop `<dc:title>`; the title survives.
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Kept</dc:title></bogus>
+            </metadata></package>"#,
+        );
+        assert_eq!(opf.title, "Kept");
+    }
+
+    #[test]
+    fn nested_same_name_frames_match_lifo() {
+        // Well-formed LIFO nesting: the inner frame closes first and wins
+        // (first non-empty wins), identically under blind-pop and matched
+        // recovery. Locks the no-behaviour-change guarantee.
+        let opf = super::parse_opf(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Outer<dc:title>Inner</dc:title></dc:title>
+            </metadata></package>"#,
+        );
+        assert_eq!(opf.title, "Inner");
     }
 }
