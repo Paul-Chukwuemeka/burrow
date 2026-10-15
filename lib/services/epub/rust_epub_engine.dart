@@ -36,10 +36,12 @@ class RustEpubEngine implements EpubEngine {
     if (formatFromExtension(path) == BookFormat.txt) {
       return _parseTxt(path);
     }
-    // CBZ comics are parsed natively through the FFI `parseCbz` port of the
-    // `_parseComicBook` CBZ branch. CBR/PDF still fall back to Dart for now.
-    if (formatFromExtension(path) == BookFormat.cbz) {
-      return _parseCbz(path);
+    // CBZ/CBR comics are parsed natively through the FFI `parseCbz`/`parseCbr`
+    // ports of the `_parseComicBook` branches. PDF still falls back to Dart
+    // for now.
+    final format = formatFromExtension(path);
+    if (format == BookFormat.cbz || format == BookFormat.cbr) {
+      return _parseComic(path, format);
     }
     // The reader opens every reflowable format through this seam, so other
     // non-EPUB books (PDF/comics today) fall back to the Dart implementation
@@ -110,17 +112,22 @@ class RustEpubEngine implements EpubEngine {
     }
   }
 
-  /// Parses a CBZ comic through the Rust engine.
+  /// Parses a CBZ/CBR comic through the Rust engine.
   ///
   /// Each image entry becomes a chapter holding a single full-width `ImageRun`
   /// over a lone `\uFFFC`, with the first page's bytes as the cover —
-  /// exactly like `DocumentParser._parseComicBook`'s CBZ branch (whose cover
-  /// is un-downscaled on the parse path, so no `prepareCover` here). A missing
-  /// native library degrades to Dart, while corrupt CBZs surface as a
-  /// [FormatException] like the Dart engine.
-  Future<ParsedDocument> _parseCbz(String path) async {
+  /// exactly like `DocumentParser._parseComicBook` (whose cover is
+  /// un-downscaled on the parse path, so no `prepareCover` here). CBZ entries
+  /// come from the Rust ZIP reader, CBR entries from the pure-Rust `rars`
+  /// crate; the Dart `rar` plugin is never touched from this path (it stays
+  /// as the Dart engine's CBR backend until its own retirement task). A
+  /// missing native library degrades to Dart, while corrupt comics surface
+  /// as a [FormatException] like the Dart engine.
+  Future<ParsedDocument> _parseComic(String path, BookFormat format) async {
     try {
-      final parsed = await rust.parseCbz(path: path);
+      final parsed = format == BookFormat.cbr
+          ? await rust.parseCbr(path: path)
+          : await rust.parseCbz(path: path);
       return ParsedDocument(
         title: titleFromFilename(path),
         author: '',
@@ -140,7 +147,9 @@ class RustEpubEngine implements EpubEngine {
       );
     } catch (e) {
       if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
-      if (isRustCorruptCbzFailure(e)) {
+      if (format == BookFormat.cbr
+          ? isRustCorruptCbrFailure(e)
+          : isRustCorruptCbzFailure(e)) {
         throw FormatException(e.toString());
       }
       rethrow;
@@ -411,6 +420,24 @@ bool isRustCorruptCbzFailure(Object error) {
   final message = error.toString();
   return message.contains('CBZ file too large') ||
       message.contains('Not a valid CBZ') ||
+      message.contains('No images found in comic archive') ||
+      message.contains('decompressed size exceeds');
+}
+
+/// Whether a Rust CBR failure means "permanently unreadable" and must be
+/// surfaced as a [FormatException] — mirroring [isRustCorruptCbzFailure] for
+/// the CBR messages (`CBR file too large`, `Not a valid CBR...`, `Failed to
+/// extract CBR archive`, `No images found in comic archive`), which match
+/// `DocumentParser._parseComicBook`'s CBR `FormatException`s verbatim.
+/// Transient failures (such as `Entry not found: ...`) are rethrown unchanged
+/// and still retry. An existing [FormatException] needs no translation and
+/// returns false.
+bool isRustCorruptCbrFailure(Object error) {
+  if (error is FormatException) return false;
+  final message = error.toString();
+  return message.contains('CBR file too large') ||
+      message.contains('Not a valid CBR') ||
+      message.contains('Failed to extract CBR archive') ||
       message.contains('No images found in comic archive') ||
       message.contains('decompressed size exceeds');
 }

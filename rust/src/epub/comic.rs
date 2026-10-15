@@ -1,23 +1,29 @@
-//! CBZ comic parsing: image entries as full-page chapters.
+//! CBZ/CBR comic parsing: image entries as full-page chapters.
 //!
-//! A direct port of the CBZ branch of Dart's `DocumentParser._parseComicBook`
-//! (`lib/services/document_parser.dart`): image entries (and only image
-//! entries) are natural-sorted, each becomes a chapter holding a single
-//! full-width [`ImageRun`](crate::epub::project::ImageRunDto)-shaped page,
-//! and the first page doubles as the cover. Unlike the EPUB path, page bytes
-//! cross the FFI by value: comics have no OPF handle for on-demand hydration,
-//! so the DTO carries them.
+//! A direct port of the CBZ/CBR branches of Dart's
+//! `DocumentParser._parseComicBook` (`lib/services/document_parser.dart`):
+//! image entries (and only image entries) are natural-sorted, each becomes a
+//! chapter holding a single full-width
+//! [`ImageRun`](crate::epub::project::ImageRunDto)-shaped page, and the first
+//! page doubles as the cover. Unlike the EPUB path, page bytes cross the FFI
+//! by value: comics have no OPF handle for on-demand hydration, so the DTO
+//! carries them.
 //!
 //! Two Dart helpers are ported verbatim because `comic_page_provider.dart`
 //! shares them: [`is_image_entry`] (`_isImage`) and
 //! [`decode_image_dimensions`] (`_decodeImageDimensions`, PNG/JPEG/GIF/
 //! BMP/WebP/SVG header sniffing with a `(0, 0)` unknown fallback).
+//!
+//! CBZ entries come from the ZIP reader ([`EpubArchive::open_comic`]); CBR
+//! entries come from the pure-Rust [`rars`] crate (Apache-2.0, no UnRAR
+//! licence involved). Both funnels share [`assemble_comic_pages`], so page
+//! order, titles and cover selection cannot diverge by format.
 
 use std::sync::OnceLock;
 
 use regex::Regex;
 
-use super::container::EpubArchive;
+use super::container::{EpubArchive, MAX_COMIC_COMPRESSED_BYTES, MAX_DECOMPRESSED_BYTES};
 use super::opf::natural_compare;
 
 /// Image extensions the Dart parser recognises (lowercased, with the dot).
@@ -78,17 +84,89 @@ pub fn parse_cbz(path: &str) -> Result<ParsedComicDto, String> {
         .collect();
     // Natural sort: "page2.png" before "page10.png" (Review Focus #3).
     names.sort_by(|a, b| natural_compare(a, b));
-    if names.is_empty() {
+    let entries: Vec<(String, Vec<u8>)> = names
+        .into_iter()
+        .map(|name| {
+            archive
+                .read(&name)
+                .map(|bytes| (name.clone(), bytes))
+                .ok_or_else(|| format!("Entry not found: {name}"))
+        })
+        .collect::<Result<_, _>>()?;
+    assemble_comic_pages(entries)
+}
+
+/// Parses a CBR file into natural-sorted pages (the `parse_cbr` behind the
+/// FFI).
+///
+/// Listing and extraction run through the [`rars`] crate; the Dart `rar`
+/// plugin is never touched from this path. Error strings match
+/// `DocumentParser._parseComicBook`'s CBR `FormatException` messages verbatim
+/// so the Dart adapter can translate them back: an unreadable or
+/// non-RAR file is "Not a valid CBR/RAR archive" (Dart's
+/// `_prepareCbrOnMainIsolate` maps every list failure there, including a
+/// missing file whose length check already fell through), an undecodable
+/// member is "Failed to extract CBR archive", and the size guards mirror
+/// `maxComicCompressedBytes` / `assertDecompressedTotal`.
+pub fn parse_cbr(path: &str) -> Result<ParsedComicDto, String> {
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() > MAX_COMIC_COMPRESSED_BYTES {
+            return Err("CBR file too large (limit 500 MB)".to_string());
+        }
+    }
+    let archive = rars::ArchiveReader::read_path(path)
+        .map_err(|_| "Not a valid CBR/RAR archive".to_string())?;
+    let mut names: Vec<String> = Vec::new();
+    let mut total: u128 = 0;
+    for member in archive.members() {
+        if member.meta.is_directory || member.meta.is_redirection {
+            continue;
+        }
+        let name = member.meta.name_lossy();
+        if !is_image_entry(&name) {
+            continue;
+        }
+        total += member.meta.unpacked_size as u128;
+        if total > MAX_DECOMPRESSED_BYTES {
+            return Err("Archive decompressed size exceeds 512 MB".to_string());
+        }
+        names.push(name);
+    }
+    // Natural sort: "page2.png" before "page10.png" (Review Focus #3).
+    names.sort_by(|a, b| natural_compare(a, b));
+    let entries: Vec<(String, Vec<u8>)> = names
+        .into_iter()
+        .map(|name| {
+            archive
+                .read_member(name.as_bytes(), None)
+                .map_err(|_| format!("Failed to extract CBR archive: {name}"))?
+                .ok_or_else(|| format!("Entry not found: {name}"))
+                .map(|bytes| (name.clone(), bytes))
+        })
+        .collect::<Result<_, _>>()?;
+    assemble_comic_pages(entries)
+}
+
+/// Assembles natural-sorted comic pages from `(entry_name, bytes)` pairs.
+///
+/// The shared tail behind [`parse_cbz`] and [`parse_cbr`]: non-image entries
+/// are dropped, the rest are natural-sorted, each becomes a page titled by
+/// its filename stem, and the first page's bytes double as the cover
+/// (un-downscaled, matching Dart's `_parseComicBook` on the parse path).
+/// Errors when no image entry survives, with Dart's verbatim message.
+pub fn assemble_comic_pages(
+    mut entries: Vec<(String, Vec<u8>)>,
+) -> Result<ParsedComicDto, String> {
+    entries.retain(|(name, _)| is_image_entry(name));
+    entries.sort_by(|a, b| natural_compare(&a.0, &b.0));
+    if entries.is_empty() {
         return Err("No images found in comic archive".to_string());
     }
 
-    let mut pages = Vec::with_capacity(names.len());
-    for (index, name) in names.iter().enumerate() {
-        let bytes = archive
-            .read(name)
-            .ok_or_else(|| format!("Entry not found: {name}"))?;
+    let mut pages = Vec::with_capacity(entries.len());
+    for (index, (name, bytes)) in entries.into_iter().enumerate() {
         let (width, height) = decode_image_dimensions(&bytes);
-        let stem = filename_without_extension(name);
+        let stem = filename_without_extension(&name);
         let title = if stem.is_empty() {
             format!("Page {}", index + 1)
         } else {
@@ -96,7 +174,7 @@ pub fn parse_cbz(path: &str) -> Result<ParsedComicDto, String> {
         };
         pages.push(ComicPageDto {
             title,
-            entry_name: name.clone(),
+            entry_name: name,
             image_bytes: bytes,
             width,
             height,
@@ -333,5 +411,151 @@ mod tests {
         webp[24] = 7;
         webp[27] = 5;
         assert_eq!(decode_image_dimensions(&webp), (8, 6));
+    }
+
+    /// Minimal PNG bytes with the given IHDR size (header sniffing only reads
+    /// the IHDR; no CRC needed for [`decode_image_dimensions`]).
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut out = vec![
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00,
+            0x0D, 0x49, 0x48, 0x44, 0x52,
+        ];
+        out.extend_from_slice(&width.to_be_bytes());
+        out.extend_from_slice(&height.to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn assemble_filters_and_natural_sorts() {
+        let parsed = assemble_comic_pages(vec![
+            ("page10.png".to_string(), png_bytes(6, 8)),
+            ("notes.txt".to_string(), b"Not a page.\n".to_vec()),
+            ("page2.png".to_string(), png_bytes(8, 6)),
+            ("page1.png".to_string(), png_bytes(4, 4)),
+        ])
+        .expect("assembly succeeds");
+        assert_eq!(
+            parsed
+                .pages
+                .iter()
+                .map(|p| p.entry_name.as_str())
+                .collect::<Vec<_>>(),
+            ["page1.png", "page2.png", "page10.png"]
+        );
+        assert_eq!(
+            parsed
+                .pages
+                .iter()
+                .map(|p| (p.width, p.height))
+                .collect::<Vec<_>>(),
+            [(4, 4), (8, 6), (6, 8)]
+        );
+        assert_eq!(parsed.cover_bytes, parsed.pages[0].image_bytes);
+    }
+
+    #[test]
+    fn assemble_rejects_empty() {
+        let err = assemble_comic_pages(vec![(
+            "notes.txt".to_string(),
+            b"Not a page.\n".to_vec(),
+        )])
+        .expect_err("no images must fail");
+        assert_eq!(err, "No images found in comic archive");
+    }
+
+    #[test]
+    fn cbr_round_trip_through_rars_writer() {
+        let path = write_test_cbr(&[
+            ("page10.png", &png_bytes(6, 8)),
+            ("notes.txt", b"Not a page.\n"),
+            ("page2.png", &png_bytes(8, 6)),
+            ("page1.png", &png_bytes(4, 4)),
+        ]);
+        let parsed = parse_cbr(&path).expect("CBR parses");
+        assert_eq!(
+            parsed
+                .pages
+                .iter()
+                .map(|p| p.entry_name.as_str())
+                .collect::<Vec<_>>(),
+            ["page1.png", "page2.png", "page10.png"]
+        );
+        assert_eq!(
+            parsed
+                .pages
+                .iter()
+                .map(|p| (p.width, p.height))
+                .collect::<Vec<_>>(),
+            [(4, 4), (8, 6), (6, 8)]
+        );
+        assert_eq!(parsed.cover_bytes, parsed.pages[0].image_bytes);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn cbr_committed_fixture_shape() {
+        // The checked-in `mini.cbr` (written by
+        // `rust/examples/build_cbr_fixture.rs`): guards against fixture rot.
+        let path = format!(
+            "{}/../test/fixtures/epub/mini.cbr",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let parsed = parse_cbr(&path).expect("mini.cbr parses");
+        assert_eq!(
+            parsed
+                .pages
+                .iter()
+                .map(|p| p.entry_name.as_str())
+                .collect::<Vec<_>>(),
+            ["page1.png", "page2.png", "page10.png"]
+        );
+        assert_eq!(
+            parsed
+                .pages
+                .iter()
+                .map(|p| (p.width, p.height))
+                .collect::<Vec<_>>(),
+            [(4, 4), (8, 6), (6, 8)]
+        );
+        assert_eq!(parsed.cover_bytes, parsed.pages[0].image_bytes);
+    }
+
+    #[test]
+    fn cbr_rejects_garbage_and_empty() {        let dir = std::env::temp_dir();
+        let garbage = dir.join("burrow_cbr_garbage_test.cbr");
+        std::fs::write(&garbage, [1u8, 2, 3, 4, 5]).unwrap();
+        assert_eq!(
+            parse_cbr(garbage.to_str().unwrap()).unwrap_err(),
+            "Not a valid CBR/RAR archive"
+        );
+        std::fs::remove_file(&garbage).ok();
+
+        let path = write_test_cbr(&[("notes.txt", b"Not a page.\n")]);
+        assert_eq!(
+            parse_cbr(&path).unwrap_err(),
+            "No images found in comic archive"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Writes a synthetic RAR via `rars`' own writer (self-round-trip: no
+    /// local RAR encoder exists) and returns the temp path.
+    fn write_test_cbr(entries: &[(&str, &[u8])]) -> String {
+        let mut builder = rars::Builder::new(rars::ArchiveVersion::Rar50);
+        for (name, data) in entries {
+            builder
+                .add_bytes(name.as_bytes().to_vec(), data.to_vec(), None, None)
+                .expect("queue member");
+        }
+        let bytes = builder.to_bytes().expect("encode RAR");
+        let path = std::env::temp_dir().join(format!(
+            "burrow_cbr_test_{}.cbr",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, bytes).unwrap();
+        path.to_str().unwrap().to_string()
     }
 }

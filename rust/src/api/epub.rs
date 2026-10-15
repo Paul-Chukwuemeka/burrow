@@ -177,6 +177,17 @@ pub fn parse_cbz(path: String) -> Result<ParsedComicDto, String> {
     comic::parse_cbz(&path)
 }
 
+/// Parses a CBR comic into natural-sorted pages plus the cover (the CBR half
+/// of retiring the Dart engine).
+///
+/// Listing and extraction run through the `rars` crate in Rust; the Dart
+/// `rar` plugin is never touched from this path. Otherwise identical to
+/// [`parse_cbz`]: one page per image entry, first page's bytes as the cover,
+/// Dart-verbatim error strings, bytes by value (no handle).
+pub fn parse_cbr(path: String) -> Result<ParsedComicDto, String> {
+    comic::parse_cbr(&path)
+}
+
 /// The flattened chapter list: every spine document in reading order, each
 /// split at its TOC anchors (Dart's `splitByAnchors` + `_stripDuplicateHeading`
 /// semantics). Computed once and cached on the handle.

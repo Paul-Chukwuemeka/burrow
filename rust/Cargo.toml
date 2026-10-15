@@ -35,6 +35,9 @@ markup5ever_rcdom = "0.39"
 cssparser = "0.38"
 selectors = "0.41"
 precomputed-hash = "0.1"
+# RAR listing/extraction for CBR comics (Task 3): pure-Rust Apache-2.0 backend,
+# allowed by `deny.toml`; no UnRAR licence involved.
+rars = "0.10.2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

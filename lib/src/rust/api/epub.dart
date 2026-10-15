@@ -132,5 +132,15 @@ Future<List<ChapterDto>> parseTxt({required String path}) =>
 Future<ParsedComicDto> parseCbz({required String path}) =>
     RustLib.instance.api.crateApiEpubParseCbz(path: path);
 
+/// Parses a CBR comic into natural-sorted pages plus the cover (the CBR half
+/// of retiring the Dart engine).
+///
+/// Listing and extraction run through the `rars` crate in Rust; the Dart
+/// `rar` plugin is never touched from this path. Otherwise identical to
+/// [`parse_cbz`]: one page per image entry, first page's bytes as the cover,
+/// Dart-verbatim error strings, bytes by value (no handle).
+Future<ParsedComicDto> parseCbr({required String path}) =>
+    RustLib.instance.api.crateApiEpubParseCbr(path: path);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}
