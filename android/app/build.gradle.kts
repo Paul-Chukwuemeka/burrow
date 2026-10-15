@@ -8,6 +8,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// ---- Release signing ----
+// Credentials live in android/key.properties (gitignored; see README "Signing").
+// When that file is absent, release builds are refused rather than quietly
+// signed with the debug key — see the packageRelease guard at the bottom.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use { load(it) }
+}
+
 configure<ApplicationExtension> {
     namespace = "com.paulchukwuemeka.burrow"
     compileSdk = flutter.compileSdkVersion
@@ -28,11 +37,42 @@ configure<ApplicationExtension> {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Deliberately no debug-key fallback: a debug-signed APK shares the
+            // applicationId but not the signature, so it could never update a
+            // properly signed install — only replace it after an uninstall that
+            // wipes the library. The packageRelease guard below turns a missing
+            // key.properties into a clear error instead.
+            signingConfig =
+                if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else null
+        }
+    }
+}
+
+// Fail loudly (and early) when a release artifact would be unsigned, rather
+// than shipping something that cannot update an installed build. Debug builds
+// are unaffected: this runs only for release packaging tasks.
+tasks.matching { it.name.startsWith("packageRelease") }.configureEach {
+    doFirst {
+        if (!keystorePropertiesFile.exists()) {
+            throw GradleException(
+                "Release build refused: android/key.properties is missing. Create it with " +
+                    "storeFile, storePassword, keyAlias and keyPassword (see README \"Signing\"). " +
+                    "Burrow does not fall back to the debug key: a debug-signed APK cannot " +
+                    "update a release-signed install.",
+            )
         }
     }
 }

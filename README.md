@@ -31,6 +31,27 @@ flutter build apk --release --split-per-abi
 # Output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
+## Signing
+
+Release APKs are signed with Burrow's own key, not the debug key. The key lives
+**outside the repo** at `~/.config/burrow/signing/burrow-release.jks`, and
+`android/key.properties` (gitignored) points at it:
+
+```properties
+storeFile=/home/paul/.config/burrow/signing/burrow-release.jks
+storePassword=…
+keyAlias=burrow
+keyPassword=…
+```
+
+- **Back both up.** If the keystore or its password is lost, no future build can
+  update an installed Burrow — Android only accepts updates signed with the same
+  key, so recovering means uninstalling and losing the reader's library.
+- **No debug-key fallback.** Without `key.properties`, a release build fails with
+  an error rather than producing a debug-signed APK (which shares the
+  `applicationId` but not the signature, so it could never update a signed
+  install). Debug builds and `flutter run` are unaffected.
+
 ## Content engine
 
 All parsing and metadata extraction runs in a single **Rust engine** (native,
