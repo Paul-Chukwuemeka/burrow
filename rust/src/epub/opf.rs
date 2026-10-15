@@ -1,10 +1,12 @@
 //! OPF package parsing: Dublin Core metadata, Calibre/EPUB3 series hints, and
 //! the manifest/cover.
 //!
-//! The field-extraction rules intentionally match
+//! The field-extraction rules intentionally matched
 //! `DocumentParser._parseOpfMetadata` / `_extractCover` so the Rust and Dart
-//! metadata paths agree field by field (spec D14, criterion 12). Any future
-//! divergence must be a classified ledger entry, not an accident.
+//! metadata paths agreed field by field (spec D14, criterion 12). The Dart
+//! engine has since been retired; this module is the sole implementation, and
+//! its behaviour is frozen by the golden tests in
+//! `test/epub_engine/rust_parse_parity_test.dart`.
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};

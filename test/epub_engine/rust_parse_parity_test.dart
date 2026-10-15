@@ -29,6 +29,17 @@ const _opaqueCoverPng = <int>[
   103, 86, 40, 118, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 
+// The exact archived bytes of `OEBPS/Images/front.png` in cover-inline.epub
+// (an 8x4 PNG, 74 bytes). Pinned literally so the cover pin below checks byte
+// equality, not just length — a length pin would pass on any 74-byte payload.
+const _coverInlinePng = <int>[
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0,
+  0, 8, 0, 0, 0, 4, 8, 2, 0, 0, 0, 60, 175, 233, 167, 0, 0, 0, 17, 73,
+  68, 65, 84, 120, 218, 99, 144, 171, 144, 195, 138, 24, 168, 39, 1, 0,
+  101, 160, 22, 129, 136, 186, 40, 165, 0, 0, 0, 0, 73, 69, 78, 68,
+  174, 66, 96, 130,
+];
+
 void main() {
   setUpAll(() async {
     await RustLib.init();
@@ -234,7 +245,7 @@ void main() {
     expect(image.fullWidth, isTrue);
     final meta = await const RustEpubEngine()
         .extractMetadata('test/fixtures/epub/cover-inline.epub');
-    expect(meta.coverBytes, hasLength(74));
+    expect(meta.coverBytes, _coverInlinePng);
   });
 
   test('Rust applies the external cascade: specificity and hints', () async {
