@@ -174,14 +174,14 @@ void main() {
   });
 
   test('Rust recovers readable text from unclosed tags in place', () async {
-    // Unclosed <div>/<p> elements recover via the HTML5 parser and keep
+    // Unclosed <div>/<p> elements recover in place and keep
     // "Chapter one body"; the well-formed sibling chapter is unaffected.
-    // (chapters[0].title is '' — the quick-xml title lookup drops the whole
-    // tree when the root never closes; reported, deliberately unpinned.)
+    // The <title> must survive the unclosed paragraphs too.
     final doc = await const RustEpubEngine()
         .parse('test/fixtures/epub/malformed.epub');
     expect(doc.title, 'Malformed');
     expect(doc.chapters, hasLength(2));
+    expect(doc.chapters[0].title, 'One');
     expect(
       doc.chapters[0].body,
       'Chapter one\n\nChapter one body\n\n\nChapter one second paragraph',

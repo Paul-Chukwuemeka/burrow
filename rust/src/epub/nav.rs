@@ -215,7 +215,24 @@ fn parse_dom(xml: &str) -> Option<El> {
                 append_entity(&mut entity, &e);
                 push_text(&mut stack, &entity);
             }
-            Ok(Event::End(_)) => {
+            Ok(Event::End(e)) => {
+                // Match the end tag against the stack so unclosed elements
+                // cannot swallow their real parents. The nearest open element
+                // with the same name wins; anything unclosed above it folds
+                // into that element as siblings (in document order), not
+                // nested under each other. A stray end tag with no open match
+                // is ignored instead of popping an innocent element.
+                // Well-formed input always matches the stack top, so its tree
+                // is identical to a blind pop.
+                let end_name = e.local_name();
+                let end_name = end_name.as_ref().to_ascii_lowercase();
+                let Some(idx) = stack.iter().rposition(|el| el.name == end_name) else {
+                    continue;
+                };
+                let above: Vec<El> = stack.drain(idx + 1..).collect();
+                if let Some(matched) = stack.last_mut() {
+                    matched.children.extend(above);
+                }
                 if let Some(el) = stack.pop() {
                     attach(&mut stack, &mut root, el);
                 }
@@ -225,6 +242,18 @@ fn parse_dom(xml: &str) -> Option<El> {
             Err(_) => break,
             _ => {}
         }
+    }
+    // Tolerate unclosed elements at EOF: fold the stack bottom-up instead of
+    // dropping it, so an unclosed root still yields a tree. `root` is only
+    // set here when it isn't already (a second root after a closed first one
+    // keeps the old behaviour: the first document element wins).
+    while stack.len() > 1 {
+        if let Some(el) = stack.pop() {
+            attach(&mut stack, &mut root, el);
+        }
+    }
+    if root.is_none() {
+        root = stack.pop();
     }
     root
 }
