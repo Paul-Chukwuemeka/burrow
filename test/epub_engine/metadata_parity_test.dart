@@ -4,8 +4,10 @@
 // (`EpubEngine.extractMetadata`, used by the library worker and the
 // edit-book refetch) and the reader (`EpubEngine.parse`): metadata from the
 // two paths must agree. The Rust engine additionally stays total over every
-// library format: non-EPUB formats have no OPF, so they fall back to the Dart
-// implementation rather than failing as "not a valid EPUB".
+// library format: non-EPUB formats have no OPF, so they are served natively
+// by the `extractMetadataTxt/Cbz/Cbr/Pdf` ports rather than failing as
+// "not a valid EPUB" (see `non_epub_metadata_test.dart` for the field-by-field
+// parity).
 import 'dart:io';
 
 import 'package:burrow/services/epub/epub_engine_factory.dart';
@@ -32,7 +34,7 @@ void main() {
     );
   }
 
-  test('rust engine falls back to Dart metadata for non-EPUB formats', () async {
+  test('rust engine serves non-EPUB metadata natively', () async {
     final engine = createEpubEngine(rustEpubEngineId);
     final dir = await Directory.systemTemp.createTemp('metadata_parity');
     try {

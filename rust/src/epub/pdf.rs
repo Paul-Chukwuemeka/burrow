@@ -14,6 +14,7 @@
 //! here would *diverge* from the contract this port pins.
 
 use crate::epub::project::ChapterDto;
+use crate::epub::{filename, model::MetadataDto};
 
 /// Returns the PDF stub: a single empty, untitled chapter.
 ///
@@ -24,6 +25,20 @@ use crate::epub::project::ChapterDto;
 pub fn parse_pdf(path: &str) -> Result<Vec<ChapterDto>, String> {
     let _ = path;
     Ok(vec![ChapterDto::default()])
+}
+
+/// Extracts PDF metadata (the `extract_metadata_pdf` behind the FFI).
+///
+/// Mirrors `_extractMetadataIsolate`'s PDF branch
+/// (`lib/services/document_parser.dart`): the file is never read — the title
+/// is filename-derived, the author empty, and there is no cover (it renders
+/// via `pdf_cover.dart`). Infallible in practice, kept as a `Result` so the
+/// FFI shape matches the other `extract_metadata_*` entries.
+pub fn extract_metadata_pdf(path: &str) -> Result<MetadataDto, String> {
+    Ok(MetadataDto {
+        title: filename::title_from_filename(path),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]

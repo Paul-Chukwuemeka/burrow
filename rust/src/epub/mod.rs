@@ -14,6 +14,9 @@
 //! - [`comic`] parses CBZ comics (image entries as full-page chapters);
 //! - [`pdf`] returns the empty-chapter stub both engines share for PDF
 //!   (rendering stays in `pdfrx`);
+//! - [`filename`] derives titles and comic series from file names
+//!   (`cleanBookTitle` / `parseComicSeries`), backing the non-EPUB metadata
+//!   FFI;
 //! - [`model`] holds the DTOs and error type shared with the FFI layer.
 //!
 //! Later tasks add resources and the flat-run projection.
@@ -24,6 +27,7 @@ pub mod comic;
 pub mod container;
 pub mod css;
 pub mod dom;
+pub mod filename;
 pub mod model;
 pub mod nav;
 pub mod opf;

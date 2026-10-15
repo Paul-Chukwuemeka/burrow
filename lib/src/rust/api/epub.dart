@@ -50,6 +50,40 @@ Future<int> chapterCount({required DocumentHandle handle}) =>
 Future<MetadataDto> readMetadata({required String path}) =>
     RustLib.instance.api.crateApiEpubReadMetadata(path: path);
 
+/// Extracts TXT metadata without parsing chapters (the TXT leg of non-EPUB
+/// metadata parity).
+///
+/// Ports `_extractMetadataIsolate`'s TXT branch: filename-derived title, empty
+/// author, no cover — the file itself is never read.
+Future<MetadataDto> extractMetadataTxt({required String path}) =>
+    RustLib.instance.api.crateApiEpubExtractMetadataTxt(path: path);
+
+/// Extracts CBZ metadata without parsing pages (the CBZ leg of non-EPUB
+/// metadata parity).
+///
+/// Ports `DocumentParser._extractCbzMetadata`: only the first (natural-sorted)
+/// page's bytes cross as the cover; the Dart adapter downscales it, exactly
+/// like the Dart metadata path. Error strings match Dart's `FormatException`
+/// messages verbatim so the Dart adapter can translate them back.
+Future<MetadataDto> extractMetadataCbz({required String path}) =>
+    RustLib.instance.api.crateApiEpubExtractMetadataCbz(path: path);
+
+/// Extracts CBR metadata without touching the archive (the CBR leg of
+/// non-EPUB metadata parity).
+///
+/// Ports `_extractMetadataIsolate`'s CBR branch: filename-derived title plus
+/// the inferred series, with the cover deferred (null) exactly like Dart.
+Future<MetadataDto> extractMetadataCbr({required String path}) =>
+    RustLib.instance.api.crateApiEpubExtractMetadataCbr(path: path);
+
+/// Extracts PDF metadata without reading the file (the PDF leg of non-EPUB
+/// metadata parity).
+///
+/// Ports `_extractMetadataIsolate`'s PDF branch: filename-derived title,
+/// empty author, no cover.
+Future<MetadataDto> extractMetadataPdf({required String path}) =>
+    RustLib.instance.api.crateApiEpubExtractMetadataPdf(path: path);
+
 /// Parses one chapter into a structured block tree with computed styles.
 ///
 /// `chapter_key` is a spine href (relative to the OPF directory) or an

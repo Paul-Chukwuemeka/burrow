@@ -19,6 +19,7 @@
 
 use crate::epub::project::ChapterDto;
 use crate::epub::units;
+use crate::epub::{filename, model::MetadataDto};
 
 use regex::Regex;
 use std::collections::BTreeSet;
@@ -113,6 +114,20 @@ pub fn parse_txt_bytes(bytes: &[u8]) -> Result<Vec<ChapterDto>, String> {
         return Err("File is empty".to_string());
     }
     Ok(chapterize_txt(&text))
+}
+
+/// Extracts TXT metadata (the `extract_metadata_txt` behind the FFI).
+///
+/// Mirrors `_extractMetadataIsolate`'s TXT branch
+/// (`lib/services/document_parser.dart`): the file is never read — the title
+/// is filename-derived, the author empty, and there is no cover. Infallible in
+/// practice, kept as a `Result` so the FFI shape matches the other
+/// `extract_metadata_*` entries.
+pub fn extract_metadata_txt(path: &str) -> Result<MetadataDto, String> {
+    Ok(MetadataDto {
+        title: filename::title_from_filename(path),
+        ..Default::default()
+    })
 }
 
 /// Splits plain text into chapters (a port of `chapterizeTxt`).

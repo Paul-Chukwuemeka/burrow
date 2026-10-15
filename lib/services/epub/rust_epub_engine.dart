@@ -187,15 +187,37 @@ class RustEpubEngine implements EpubEngine {
 
   /// Extracts only metadata and cover bytes via the Rust OPF reader.
   ///
-  /// Non-EPUB formats have no OPF, so they fall back to the Dart
-  /// implementation (filename title, first-page comic cover) rather than
-  /// failing as "not a valid EPUB". The OPF duality this task removes exists
-  /// only for EPUBs; nothing else parses an OPF.
+  /// Every format routes to Rust: EPUBs read the OPF manifest, while TXT/CBZ/
+  /// CBR/PDF go through the `extractMetadataTxt/Cbz/Cbr/Pdf` ports of
+  /// `DocumentParser._extractMetadataIsolate`'s per-format branches
+  /// (filename-derived title, first-page comic cover, deferred CBR cover).
+  /// The mapped metadata (including the downscaled cover) matches the Dart
+  /// engine field by field. A missing native library degrades to Dart; corrupt
+  /// books surface as a [FormatException] like the Dart engine.
   @override
   Future<ParsedMetadata> extractMetadata(String path) async {
-    if (formatFromExtension(path) != BookFormat.epub) {
-      return DocumentParser.extractMetadata(path);
+    final format = formatFromExtension(path);
+    if (format == BookFormat.epub) {
+      return _extractEpubMetadata(path);
     }
+    if (format == BookFormat.txt) {
+      return _extractTxtMetadata(path);
+    }
+    if (format == BookFormat.cbz) {
+      return _extractCbzMetadata(path);
+    }
+    if (format == BookFormat.cbr) {
+      return _extractCbrMetadata(path);
+    }
+    if (format == BookFormat.pdf) {
+      return _extractPdfMetadata(path);
+    }
+    // Belt and braces behind the factory fallback: an unknown extension still
+    // degrades to the Dart implementation rather than failing.
+    return DocumentParser.extractMetadata(path);
+  }
+
+  Future<ParsedMetadata> _extractEpubMetadata(String path) async {
     try {
       final metadata = await rust.readMetadata(path: path);
       return EpubDtoMapper.toParsedMetadata(
@@ -210,6 +232,90 @@ class RustEpubEngine implements EpubEngine {
       }
       if (isRustCorruptEpubFailure(e)) {
         throw FormatException(e.toString());
+      }
+      rethrow;
+    }
+  }
+
+  /// Extracts TXT metadata through the FFI `extractMetadataTxt` port.
+  ///
+  /// The file is never read on either side (filename-derived title, empty
+  /// author, no cover), so only a missing native library needs handling.
+  Future<ParsedMetadata> _extractTxtMetadata(String path) async {
+    try {
+      final metadata = await rust.extractMetadataTxt(path: path);
+      return EpubDtoMapper.toParsedMetadata(
+        metadata,
+        fallbackTitle: titleFromFilename(path),
+      );
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) {
+        return DocumentParser.extractMetadata(path);
+      }
+      rethrow;
+    }
+  }
+
+  /// Extracts CBZ metadata through the FFI `extractMetadataCbz` port.
+  ///
+  /// Only the first (natural-sorted) page's bytes cross as the cover; the
+  /// mapper downscales them exactly like the Dart metadata path. Corrupt
+  /// archives surface as a [FormatException] like the Dart engine.
+  Future<ParsedMetadata> _extractCbzMetadata(String path) async {
+    try {
+      final metadata = await rust.extractMetadataCbz(path: path);
+      return EpubDtoMapper.toParsedMetadata(
+        metadata,
+        fallbackTitle: titleFromFilename(path),
+      );
+    } on FormatException {
+      rethrow;
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) {
+        return DocumentParser.extractMetadata(path);
+      }
+      if (isRustCorruptCbzFailure(e)) {
+        throw FormatException(e.toString());
+      }
+      rethrow;
+    }
+  }
+
+  /// Extracts CBR metadata through the FFI `extractMetadataCbr` port.
+  ///
+  /// Like the Dart engine, the archive is never touched: metadata carries only
+  /// the filename-derived title and series, with the cover deferred (null)
+  /// until the comic is opened.
+  Future<ParsedMetadata> _extractCbrMetadata(String path) async {
+    try {
+      final metadata = await rust.extractMetadataCbr(path: path);
+      return EpubDtoMapper.toParsedMetadata(
+        metadata,
+        fallbackTitle: titleFromFilename(path),
+      );
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) {
+        return DocumentParser.extractMetadata(path);
+      }
+      rethrow;
+    }
+  }
+
+  /// Extracts PDF metadata through the FFI `extractMetadataPdf` port.
+  ///
+  /// The file is never read on either side (filename-derived title, empty
+  /// author, no cover — the cover renders via `pdf_cover.dart`), so only a
+  /// missing native library needs handling.
+  Future<ParsedMetadata> _extractPdfMetadata(String path) async {
+    try {
+      final metadata = await rust.extractMetadataPdf(path: path);
+      return EpubDtoMapper.toParsedMetadata(
+        metadata,
+        fallbackTitle: titleFromFilename(path),
+      );
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) {
+        return DocumentParser.extractMetadata(path);
       }
       rethrow;
     }

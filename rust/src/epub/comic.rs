@@ -24,6 +24,8 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use super::container::{EpubArchive, MAX_COMIC_COMPRESSED_BYTES, MAX_DECOMPRESSED_BYTES};
+use super::filename;
+use super::model::MetadataDto;
 use super::opf::natural_compare;
 
 /// Image extensions the Dart parser recognises (lowercased, with the dot).
@@ -182,6 +184,54 @@ pub fn assemble_comic_pages(
     }
     let cover_bytes = pages[0].image_bytes.clone();
     Ok(ParsedComicDto { pages, cover_bytes })
+}
+
+/// Extracts CBZ metadata (the `extract_metadata_cbz` behind the FFI).
+///
+/// Mirrors `DocumentParser._extractCbzMetadata`
+/// (`lib/services/document_parser.dart`): image entries are natural-sorted and
+/// only the first page's bytes are read as the (un-downscaled) cover — the
+/// Dart adapter downscales it, exactly like the Dart metadata path. The title
+/// is filename-derived and the series comes from the file name. Error strings
+/// match Dart's `FormatException` messages verbatim so the Dart adapter can
+/// translate them back.
+pub fn extract_metadata_cbz(path: &str) -> Result<MetadataDto, String> {
+    let archive = EpubArchive::open_comic(path).map_err(|e| e.to_string())?;
+    let mut names: Vec<String> = archive
+        .entry_names()
+        .iter()
+        .filter(|name| is_image_entry(name))
+        .cloned()
+        .collect();
+    names.sort_by(|a, b| natural_compare(a, b));
+    let Some(first) = names.first() else {
+        return Err("No images found in comic archive".to_string());
+    };
+    let cover_bytes = archive.read(first);
+    let (series_name, series_index) = filename::parse_comic_series(path);
+    Ok(MetadataDto {
+        title: filename::title_from_filename(path),
+        series_name,
+        series_index,
+        cover_bytes,
+        ..Default::default()
+    })
+}
+
+/// Extracts CBR metadata (the `extract_metadata_cbr` behind the FFI).
+///
+/// Mirrors `_extractMetadataIsolate`'s CBR branch: the `rar` plugin can only
+/// extract whole archives, so a CBR cover is deferred until the comic is
+/// opened — metadata carries only the filename-derived title and series, and
+/// the archive is never touched.
+pub fn extract_metadata_cbr(path: &str) -> Result<MetadataDto, String> {
+    let (series_name, series_index) = filename::parse_comic_series(path);
+    Ok(MetadataDto {
+        title: filename::title_from_filename(path),
+        series_name,
+        series_index,
+        ..Default::default()
+    })
 }
 
 /// Reads width/height from common image headers (PNG/JPEG/GIF/BMP/WebP/SVG).
