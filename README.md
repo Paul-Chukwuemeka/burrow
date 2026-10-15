@@ -31,25 +31,21 @@ flutter build apk --release --split-per-abi
 # Output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-## EPUB engine
+## Content engine
 
-EPUB parsing and metadata extraction default to the **Rust engine** (native,
-via `flutter_rust_bridge`; see `rust/`). The pure-Dart parser remains
-available as a reversible fallback — no code revert needed to switch back:
+All parsing and metadata extraction runs in a single **Rust engine** (native,
+via `flutter_rust_bridge`; see `rust/`). It handles every supported format —
+EPUB, TXT, CBZ, CBR (via the `rars` crate), and a PDF metadata stub. There is
+no Dart parser, no engine flag, and no fallback: `LibraryService.epubEngine`
+always resolves to the Rust engine, and a failed `RustLib.init()` surfaces FFI
+errors to the caller (placeholder UI, retryable metadata) instead of switching
+engines.
 
-```dart
-await library.saveEpubEngine('dart'); // back to the Dart engine
-await library.saveEpubEngine('rust'); // back to the Rust default
-```
+## Platform support / known issues
 
-The choice persists under `burrow.epub.engine.v1` and defaults to `rust`
-when unset.
-
-If the native library fails to load (`RustLib.init()` throws), the app falls
-back to the Dart engine automatically — the EPUB path is never bricked. The
-native `.so` is currently built for Android only (`cargo-ndk` Gradle task);
-**iOS packaging is out of scope for Phase A** (no Xcode runner wired up yet),
-so iOS always runs on the Dart engine until that follow-up lands.
+The native `.so` is currently built for Android only (Gradle `cargo-ndk` task).
+**iOS has no Rust `.so` packaged, so with the fallback removed, reading
+hard-fails on iOS until a cargokit/FFI packaging step lands.**
 
 ## Install via ADB
 

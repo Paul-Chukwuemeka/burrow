@@ -1016,9 +1016,10 @@ def build_dangling_spine() -> None:
 
 
 def build_svg_image() -> None:
-    # Task 9 parity fixture: an `<img>` whose file is a valid SVG. Dart drops
-    # `.svg` `<img>` tags (`.svg` is not in its EPUB image-entry map); Rust
-    # keeps a placeholder but reads intrinsic 0x0 (no SVG viewBox sniffing).
+    # SVG fixture: an `<img>` whose file is a valid SVG. The Rust engine keeps
+    # a placeholder with the archive key and sniffs the intrinsics (300x150)
+    # from the SVG root's width/height (viewBox fallback) — pinned by
+    # `rust_parse_parity_test.dart` ("SVG image as a placeholder").
     svg = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<svg xmlns="http://www.w3.org/2000/svg" '
@@ -1109,10 +1110,12 @@ def build_rich_meta() -> None:
 
 
 def build_cover_inline() -> None:
-    # Task 9 parity fixture: an inline `<img>` whose file is the OPF-declared
-    # cover (`meta name="cover"`), but neither its `id` nor its filename
-    # contains "cover". Dart marks it `fullWidth` via `coverHrefs`; Rust only
-    # matches id/filename "cover", so it does not.
+    # Cover-inline fixture: an inline `<img>` whose file is the OPF-declared
+    # cover (`meta name="cover"`), though neither its `id` nor its filename
+    # contains "cover". Resolution goes through the OPF declaration, and the
+    # inline image IS marked `fullWidth` with real intrinsics (8x4) — pinned
+    # by `rust_parse_parity_test.dart` ("OPF-declared cover image
+    # full-width").
     ch1 = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<!DOCTYPE html>\n'

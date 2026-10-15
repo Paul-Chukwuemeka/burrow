@@ -22,8 +22,9 @@ Future<void> main() async {
   // The availability flag is recorded for diagnostics; there is no Dart
   // fallback anymore (the Dart engine was retired), so a failed init surfaces
   // FFI errors to the caller instead of bricking on a missing engine. The
-  // `.so` is currently built for Android only (Gradle `cargo-ndk` task); iOS
-  // packaging is out of scope for Phase A.
+  // `.so` is currently built for Android only (Gradle `cargo-ndk` task): no
+  // iOS `.so` is packaged, so reading hard-fails on iOS until a
+  // cargokit/FFI packaging step lands.
   try {
     await RustLib.init();
     setRustEngineAvailable(true);

@@ -137,9 +137,8 @@ class ComicReaderController extends ChangeNotifier {
         return;
       }
 
-      // Non-CBZ comics (CBR) parse through the active content engine behind
-      // the reversible engine flag; the `dart` engine keeps the legacy
-      // behaviour.
+      // Non-CBZ comics (CBR) parse through the Rust content engine
+      // (`rars`); there is no Dart engine anymore.
       final doc = await createEpubEngine(library.epubEngine).parse(book.path);
       final pages = <Uint8List>[];
       for (final chapter in doc.chapters) {

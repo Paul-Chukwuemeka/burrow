@@ -415,19 +415,9 @@ fn parse_opf(xml: &str) -> Opf {
                     continue;
                 };
                 while stack.len() > idx + 1 {
-                    if let Some(frame) = stack.pop() {
-                        handle(&mut out, &frame);
-                        if let Some(parent) = stack.last_mut() {
-                            parent.text.push_str(&frame.text);
-                        }
-                    }
+                    pop_frame(&mut stack, &mut out);
                 }
-                if let Some(frame) = stack.pop() {
-                    handle(&mut out, &frame);
-                    if let Some(parent) = stack.last_mut() {
-                        parent.text.push_str(&frame.text);
-                    }
-                }
+                pop_frame(&mut stack, &mut out);
             }
             Ok(Event::Eof) => break,
             // Tolerate malformed OPF: keep what parsed.
@@ -438,13 +428,23 @@ fn parse_opf(xml: &str) -> Opf {
     // Tolerate unclosed elements at EOF: drain the stack bottom-up so
     // unclosed metadata is still `handle()`d and text still propagates
     // upward, instead of silently dropping what was parsed.
-    while let Some(frame) = stack.pop() {
-        handle(&mut out, &frame);
+    while !stack.is_empty() {
+        pop_frame(&mut stack, &mut out);
+    }
+    out
+}
+
+/// Pops the top frame off the OPF stack: its metadata is recorded via
+/// [`handle`] and its text folds into the new top frame so open parents
+/// still see nested text. The three pop sites above (fold-above-match, the
+/// match itself, EOF drain) share this so they cannot drift apart.
+fn pop_frame(stack: &mut Vec<Frame>, out: &mut Opf) {
+    if let Some(frame) = stack.pop() {
+        handle(out, &frame);
         if let Some(parent) = stack.last_mut() {
             parent.text.push_str(&frame.text);
         }
     }
-    out
 }
 
 /// Resolves a `&name;` / `&#38;` reference event into text.

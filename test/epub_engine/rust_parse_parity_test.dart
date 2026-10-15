@@ -19,6 +19,16 @@ const _nav = 'test/fixtures/epub/nav.epub';
 const _ncx = 'test/fixtures/epub/ncx.epub';
 const _anchorSplit = 'test/fixtures/epub/anchor-split.epub';
 
+// The exact archived bytes of `OEBPS/Images/front.png` in opaque-cover.epub
+// (a 4x4 PNG, 73 bytes). Pinned literally so the cover pins above check byte
+// equality, not just length.
+const _opaqueCoverPng = <int>[
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4,
+  0, 0, 0, 4, 8, 2, 0, 0, 0, 38, 147, 9, 41, 0, 0, 0, 16, 73, 68, 65, 84,
+  120, 218, 99, 144, 171, 144, 131, 35, 6, 226, 56, 0, 36, 195, 11, 65,
+  103, 86, 40, 118, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
 void main() {
   setUpAll(() async {
     await RustLib.init();
@@ -199,10 +209,13 @@ void main() {
     expect(doc.chapters, hasLength(1));
     expect(doc.chapters.single.title, 'One');
     expect(doc.chapters.single.body, 'One\n\nFront cover.');
-    expect(doc.coverBytes, hasLength(73));
+    // Byte equality against the fixture's archived cover
+    // (`OEBPS/Images/front.png` in opaque-cover.epub): a length pin would
+    // pass on any 73-byte payload.
+    expect(doc.coverBytes, _opaqueCoverPng);
     final meta = await const RustEpubEngine()
         .extractMetadata('test/fixtures/epub/opaque-cover.epub');
-    expect(meta.coverBytes, hasLength(73));
+    expect(meta.coverBytes, _opaqueCoverPng);
   });
 
   test('Rust marks the OPF-declared cover image full-width inline', () async {
