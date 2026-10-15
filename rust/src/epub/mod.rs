@@ -10,6 +10,7 @@
 //! - [`cascade`] matches selectors and computes styles onto the block tree;
 //! - [`units`] converts byte offsets to Dart UTF-16 code units;
 //! - [`project`] lowers the styled tree into today's flat `ChapterDto`;
+//! - [`txt`] parses plain-text books (decode + chapter split);
 //! - [`model`] holds the DTOs and error type shared with the FFI layer.
 //!
 //! Later tasks add resources and the flat-run projection.
@@ -23,4 +24,5 @@ pub mod model;
 pub mod nav;
 pub mod opf;
 pub mod project;
+pub mod txt;
 pub mod units;

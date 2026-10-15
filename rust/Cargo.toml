@@ -17,6 +17,9 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2-zli
 quick-xml = "0.42"
 # Href percent-decoding.
 percent-encoding = "2"
+# Plain-text chapter splitting (`txt`): Dart-`RegExp` heading/blank-run
+# patterns. MIT/Apache-2.0, allowed by `deny.toml`.
+regex = "1"
 # Browser-grade XHTML parsing with HTML5 error recovery (G1/D5). The `dom`
 # module lowers the result into our own block tree; the RcDom is never exposed.
 # `markup5ever_rcdom` 0.39 must stay in lockstep with `html5ever` 0.39 — both

@@ -109,5 +109,15 @@ Future<ChapterDto> chapter({
 Future<void> closeDocument({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiEpubCloseDocument(handle: handle);
 
+/// Parses a plain-text book into flat chapters (the TXT half of retiring the
+/// Dart engine).
+///
+/// Decoding is UTF-8 with a Latin-1 fallback when replacement chars dominate,
+/// and chapters follow `chapterizeTxt` (heading regex + 3-blank-line runs).
+/// Chapters carry no runs or images; the filename-derived title is applied
+/// Dart-side, matching `DocumentParser._parseTxt`.
+Future<List<ChapterDto>> parseTxt({required String path}) =>
+    RustLib.instance.api.crateApiEpubParseTxt(path: path);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}

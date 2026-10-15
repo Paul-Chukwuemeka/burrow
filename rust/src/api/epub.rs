@@ -6,6 +6,7 @@ use crate::epub::model::{BlockTree, FontFaceDto, MetadataDto, TocEntryDto};
 use crate::epub::nav;
 use crate::epub::opf::{self, Navigation};
 use crate::epub::project::{self, ChapterDto};
+use crate::epub::txt;
 
 use std::sync::Mutex;
 
@@ -149,6 +150,17 @@ pub fn chapter(handle: &DocumentHandle, index: u32) -> Result<ChapterDto, String
 /// archive. Taking the handle by value is what runs the destructor.
 pub fn close_document(handle: DocumentHandle) {
     drop(handle);
+}
+
+/// Parses a plain-text book into flat chapters (the TXT half of retiring the
+/// Dart engine).
+///
+/// Decoding is UTF-8 with a Latin-1 fallback when replacement chars dominate,
+/// and chapters follow `chapterizeTxt` (heading regex + 3-blank-line runs).
+/// Chapters carry no runs or images; the filename-derived title is applied
+/// Dart-side, matching `DocumentParser._parseTxt`.
+pub fn parse_txt(path: String) -> Result<Vec<ChapterDto>, String> {
+    txt::parse_txt(&path)
 }
 
 /// The flattened chapter list: every spine document in reading order, each

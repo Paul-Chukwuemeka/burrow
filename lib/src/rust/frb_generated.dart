@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1003606001;
+  int get rustContentHash => -361808993;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -106,6 +106,8 @@ abstract class RustLibApi extends BaseApi {
   Future<MetadataDto> crateApiEpubMetadata({required DocumentHandle handle});
 
   Future<DocumentHandle> crateApiEpubOpenEpub({required String path});
+
+  Future<List<ChapterDto>> crateApiEpubParseTxt({required String path});
 
   Future<MetadataDto> crateApiEpubReadMetadata({required String path});
 
@@ -419,7 +421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "open_epub", argNames: ["path"]);
 
   @override
-  Future<MetadataDto> crateApiEpubReadMetadata({required String path}) {
+  Future<List<ChapterDto>> crateApiEpubParseTxt({required String path}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -429,6 +431,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             generalizedFrbRustBinding,
             serializer,
             funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_chapter_dto,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiEpubParseTxtConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEpubParseTxtConstMeta =>
+      const TaskConstMeta(debugName: "parse_txt", argNames: ["path"]);
+
+  @override
+  Future<MetadataDto> crateApiEpubReadMetadata({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 11,
             port: port_,
           );
         },
@@ -463,7 +493,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -496,7 +526,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -527,7 +557,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 14,
             port: port_,
           );
         },
@@ -851,6 +881,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<BlockNode> dco_decode_list_block_node(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_block_node).toList();
+  }
+
+  @protected
+  List<ChapterDto> dco_decode_list_chapter_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_chapter_dto).toList();
   }
 
   @protected
@@ -1415,6 +1451,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ChapterDto> sse_decode_list_chapter_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ChapterDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_chapter_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<FontFaceDto> sse_decode_list_font_face_dto(
     SseDeserializer deserializer,
   ) {
@@ -1951,6 +1999,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_block_node(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_chapter_dto(
+    List<ChapterDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_chapter_dto(item, serializer);
     }
   }
 

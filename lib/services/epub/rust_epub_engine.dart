@@ -30,9 +30,16 @@ class RustEpubEngine implements EpubEngine {
 
   @override
   Future<ParsedDocument> parse(String path) async {
-    // The reader opens every reflowable format through this seam, so non-EPUB
-    // books (TXT today) fall back to the Dart implementation rather than
-    // failing as "not a valid EPUB" — mirroring [extractMetadata].
+    // TXT is parsed natively through the FFI `parseTxt` port of
+    // `DocumentParser._parseTxt`/`chapterizeTxt`. Every other non-EPUB format
+    // still falls back to the Dart implementation for now.
+    if (formatFromExtension(path) == BookFormat.txt) {
+      return _parseTxt(path);
+    }
+    // The reader opens every reflowable format through this seam, so other
+    // non-EPUB books (PDF/comics today) fall back to the Dart implementation
+    // rather than failing as "not a valid EPUB" — mirroring
+    // [extractMetadata].
     if (formatFromExtension(path) != BookFormat.epub) {
       return DocumentParser.parse(path);
     }
@@ -68,6 +75,30 @@ class RustEpubEngine implements EpubEngine {
       // bricking the open when the native library is absent.
       if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       if (isRustCorruptEpubFailure(e)) {
+        throw FormatException(e.toString());
+      }
+      rethrow;
+    }
+  }
+
+  /// Parses a TXT book through the Rust engine.
+  ///
+  /// Chapters carry no runs or images, so the DTOs map straight onto
+  /// [Chapter]; the title is filename-derived exactly like
+  /// `DocumentParser._parseTxt`. A missing native library degrades to Dart,
+  /// while corrupt TXT (too large / empty) surfaces as a [FormatException]
+  /// like the Dart engine.
+  Future<ParsedDocument> _parseTxt(String path) async {
+    try {
+      final chapters = await rust.parseTxt(path: path);
+      return ParsedDocument(
+        title: titleFromFilename(path),
+        author: '',
+        chapters: [for (final c in chapters) EpubDtoMapper.toChapter(c)],
+      );
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
+      if (isRustCorruptTxtFailure(e)) {
         throw FormatException(e.toString());
       }
       rethrow;
@@ -310,6 +341,20 @@ bool isRustCorruptEpubFailure(Object error) {
   return message.contains('Not a valid EPUB file') ||
       message.contains('EPUB file too large') ||
       message.contains('decompressed size exceeds');
+}
+
+/// Whether a Rust TXT failure means "permanently unreadable" and must be
+/// surfaced as a [FormatException] — mirroring [isRustCorruptEpubFailure] for
+/// the TXT messages (`Text file too large`, `File is empty`), which match
+/// `DocumentParser._parseTxt`'s `FormatException`s verbatim. Transient
+/// failures (IO errors such as "Cannot open text file: ...") are rethrown
+/// unchanged and still retry. An existing [FormatException] needs no
+/// translation and returns false.
+bool isRustCorruptTxtFailure(Object error) {
+  if (error is FormatException) return false;
+  final message = error.toString();
+  return message.contains('Text file too large') ||
+      message.contains('File is empty');
 }
 
 /// The filename-derived title, matching `DocumentParser._titleFromFilename`.

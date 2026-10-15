@@ -34,14 +34,16 @@ void main() {
 
   test('rust engine falls back to Dart for non-EPUB books', () async {
     // The reader opens every reflowable format through the engine seam, so a
-    // TXT book must parse under the `rust` default without touching FFI.
-    final tmp = await Directory.systemTemp.createTemp('burrow_engine_txt');
+    // non-EPUB book without a native parser (PDF today; TXT has its own FFI
+    // path, see `txt_parity_test.dart`) must parse under the `rust` default
+    // via the Dart fallback.
+    final tmp = await Directory.systemTemp.createTemp('burrow_engine_pdf');
     addTearDown(() => tmp.deleteSync(recursive: true));
-    final book = File('${tmp.path}/notes.txt');
+    final book = File('${tmp.path}/notes.pdf');
     await book.writeAsString('Hello.\n\nSecond paragraph.\n');
     final doc = await createEpubEngine(rustEpubEngineId).parse(book.path);
     expect(doc.chapters, isNotEmpty);
-    expect(doc.chapters.first.body, contains('Hello.'));
+    expect(doc.title, 'notes');
   });
 
   group('engine flag persistence after the rust flip', () {

@@ -115,6 +115,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<BlockNode> dco_decode_list_block_node(dynamic raw);
 
   @protected
+  List<ChapterDto> dco_decode_list_chapter_dto(dynamic raw);
+
+  @protected
   List<FontFaceDto> dco_decode_list_font_face_dto(dynamic raw);
 
   @protected
@@ -267,6 +270,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BlockNode> sse_decode_list_block_node(SseDeserializer deserializer);
+
+  @protected
+  List<ChapterDto> sse_decode_list_chapter_dto(SseDeserializer deserializer);
 
   @protected
   List<FontFaceDto> sse_decode_list_font_face_dto(SseDeserializer deserializer);
@@ -431,6 +437,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_block_node(
     List<BlockNode> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_chapter_dto(
+    List<ChapterDto> self,
     SseSerializer serializer,
   );
 
