@@ -12,6 +12,8 @@
 //! - [`project`] lowers the styled tree into today's flat `ChapterDto`;
 //! - [`txt`] parses plain-text books (decode + chapter split);
 //! - [`comic`] parses CBZ comics (image entries as full-page chapters);
+//! - [`pdf`] returns the empty-chapter stub both engines share for PDF
+//!   (rendering stays in `pdfrx`);
 //! - [`model`] holds the DTOs and error type shared with the FFI layer.
 //!
 //! Later tasks add resources and the flat-run projection.
@@ -25,6 +27,7 @@ pub mod dom;
 pub mod model;
 pub mod nav;
 pub mod opf;
+pub mod pdf;
 pub mod project;
 pub mod txt;
 pub mod units;

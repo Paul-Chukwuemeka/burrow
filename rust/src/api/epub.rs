@@ -7,7 +7,7 @@ use crate::epub::model::{BlockTree, FontFaceDto, MetadataDto, TocEntryDto};
 use crate::epub::nav;
 use crate::epub::opf::{self, Navigation};
 use crate::epub::project::{self, ChapterDto};
-use crate::epub::txt;
+use crate::epub::{pdf, txt};
 
 use std::sync::Mutex;
 
@@ -186,6 +186,19 @@ pub fn parse_cbz(path: String) -> Result<ParsedComicDto, String> {
 /// Dart-verbatim error strings, bytes by value (no handle).
 pub fn parse_cbr(path: String) -> Result<ParsedComicDto, String> {
     comic::parse_cbr(&path)
+}
+
+/// Returns the PDF stub both engines share (the PDF leg of retiring the
+/// Dart engine).
+///
+/// PDF is never reflowed here — rendering stays in `pdfrx`. The Dart
+/// isolate's PDF branch returns an empty-chapter stub without reading the
+/// file (filename title applied Dart-side, empty author, one `Chapter('',
+/// '')`, no cover bytes), so this port does no validation either: any
+/// `.pdf` path yields the same single empty chapter, keeping the two
+/// engines byte-identical by construction.
+pub fn parse_pdf(path: String) -> Result<Vec<ChapterDto>, String> {
+    pdf::parse_pdf(&path)
 }
 
 /// The flattened chapter list: every spine document in reading order, each

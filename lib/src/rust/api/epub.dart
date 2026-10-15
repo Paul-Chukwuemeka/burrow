@@ -142,5 +142,17 @@ Future<ParsedComicDto> parseCbz({required String path}) =>
 Future<ParsedComicDto> parseCbr({required String path}) =>
     RustLib.instance.api.crateApiEpubParseCbr(path: path);
 
+/// Returns the PDF stub both engines share (the PDF leg of retiring the
+/// Dart engine).
+///
+/// PDF is never reflowed here — rendering stays in `pdfrx`. The Dart
+/// isolate's PDF branch returns an empty-chapter stub without reading the
+/// file (filename title applied Dart-side, empty author, one `Chapter('',
+/// '')`, no cover bytes), so this port does no validation either: any
+/// `.pdf` path yields the same single empty chapter, keeping the two
+/// engines byte-identical by construction.
+Future<List<ChapterDto>> parsePdf({required String path}) =>
+    RustLib.instance.api.crateApiEpubParsePdf(path: path);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DocumentHandle>>
 abstract class DocumentHandle implements RustOpaqueInterface {}

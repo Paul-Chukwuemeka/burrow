@@ -37,16 +37,21 @@ class RustEpubEngine implements EpubEngine {
       return _parseTxt(path);
     }
     // CBZ/CBR comics are parsed natively through the FFI `parseCbz`/`parseCbr`
-    // ports of the `_parseComicBook` branches. PDF still falls back to Dart
-    // for now.
+    // ports of the `_parseComicBook` branches. PDF is parsed natively through
+    // the FFI `parsePdf` port of the `_parseIsolate` PDF stub (rendering stays
+    // in `pdfrx`; the engine only returns the empty-chapter stub).
     final format = formatFromExtension(path);
     if (format == BookFormat.cbz || format == BookFormat.cbr) {
       return _parseComic(path, format);
     }
-    // The reader opens every reflowable format through this seam, so other
-    // non-EPUB books (PDF/comics today) fall back to the Dart implementation
+    if (format == BookFormat.pdf) {
+      return _parsePdf(path);
+    }
+    // The reader opens every reflowable format through this seam, so any
+    // future non-EPUB format still falls back to the Dart implementation
     // rather than failing as "not a valid EPUB" — mirroring
-    // [extractMetadata].
+    // [extractMetadata]. Every known format (TXT/CBZ/CBR/PDF) already routes
+    // to Rust above; this is belt and braces behind the factory fallback.
     if (formatFromExtension(path) != BookFormat.epub) {
       return DocumentParser.parse(path);
     }
@@ -152,6 +157,30 @@ class RustEpubEngine implements EpubEngine {
           : isRustCorruptCbzFailure(e)) {
         throw FormatException(e.toString());
       }
+      rethrow;
+    }
+  }
+
+  /// Parses a PDF book through the Rust engine.
+  ///
+  /// Neither engine reflows PDF — rendering stays in `pdfrx`. The Dart
+  /// isolate's PDF branch returns an empty-chapter stub without reading the
+  /// file (filename-derived title, empty author, one `Chapter('', '')`, no
+  /// cover bytes — the cover renders via `pdf_cover.dart`), and the FFI
+  /// `parsePdf` port returns the same single empty chapter, so the mapped
+  /// document is identical by construction. A missing native library degrades
+  /// to Dart; the stub itself never fails, so no `FormatException`
+  /// translation is needed (unlike TXT/CBZ/CBR, Dart throws nothing for PDF).
+  Future<ParsedDocument> _parsePdf(String path) async {
+    try {
+      final chapters = await rust.parsePdf(path: path);
+      return ParsedDocument(
+        title: titleFromFilename(path),
+        author: '',
+        chapters: [for (final c in chapters) EpubDtoMapper.toChapter(c)],
+      );
+    } catch (e) {
+      if (isRustNotInitializedFailure(e)) return DocumentParser.parse(path);
       rethrow;
     }
   }
