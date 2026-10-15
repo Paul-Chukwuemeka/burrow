@@ -1,6 +1,5 @@
 import 'epub_engine.dart';
 import 'rust_epub_engine.dart';
-import 'rust_status.dart';
 
 export 'epub_engine.dart';
 export 'rust_epub_engine.dart';
@@ -16,7 +15,7 @@ export 'rust_status.dart';
 /// `LibraryService.epubEngine`).
 ///
 /// Note: there is deliberately no fallback when the native library failed to
-/// load ([isRustEngineAvailable] is false). The Dart fallback is gone, so the
+/// load (`isRustEngineAvailable` is false). The Dart fallback is gone, so the
 /// engine surfaces the FFI error and the caller degrades (placeholder UI,
 /// retryable metadata) instead of bricking on a missing engine.
 EpubEngine createEpubEngine(String engineId) {

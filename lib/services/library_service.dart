@@ -55,6 +55,12 @@ class LibraryService extends ChangeNotifier {
   static const _comicsOrganizedKey = 'burrow.comics.organized.v1';
   static const _seriesCleanupKey = 'burrow.comics.seriesCleanup.v1';
 
+  /// Retired content-engine flag (retire-dart-engine Task 7): older builds
+  /// persisted `dart`/`rust` here. The flag is retired — [epubEngine] always
+  /// returns Rust — so a stale value is deleted at [load] instead of
+  /// lingering in SharedPreferences.
+  static const _legacyEpubEngineKey = 'burrow.epub.engine.v1';
+
   db.AppDatabase? _db;
   final List<Book> _books = [];
   List<Book>? _sortedCache;
@@ -291,8 +297,11 @@ class LibraryService extends ChangeNotifier {
     libraryLayout = prefs.getString(_layoutKey) ?? 'grid';
 
     // The engine flag is retired: the Rust engine is the only engine. A stale
-    // `dart` value persisted by an older build is ignored (there is nothing
-    // to read back — the getter always returns Rust).
+    // value persisted by an older build is deleted (there is nothing to read
+    // back — the getter always returns Rust).
+    if (prefs.containsKey(_legacyEpubEngineKey)) {
+      await prefs.remove(_legacyEpubEngineKey);
+    }
 
     // First-run onboarding state.
     onboardingComplete = prefs.getBool(_onboardingKey) ?? false;

@@ -77,5 +77,13 @@ void main() {
       });
       expect(service.epubEngine, rustEpubEngineId);
     });
+
+    test('a stale persisted engine value is deleted on load', () async {
+      await loadWithPrefs({
+        'burrow.epub.engine.v1': 'dart',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey('burrow.epub.engine.v1'), isFalse);
+    });
   });
 }
