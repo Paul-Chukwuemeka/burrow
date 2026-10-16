@@ -289,5 +289,35 @@ void main() {
       expect(driver.debugRunVisits, lessThan(runs.length * 4));
       driver.dispose();
     });
+
+    test('duplicated style runs never corrupt measurement', () {
+      // Regression for the reader "laying out pages" freeze: for CSS-only
+      // chapters the engine used to emit duplicated/overlapping runs, and the
+      // span builder re-emitted covered text while measuring, so a page's line
+      // offset ran past the body and a RangeError escaped the pagination pass.
+      // The builder now clips runs that start inside already-emitted text; this
+      // pins that the driver survives such a run list and tiles the body.
+      const text =
+          'The quick brown fox jumps over the lazy dog, then keeps on going.';
+      final driver = ChapterPaginationDriver(
+        text: text,
+        style: const TextStyle(fontSize: 18),
+        maxWidth: 500,
+        maxHeight: 60,
+        direction: TextDirection.ltr,
+        runs: const [StyleRun(0, 65), StyleRun(0, 65)],
+      );
+      while (!driver.isDone) {
+        driver.nextChunk(1);
+      }
+      expect(driver.pages, isNotEmpty);
+      expect(driver.pages.first.start, 0);
+      expect(driver.pages.last.end, text.length);
+      for (final page in driver.pages) {
+        expect(page.start, lessThan(page.end));
+        expect(page.end, lessThanOrEqualTo(text.length));
+      }
+      driver.dispose();
+    });
   });
 }

@@ -455,4 +455,24 @@ void main() {
       expect(spans.whereType<WidgetSpan>(), isNotEmpty);
     });
   });
+
+  test('overlapping style runs tile the slice exactly once', () {
+    // Regression: a run that starts inside text already emitted must be
+    // clipped, not re-emitted — re-emitting duplicated the measured text and
+    // ran pagination line offsets past the end of the body (the reader's
+    // "laying out pages" freeze).
+    const text = 'Alpha beta gamma delta.';
+    final spans = buildStyledSpans(
+      text,
+      const [StyleRun(0, 12), StyleRun(6, 23, bold: true)],
+      style,
+      0,
+      text.length,
+    );
+    expect(spans.map((span) => span.text).join(), text);
+    expect(spans, hasLength(2));
+    expect(spans.first.text, 'Alpha beta g');
+    expect(spans.last.text, 'amma delta.');
+    expect(spans.last.style?.fontWeight, FontWeight.w700);
+  });
 }

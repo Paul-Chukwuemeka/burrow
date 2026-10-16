@@ -378,6 +378,7 @@ enum Action {
 }
 
 /// A run recorded mid-walk, in *byte* offsets until [`Projector::finish`].
+#[derive(Debug)]
 struct RawRun {
     start: usize,
     end: usize,
@@ -882,19 +883,19 @@ where
 /// covering base run's emphasis and the merged (outer-first) CSS of every
 /// covering CSS run, then adjacent equal intervals coalesce. This mirrors the
 /// intent of Dart's `_applyCssRanges` while keeping correct node extents.
+///
+/// Both sets funnel through the same partition even when only one of them is
+/// non-empty: `declared_css_runs` emits one run per styled node, so its ranges
+/// nest (and sometimes share extents), and a CSS-only chapter must still be
+/// partitioned. Returning that raw list would hand consumers overlapping runs;
+/// the reader's paginator re-emits duplicated text while measuring and dies
+/// inside its first layout pass.
 fn merge_runs(mut base: Vec<RawRun>, mut css: Vec<RawRun>, limit: usize) -> Vec<RawRun> {
     for run in base.iter_mut().chain(css.iter_mut()) {
         run.end = run.end.min(limit);
     }
     base.retain(|run| run.start < run.end);
     css.retain(|run| run.start < run.end);
-
-    if css.is_empty() {
-        return coalesce(base);
-    }
-    if base.is_empty() {
-        return coalesce(css);
-    }
 
     let mut points: Vec<usize> = Vec::new();
     for run in base.iter().chain(css.iter()) {
@@ -907,22 +908,37 @@ fn merge_runs(mut base: Vec<RawRun>, mut css: Vec<RawRun>, limit: usize) -> Vec<
     // Outer-first so a nested rule's declaration wins when merging.
     css.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
 
+    // Sweep the windows with advancing pointers: a window lies between two
+    // consecutive boundaries, so a run either covers it entirely or misses it,
+    // and the covering sets change only by pushes/expiries. Scanning both sets
+    // per window is O(windows × runs) — quadratic on class-heavy books.
+    let mut base_next = 0;
+    let mut css_next = 0;
+    let mut active: Vec<usize> = Vec::new();
     let mut out: Vec<RawRun> = Vec::new();
     for window in points.windows(2) {
         let (start, end) = (window[0], window[1]);
         if start >= end {
             continue;
         }
-        let covering_base = base.iter().find(|run| run.start <= start && run.end >= end);
+        while base_next < base.len() && base[base_next].end <= start {
+            base_next += 1;
+        }
+        let covering_base = base
+            .get(base_next)
+            .filter(|run| run.start <= start);
+        while css_next < css.len() && css[css_next].start <= start {
+            active.push(css_next);
+            css_next += 1;
+        }
+        active.retain(|&index| css[index].end > start);
         let mut acc: Option<CssStyleDto> = None;
-        for run in &css {
-            if run.start <= start && run.end >= end {
-                if let Some(css) = &run.css {
-                    acc = Some(match acc {
-                        None => css.clone(),
-                        Some(previous) => previous.merge(css),
-                    });
-                }
+        for &index in &active {
+            if let Some(css) = &css[index].css {
+                acc = Some(match acc {
+                    None => css.clone(),
+                    Some(previous) => previous.merge(css),
+                });
             }
         }
         if covering_base.is_none() && acc.is_none() {
@@ -945,24 +961,6 @@ fn merge_runs(mut base: Vec<RawRun>, mut css: Vec<RawRun>, limit: usize) -> Vec<
                 && last.css == run.css
             {
                 last.end = end;
-                continue;
-            }
-        }
-        out.push(run);
-    }
-    out
-}
-
-/// Merges adjacent runs that carry the same style (already sorted by start).
-fn coalesce(runs: Vec<RawRun>) -> Vec<RawRun> {
-    let mut out: Vec<RawRun> = Vec::new();
-    for run in runs {
-        if let Some(last) = out.last_mut() {
-            if last.end == run.start
-                && (last.bold, last.italic, last.quote) == (run.bold, run.italic, run.quote)
-                && last.css == run.css
-            {
-                last.end = run.end;
                 continue;
             }
         }
@@ -2076,5 +2074,40 @@ mod tests {
             blocks: Vec::new(),
         });
         assert_eq!(alone.body, "CHAPTER ONE");
+    }
+
+    #[test]
+    fn merge_runs_partitions_css_only_nested_ranges() {
+        // Regression (reader "laying out pages" freeze): a chapter with class
+        // styling but no emphasis markup used to return the raw per-node CSS
+        // list — nested, overlapping, sometimes duplicated ranges. It must come
+        // out as a sorted, disjoint partition instead.
+        let css = |start: usize, end: usize, size: f64| RawRun {
+            start,
+            end,
+            bold: false,
+            italic: false,
+            quote: false,
+            css: Some(CssStyleDto {
+                font_size: Some(size),
+                ..Default::default()
+            }),
+        };
+        let out = merge_runs(
+            Vec::new(),
+            vec![css(0, 20, 10.0), css(0, 20, 12.0), css(5, 10, 14.0)],
+            20,
+        );
+
+        assert!(out.windows(2).all(|w| w[0].end <= w[1].start), "{out:?}");
+        assert_eq!(out.len(), 3);
+        assert_eq!((out[0].start, out[0].end), (0, 5));
+        assert_eq!((out[1].start, out[1].end), (5, 10));
+        assert_eq!((out[2].start, out[2].end), (10, 20));
+        // Outer runs merge first; a nested rule's declaration wins per window.
+        let size = |run: &RawRun| run.css.as_ref().unwrap().font_size;
+        assert_eq!(size(&out[0]), Some(12.0));
+        assert_eq!(size(&out[1]), Some(14.0));
+        assert_eq!(size(&out[2]), Some(12.0));
     }
 }

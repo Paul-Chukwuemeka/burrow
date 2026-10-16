@@ -355,7 +355,8 @@ TextStyle styleForRun(
 /// [runs] must be sorted by [StyleRun.start]. [fromIndex] skips runs that end
 /// at or before [start] — the paginator passes a running index so laying a
 /// chapter out paragraph by paragraph does not rescan the whole run list per
-/// paragraph.
+/// paragraph. Overlapping or duplicated runs are tolerated: every character is
+/// emitted exactly once, with the first covering run winning its range.
 List<TextSpan> buildStyledSpans(
   String text,
   List<StyleRun> runs,
@@ -375,7 +376,11 @@ List<TextSpan> buildStyledSpans(
   for (var i = fromIndex; i < runs.length; i++) {
     final run = runs[i];
     if (run.start >= end) break;
-    final rs = math.max(run.start, start);
+    // Clip to the cursor as well as the slice: a run that starts inside text
+    // already emitted (overlapping or duplicated runs) must not re-emit it.
+    // Re-emitted text doubled the measured range and ran page line offsets past
+    // the end of the body — the reader's "laying out pages" freeze.
+    final rs = math.max(math.max(run.start, start), cursor);
     final re = math.min(run.end, end);
     if (re <= rs) continue;
     if (cursor < rs) {

@@ -261,7 +261,11 @@ void main() {
       'Styled Chapter\n\nFirst note.\n\nSecond note.\n\n'
       'Nested paragraph.\n\nHinted paragraph.',
     );
-    expect(chapter.runs, hasLength(6));
+    // Runs are a partition now: the `body` font-family rule covers the whole
+    // chapter, so every element boundary (title, both notes, the paragraph
+    // gaps, the nested and hinted paragraphs) becomes its own window — nine
+    // disjoint runs. (The old output was an overlapping per-node list.)
+    expect(chapter.runs, hasLength(9));
     String textOf(StyleRun run) =>
         chapter.body.substring(run.start, run.end);
     final titleRun = chapter.runs.singleWhere((r) => r.css?.fontSize == 24.0);
@@ -280,10 +284,15 @@ void main() {
     final hinted =
         chapter.runs.singleWhere((r) => textOf(r) == 'Hinted paragraph.');
     expect(hinted.css?.textAlign, TextAlign.right);
-    final familyRun = chapter.runs.firstWhere(
-      (r) => (r.css?.fontFamily ?? '').contains('Burrow Serif'),
+    // The body rule reaches every window, from the title to the last
+    // paragraph — including the blank-line gaps between them.
+    expect(
+      chapter.runs.every(
+        (r) => (r.css?.fontFamily ?? '').contains('Burrow Serif'),
+      ),
+      isTrue,
     );
-    expect([familyRun.start, familyRun.end], [0, 79]);
+    expect([chapter.runs.first.start, chapter.runs.last.end], [0, 79]);
     expect(doc.fontFaces, contains('Burrow Serif'));
     expect(doc.fontFaces['Burrow Serif']?.src, 'oebps/fonts/burrow.woff2');
   });
