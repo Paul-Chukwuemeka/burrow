@@ -1,3 +1,4 @@
+import 'package:burrow/db/database.dart' as db;
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/document.dart';
 import 'package:burrow/services/paginator.dart';
@@ -103,6 +104,62 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tapped, [1]);
+    });
+
+    testWidgets('tapping a bookmark pops only the sheet, fires onJump once', (
+      tester,
+    ) async {
+      final chapters = [
+        const Chapter('First', 'body'),
+        const Chapter('Second', 'body'),
+      ];
+      final paginators = _makePaginators([4, 6]);
+      final tapped = <int>[];
+      const bookmark = db.Bookmark(
+        id: 'bm1',
+        bookId: 'b1',
+        chapter: 1,
+        offset: 0,
+        snippet: 'A saved spot.',
+        createdAt: 1,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => TocSheet.show(
+                  context,
+                  settings: ReaderSettings(),
+                  chapters: chapters,
+                  paginators: paginators,
+                  currentIndex: 0,
+                  onJump: (i) => tapped.add(i),
+                  bookmarks: const [bookmark],
+                  onDeleteBookmark: (_) {},
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Switch to the Bookmarks tab and tap the saved bookmark. The item's
+      // own handling must leave Route popping to the onJump callbacks:
+      // double-popping gets to the reader beneath the sheet.
+      await tester.tap(find.text('Bookmarks'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('A saved spot.'));
+      await tester.pumpAndSettle();
+
+      expect(tapped, [1]);
+      // The home route must survive: only the sheet was on top of it.
+      expect(find.text('open'), findsOneWidget);
     });
 
     testWidgets('shows untitled chapters with fallback names', (tester) async {

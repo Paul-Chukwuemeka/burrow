@@ -523,10 +523,10 @@ class _BookmarksList extends StatelessWidget {
           ),
           onDismissed: (_) => onDelete(bm),
           child: InkWell(
-            onTap: () {
-              Navigator.of(context).pop();
-              onJump(bm.chapter);
-            },
+            // No pop here: the onJump callbacks own the single pop (the same
+            // contract as the contents and outline lists). Popping here as
+            // well double-pops past the sheet onto the reader itself.
+            onTap: () => onJump(bm.chapter),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               child: Column(
