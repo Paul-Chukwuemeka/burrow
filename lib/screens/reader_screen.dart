@@ -1898,7 +1898,21 @@ class ReaderScreenState extends State<ReaderScreen>
 
   Widget _buildReflowable(BuildContext context, ReaderTheme theme) {
     if (_doc == null) {
-      return Center(child: CircularProgressIndicator(color: theme.accent));
+      // Parsing phase, distinct from the pagination phase below: the spinner
+      // is labeled so the two waits read differently on screen.
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: theme.accent),
+            const SizedBox(height: 16),
+            Text(
+              'Opening book…',
+              style: TextStyle(fontSize: 14, color: theme.muted),
+            ),
+          ],
+        ),
+      );
     }
 
     if (_paginationRunning && _pageController == null) {
