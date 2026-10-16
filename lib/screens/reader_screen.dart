@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -2080,6 +2081,11 @@ class ReaderScreenState extends State<ReaderScreen>
                   text: _doc!.chapters[chapter].body,
                   runs: _doc!.chapters[chapter].runs,
                   images: _doc!.chapters[chapter].images,
+                  links: _doc!.chapters[chapter].links,
+                  onTapLink: (target) {
+                    _dismissDictionaryButton();
+                    _jumpToChapter(target);
+                  },
                   page: page,
                   style: renderStyle,
                   theme: theme,
@@ -2824,6 +2830,8 @@ class _PageContent extends StatelessWidget {
     required this.onTapCenter,
     this.runs = const [],
     this.images = const [],
+    this.links = const [],
+    this.onTapLink,
     this.highlightMatches,
     this.currentMatch,
     this.pageMaxHeight = double.infinity,
@@ -2845,6 +2853,8 @@ class _PageContent extends StatelessWidget {
 
   final List<StyleRun> runs;
   final List<ImageRun> images;
+  final List<ChapterLink> links;
+  final void Function(int target)? onTapLink;
   final List<SearchResult>? highlightMatches;
   final SearchResult? currentMatch;
   final double pageMaxHeight;
@@ -2864,6 +2874,26 @@ class _PageContent extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapUp: (details) {
+        // A tap on link text jumps to the link's target chapter instead of
+        // flipping: the check runs before the tap zones so a link living in
+        // the 30% prev/next bands is still tappable. Hit-testing maps the tap
+        // onto the body's own rendered text (the same mechanism the
+        // long-press word lookup uses), so it follows the real layout rather
+        // than a reconstructed TextPainter.
+        if (onTapLink != null && links.isNotEmpty) {
+          final bodyOffset = _bodyTextOffsetAt(
+            context,
+            details.globalPosition,
+          );
+          if (bodyOffset != null) {
+            for (final link in links) {
+              if (bodyOffset >= link.start && bodyOffset < link.end) {
+                onTapLink!(link.target);
+                return;
+              }
+            }
+          }
+        }
         final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
         final dx = details.localPosition.dx;
         if (dx < w * 0.3) {
@@ -2921,8 +2951,29 @@ class _PageContent extends StatelessWidget {
     );
   }
 
-  void _handleLongPress(BuildContext context, LongPressStartDetails details) {
-    if (onLongPressWord == null) return;
+  /// Maps a global tap point to a body offset, or `null` when the tap misses
+  /// the rendered text (or hits the chapter title).
+  int? _bodyTextOffsetAt(BuildContext context, Offset global) {
+    RenderObject? root = context.findRenderObject();
+    RenderParagraph? hit;
+    void visit(RenderObject obj) {
+      if (hit != null) return;
+      if (obj is RenderParagraph) {
+        final local = obj.globalToLocal(global);
+        if (obj.size.contains(local)) {
+          hit = obj;
+          return;
+        }
+      }
+      obj.visitChildren(visit);
+    }
+
+    root?.visitChildren(visit);
+    if (hit == null) return null;
+    return page.start + hit!.getPositionForOffset(hit!.globalToLocal(global)).offset;
+  }
+
+  void _handleLongPress(BuildContext context, LongPressStartDetails details) {    if (onLongPressWord == null) return;
 
     final renderWidth = MediaQuery.sizeOf(context).width - horizontalMargin * 2;
     final spans = _buildPageText(context, renderWidth);
@@ -2995,6 +3046,7 @@ class _PageContent extends StatelessWidget {
       settings: settings,
       runs: runs,
       images: tappedImages,
+      links: links,
       renderWidth: renderWidth,
       maxHeight: pageMaxHeight,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),

@@ -950,14 +950,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ChapterDto dco_decode_chapter_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ChapterDto(
       title: dco_decode_String(arr[0]),
       body: dco_decode_String(arr[1]),
       runs: dco_decode_list_style_run_dto(arr[2]),
       images: dco_decode_list_image_run_dto(arr[3]),
       blocks: dco_decode_list_block_dto(arr[4]),
+      links: dco_decode_list_link_dto(arr[5]),
     );
   }
 
@@ -1104,6 +1105,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LinkDto dco_decode_link_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return LinkDto(
+      start: dco_decode_u_32(arr[0]),
+      end: dco_decode_u_32(arr[1]),
+      target: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
@@ -1143,6 +1157,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<ImageRunDto> dco_decode_list_image_run_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_image_run_dto).toList();
+  }
+
+  @protected
+  List<LinkDto> dco_decode_list_link_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_link_dto).toList();
   }
 
   @protected
@@ -1490,12 +1510,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_runs = sse_decode_list_style_run_dto(deserializer);
     var var_images = sse_decode_list_image_run_dto(deserializer);
     var var_blocks = sse_decode_list_block_dto(deserializer);
+    var var_links = sse_decode_list_link_dto(deserializer);
     return ChapterDto(
       title: var_title,
       body: var_body,
       runs: var_runs,
       images: var_images,
       blocks: var_blocks,
+      links: var_links,
     );
   }
 
@@ -1688,6 +1710,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LinkDto sse_decode_link_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_start = sse_decode_u_32(deserializer);
+    var var_end = sse_decode_u_32(deserializer);
+    var var_target = sse_decode_u_32(deserializer);
+    return LinkDto(start: var_start, end: var_end, target: var_target);
+  }
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1773,6 +1804,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <ImageRunDto>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_image_run_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<LinkDto> sse_decode_list_link_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LinkDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_link_dto(deserializer));
     }
     return ans_;
   }
@@ -2160,6 +2203,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_style_run_dto(self.runs, serializer);
     sse_encode_list_image_run_dto(self.images, serializer);
     sse_encode_list_block_dto(self.blocks, serializer);
+    sse_encode_list_link_dto(self.links, serializer);
   }
 
   @protected
@@ -2275,6 +2319,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_link_dto(LinkDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.start, serializer);
+    sse_encode_u_32(self.end, serializer);
+    sse_encode_u_32(self.target, serializer);
+  }
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
@@ -2352,6 +2404,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_image_run_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_link_dto(List<LinkDto> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_link_dto(item, serializer);
     }
   }
 

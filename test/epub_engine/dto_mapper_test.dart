@@ -20,6 +20,7 @@ ChapterDto _chapter({required String body, List<StyleRunDto> runs = const []}) {
     runs: runs,
     images: const [],
     blocks: const [],
+    links: const [],
   );
 }
 
@@ -45,6 +46,7 @@ void main() {
       title: '',
       body: 'x\u{FFFC}',
       runs: const [],
+      links: const [],
       images: const [
         ImageRunDto(
           offset: 1,

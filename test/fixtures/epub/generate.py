@@ -970,6 +970,102 @@ def build_anchor_split() -> None:    # Task 7 fix fixture: a SINGLE spine docume
     )
 
 
+def build_inbook_links() -> None:
+    # In-book EPUB link fixture: the realistic "in-book contents" case the
+    # reader ships next to the nav-based contents. The FIRST spine document is
+    # a contents page made of `<a href>` links: cross-file links to TOC
+    # anchors, a same-file anchor, a styled link, a footnote anchor pointing
+    # at a mid-chapter target (no TOC entry), and an external http link (the
+    # engine must drop it). The second spine document splits at `part1..3` TOC
+    # anchors and carries a same-file link jumping ahead and an emphasis run,
+    # pinning that links survive alongside runs and the heading strip.
+    contents = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Contents</title></head>\n"
+        "<body>\n"
+        "<h1>Contents</h1>\n"
+        '<p><a href="Text/all.xhtml#part1">Part One</a></p>\n'
+        '<p><a href="Text/all.xhtml#part2"><em>Part Two</em></a></p>\n'
+        '<p><a href="#self-note">Self note</a><a id="self-note"></a></p>\n'
+        '<p><a href="Text/all.xhtml#foot-1">Footnote</a></p>\n'
+        "<p><a href=\"https://example.com\">A web site</a></p>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    all_doc = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Link Book</title></head>\n"
+        "<body>\n"
+        '<h2 id="part1">Part One</h2>\n'
+        "<p>First body.</p>\n"
+        '<h2 id="part2">Part Two</h2>\n'
+        "<p>Second body with <em>emphasis</em> and <a href=\"#part3\">next</a>.</p>\n"
+        '<h2 id="part3">Part Three</h2>\n'
+        "<p>Third body <a id=\"foot-1\"></a>at the foot.</p>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    nav = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:epub="http://www.idpf.org/2007/ops">\n'
+        "<head><title>Contents</title></head>\n"
+        "<body>\n"
+        '  <nav epub:type="toc">\n'
+        "    <ol>\n"
+        '      <li><a href="Text/all.xhtml#part1">Part One</a></li>\n'
+        '      <li><a href="Text/all.xhtml#part2">Part Two</a></li>\n'
+        '      <li><a href="Text/all.xhtml#part3">Part Three</a></li>\n'
+        "    </ol>\n"
+        "  </nav>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>Link Book</dc:title>\n"
+        "    <dc:creator>L. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:inbook-links</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="nav" href="nav.xhtml" '
+        'media-type="application/xhtml+xml" properties="nav"/>\n'
+        '    <item id="contents" href="contents.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        '    <item id="all" href="Text/all.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="contents"/>\n'
+        '    <itemref idref="all"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "inbook-links.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/nav.xhtml", nav, True),
+            ("OEBPS/contents.xhtml", contents, True),
+            ("OEBPS/Text/all.xhtml", all_doc, True),
+        ],
+    )
+
+
 def build_dual_toc() -> None:
     # Task 9 parity fixture: BOTH an EPUB3 nav (`properties="nav"`) and an
     # EPUB2 NCX (`spine toc="ncx"`), with DIFFERENT titles for the same
@@ -1322,6 +1418,7 @@ def main() -> None:
     build_external_css()
     build_projection()
     build_anchor_split()
+    build_inbook_links()
     build_missing_image()
     build_embedded_font()
     build_dual_toc()

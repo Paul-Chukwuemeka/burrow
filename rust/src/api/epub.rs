@@ -256,7 +256,7 @@ fn flat_chapters(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
 /// and [`chapter`]. Takes no lock itself: [`chapter`] calls it while holding
 /// `handle.flat`'s lock, [`flat_chapters`] without holding it.
 fn build_flat(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
-    let mut out = Vec::new();
+    let mut docs = Vec::new();
     for key in &handle.navigation.spine {
         let entries: Vec<project::SplitEntry> = handle
             .navigation
@@ -272,16 +272,16 @@ fn build_flat(handle: &DocumentHandle) -> Result<Vec<ChapterDto>, String> {
         let tree =
             cascade::parse_styled_document(&handle.archive, &handle.navigation.manifest, key)
                 .map_err(|e| e.to_string())?;
-        out.extend(project::project_split(
+        docs.push(project::project_split_ext(
             &tree,
             fallback,
+            key,
             &entries,
             &handle.archive,
-            key,
             &handle.navigation.cover_hrefs,
         ));
     }
-    Ok(out)
+    Ok(project::resolve_split_links(docs))
 }
 
 /// The title for one spine document: its first TOC entry's title, else the
