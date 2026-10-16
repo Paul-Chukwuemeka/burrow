@@ -31,18 +31,19 @@ abstract final class EpubDtoMapper {
   /// metadata.
   ///
   /// The cover is downscaled with the same helper the Dart engine uses so the
-  /// two engines' covers match; `fallbackTitle` is used when the OPF title is
-  /// empty (the caller passes the filename-derived title).
-  static ParsedDocument toParsedDocument({
+  /// two engines' covers match, on a worker isolate ([prepareCoverAsync]) so
+  /// the caller's isolate never stalls; `fallbackTitle` is used when the OPF
+  /// title is empty (the caller passes the filename-derived title).
+  static Future<ParsedDocument> toParsedDocument({
     required List<rust.ChapterDto> chapters,
     required MetadataDto metadata,
     String fallbackTitle = '',
-  }) {
+  }) async {
     return ParsedDocument(
       title: metadata.title.isEmpty ? fallbackTitle : metadata.title,
       author: metadata.author,
       chapters: chapters.map(toChapter).toList(),
-      coverBytes: prepareCover(metadata.coverBytes),
+      coverBytes: await prepareCoverAsync(metadata.coverBytes),
       description: metadata.description,
       annotation: metadata.annotation,
       genre: metadata.genre,
@@ -62,14 +63,17 @@ abstract final class EpubDtoMapper {
   }
 
   /// Maps the Rust metadata DTO onto [ParsedMetadata].
-  static ParsedMetadata toParsedMetadata(
+  ///
+  /// The cover downscale runs on a worker isolate ([prepareCoverAsync]) so the
+  /// UI isolate stays free during bulk extraction.
+  static Future<ParsedMetadata> toParsedMetadata(
     MetadataDto metadata, {
     String fallbackTitle = '',
-  }) {
+  }) async {
     return ParsedMetadata(
       title: metadata.title.isEmpty ? fallbackTitle : metadata.title,
       author: metadata.author,
-      coverBytes: prepareCover(metadata.coverBytes),
+      coverBytes: await prepareCoverAsync(metadata.coverBytes),
       description: metadata.description,
       annotation: metadata.annotation,
       genre: metadata.genre,

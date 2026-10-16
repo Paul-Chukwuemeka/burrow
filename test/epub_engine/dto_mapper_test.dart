@@ -94,14 +94,14 @@ void main() {
     expect(EpubDtoMapper.cssStyleFrom(null), isNull);
   });
 
-  test('toParsedDocument carries metadata, chapters, and no cover', () {
+  test('toParsedDocument carries metadata, chapters, and no cover', () async {
     const metadata = MetadataDto(
       title: 'A Book',
       author: 'A. Author',
       language: 'en',
       fontFaces: [],
     );
-    final doc = EpubDtoMapper.toParsedDocument(
+    final doc = await EpubDtoMapper.toParsedDocument(
       chapters: [_chapter(body: 'Hello')],
       metadata: metadata,
       fallbackTitle: 'fallback',
@@ -112,9 +112,9 @@ void main() {
     expect(doc.coverBytes, isNull);
   });
 
-  test('an empty metadata title falls back to the filename title', () {
+  test('an empty metadata title falls back to the filename title', () async {
     const metadata = MetadataDto(title: '', author: '', fontFaces: []);
-    final doc = EpubDtoMapper.toParsedDocument(
+    final doc = await EpubDtoMapper.toParsedDocument(
       chapters: [_chapter(body: 'Hello')],
       metadata: metadata,
       fallbackTitle: 'Fallback',

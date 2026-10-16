@@ -57,7 +57,7 @@ class RustEpubEngine implements EpubEngine {
         for (var index = 0; index < count; index++) {
           chapters.add(await rust.chapter(handle: handle, index: index));
         }
-        return EpubDtoMapper.toParsedDocument(
+        return await EpubDtoMapper.toParsedDocument(
           chapters: chapters,
           metadata: metadata,
           fallbackTitle: titleFromFilename(path),
@@ -181,7 +181,7 @@ class RustEpubEngine implements EpubEngine {
   Future<ParsedMetadata> _extractEpubMetadata(String path) async {
     try {
       final metadata = await rust.readMetadata(path: path);
-      return EpubDtoMapper.toParsedMetadata(
+      return await EpubDtoMapper.toParsedMetadata(
         metadata,
         fallbackTitle: titleFromFilename(path),
       );
@@ -200,7 +200,7 @@ class RustEpubEngine implements EpubEngine {
   /// The file is never read (filename-derived title, empty author, no cover).
   Future<ParsedMetadata> _extractTxtMetadata(String path) async {
     final metadata = await rust.extractMetadataTxt(path: path);
-    return EpubDtoMapper.toParsedMetadata(
+    return await EpubDtoMapper.toParsedMetadata(
       metadata,
       fallbackTitle: titleFromFilename(path),
     );
@@ -214,7 +214,7 @@ class RustEpubEngine implements EpubEngine {
   Future<ParsedMetadata> _extractCbzMetadata(String path) async {
     try {
       final metadata = await rust.extractMetadataCbz(path: path);
-      return EpubDtoMapper.toParsedMetadata(
+      return await EpubDtoMapper.toParsedMetadata(
         metadata,
         fallbackTitle: titleFromFilename(path),
       );
@@ -235,7 +235,7 @@ class RustEpubEngine implements EpubEngine {
   /// opened.
   Future<ParsedMetadata> _extractCbrMetadata(String path) async {
     final metadata = await rust.extractMetadataCbr(path: path);
-    return EpubDtoMapper.toParsedMetadata(
+    return await EpubDtoMapper.toParsedMetadata(
       metadata,
       fallbackTitle: titleFromFilename(path),
     );
@@ -247,7 +247,7 @@ class RustEpubEngine implements EpubEngine {
   /// the cover renders via `pdf_cover.dart`).
   Future<ParsedMetadata> _extractPdfMetadata(String path) async {
     final metadata = await rust.extractMetadataPdf(path: path);
-    return EpubDtoMapper.toParsedMetadata(
+    return await EpubDtoMapper.toParsedMetadata(
       metadata,
       fallbackTitle: titleFromFilename(path),
     );

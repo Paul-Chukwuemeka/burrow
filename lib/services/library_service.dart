@@ -1471,10 +1471,13 @@ class LibraryService extends ChangeNotifier {
   /// Saves [bytes] as [book]'s cover if it has none yet, downscaling first.
   /// Used to backfill covers that metadata extraction intentionally defers
   /// (e.g. CBR, whose archive cannot be read entry-by-entry).
+  ///
+  /// The downscale runs off the UI isolate ([prepareCoverAsync]): comic pages
+  /// are multi-megapixel, and re-encoding one inline froze the reader.
   Future<void> setCoverIfMissing(Book book, List<int> bytes) async {
     final target = _books.where((b) => b.id == book.id).firstOrNull ?? book;
     if (target.coverPath != null || bytes.isEmpty) return;
-    final prepared = prepareCover(bytes) ?? bytes;
+    final prepared = await prepareCoverAsync(bytes) ?? bytes;
     final path = await _saveCover(prepared);
     if (path == null) return;
     target.coverPath = path;
