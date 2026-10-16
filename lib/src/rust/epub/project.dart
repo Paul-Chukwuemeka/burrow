@@ -61,12 +61,17 @@ class ChapterDto {
   final List<ImageRunDto> images;
   final List<BlockDto> blocks;
 
+  /// Resolved in-book links: chapter-local UTF-16 ranges jumping to global
+  /// chapter indices. Empty for the txt/cbz legs; see [`resolve_split_links`].
+  final List<LinkDto> links;
+
   const ChapterDto({
     required this.title,
     required this.body,
     required this.runs,
     required this.images,
     required this.blocks,
+    required this.links,
   });
 
   @override
@@ -75,7 +80,8 @@ class ChapterDto {
       body.hashCode ^
       runs.hashCode ^
       images.hashCode ^
-      blocks.hashCode;
+      blocks.hashCode ^
+      links.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -86,7 +92,8 @@ class ChapterDto {
           body == other.body &&
           runs == other.runs &&
           images == other.images &&
-          blocks == other.blocks;
+          blocks == other.blocks &&
+          links == other.links;
 }
 
 /// A box length that is either absolute pixels or a percentage of the
@@ -277,6 +284,30 @@ class ImageRunDto {
           htmlW == other.htmlW &&
           htmlH == other.htmlH &&
           css == other.css;
+}
+
+/// A tappable in-book link, projection-local (UTF-16 code units against the
+/// chapter's own body): `target` is the global chapter index it jumps to.
+/// Links that resolve nowhere (external http(s), missing anchors) never cross
+/// the FFI.
+class LinkDto {
+  final int start;
+  final int end;
+  final int target;
+
+  const LinkDto({required this.start, required this.end, required this.target});
+
+  @override
+  int get hashCode => start.hashCode ^ end.hashCode ^ target.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LinkDto &&
+          runtimeType == other.runtimeType &&
+          start == other.start &&
+          end == other.end &&
+          target == other.target;
 }
 
 /// One styled range over [`ChapterDto::body`].

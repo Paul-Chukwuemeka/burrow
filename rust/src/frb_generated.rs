@@ -1058,12 +1058,14 @@ impl SseDecode for crate::epub::project::ChapterDto {
         let mut var_runs = <Vec<crate::epub::project::StyleRunDto>>::sse_decode(deserializer);
         let mut var_images = <Vec<crate::epub::project::ImageRunDto>>::sse_decode(deserializer);
         let mut var_blocks = <Vec<crate::epub::project::BlockDto>>::sse_decode(deserializer);
+        let mut var_links = <Vec<crate::epub::project::LinkDto>>::sse_decode(deserializer);
         return crate::epub::project::ChapterDto {
             title: var_title,
             body: var_body,
             runs: var_runs,
             images: var_images,
             blocks: var_blocks,
+            links: var_links,
         };
     }
 }
@@ -1272,6 +1274,20 @@ impl SseDecode for crate::epub::project::ImageRunDto {
     }
 }
 
+impl SseDecode for crate::epub::project::LinkDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_start = <u32>::sse_decode(deserializer);
+        let mut var_end = <u32>::sse_decode(deserializer);
+        let mut var_target = <u32>::sse_decode(deserializer);
+        return crate::epub::project::LinkDto {
+            start: var_start,
+            end: var_end,
+            target: var_target,
+        };
+    }
+}
+
 impl SseDecode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1353,6 +1369,18 @@ impl SseDecode for Vec<crate::epub::project::ImageRunDto> {
             ans_.push(<crate::epub::project::ImageRunDto>::sse_decode(
                 deserializer,
             ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::epub::project::LinkDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::epub::project::LinkDto>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1801,6 +1829,7 @@ impl flutter_rust_bridge::IntoDart for crate::epub::project::ChapterDto {
             self.runs.into_into_dart().into_dart(),
             self.images.into_into_dart().into_dart(),
             self.blocks.into_into_dart().into_dart(),
+            self.links.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1997,6 +2026,25 @@ impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::ImageRunDto>
     for crate::epub::project::ImageRunDto
 {
     fn into_into_dart(self) -> crate::epub::project::ImageRunDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::epub::project::LinkDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.start.into_into_dart().into_dart(),
+            self.end.into_into_dart().into_dart(),
+            self.target.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::epub::project::LinkDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::epub::project::LinkDto>
+    for crate::epub::project::LinkDto
+{
+    fn into_into_dart(self) -> crate::epub::project::LinkDto {
         self
     }
 }
@@ -2218,6 +2266,7 @@ impl SseEncode for crate::epub::project::ChapterDto {
         <Vec<crate::epub::project::StyleRunDto>>::sse_encode(self.runs, serializer);
         <Vec<crate::epub::project::ImageRunDto>>::sse_encode(self.images, serializer);
         <Vec<crate::epub::project::BlockDto>>::sse_encode(self.blocks, serializer);
+        <Vec<crate::epub::project::LinkDto>>::sse_encode(self.links, serializer);
     }
 }
 
@@ -2341,6 +2390,15 @@ impl SseEncode for crate::epub::project::ImageRunDto {
     }
 }
 
+impl SseEncode for crate::epub::project::LinkDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.start, serializer);
+        <u32>::sse_encode(self.end, serializer);
+        <u32>::sse_encode(self.target, serializer);
+    }
+}
+
 impl SseEncode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2407,6 +2465,16 @@ impl SseEncode for Vec<crate::epub::project::ImageRunDto> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::epub::project::ImageRunDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::epub::project::LinkDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::epub::project::LinkDto>::sse_encode(item, serializer);
         }
     }
 }

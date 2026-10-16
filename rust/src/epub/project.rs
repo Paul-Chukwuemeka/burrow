@@ -53,6 +53,20 @@ pub struct ChapterDto {
     pub runs: Vec<StyleRunDto>,
     pub images: Vec<ImageRunDto>,
     pub blocks: Vec<BlockDto>,
+    /// Resolved in-book links: chapter-local UTF-16 ranges jumping to global
+    /// chapter indices. Empty for the txt/cbz legs; see [`resolve_split_links`].
+    pub links: Vec<LinkDto>,
+}
+
+/// A tappable in-book link, projection-local (UTF-16 code units against the
+/// chapter's own body): `target` is the global chapter index it jumps to.
+/// Links that resolve nowhere (external http(s), missing anchors) never cross
+/// the FFI.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LinkDto {
+    pub start: u32,
+    pub end: u32,
+    pub target: u32,
 }
 
 /// A structural block, projected so a future paginator can reach the tree
@@ -248,6 +262,23 @@ pub fn project_split(
     })
 }
 
+/// [`project_split`] carrying the link-resolution inputs ([`SplitDoc`]).
+pub fn project_split_ext(
+    tree: &BlockTree,
+    fallback_title: String,
+    chapter_key: &str,
+    entries: &[SplitEntry],
+    archive: &EpubArchive,
+    cover_hrefs: &HashSet<String>,
+) -> SplitDoc {
+    let base_dir = dir_of(chapter_key);
+    project_split_ext_with(tree, fallback_title, chapter_key, entries, cover_hrefs, |src| {
+        let key = resolve_href(&base_dir, src);
+        let bytes = archive.read_by_key(&key);
+        (key, bytes)
+    })
+}
+
 /// [`project_split`] with an injectable resource reader, so the anchor-split
 /// behaviour is testable without a real archive.
 pub fn project_split_with<F>(
@@ -260,12 +291,59 @@ pub fn project_split_with<F>(
 where
     F: Fn(&str) -> (String, Option<Vec<u8>>),
 {
-    let (mut full, anchors) = project_full_with(tree, String::new(), cover_hrefs, read);
+    project_split_ext_with(
+        tree,
+        fallback_title,
+        "",
+        entries,
+        cover_hrefs,
+        read,
+    )
+    .chapters
+}
+
+/// [`project_split`] carrying what the link resolver needs: the document's
+/// own key, per-chapter href links, the chapter starts, and the anchor map.
+pub fn project_split_ext_with<F>(
+    tree: &BlockTree,
+    fallback_title: String,
+    chapter_key: &str,
+    entries: &[SplitEntry],
+    cover_hrefs: &HashSet<String>,
+    read: F,
+) -> SplitDoc
+where
+    F: Fn(&str) -> (String, Option<Vec<u8>>),
+{
+    let (mut full, anchors, links) = project_full_with(tree, String::new(), cover_hrefs, read);
     if entries.is_empty() {
+        // Whole document: one chapter under the fallback title, no heading
+        // strip (matching the Dart engine, whose title is empty there). The
+        // chapter-local link offsets equal the full-document ones.
         full.title = fallback_title;
-        return vec![full];
+        let doc_len = units::utf16_len(&full.body);
+        return SplitDoc {
+            key: chapter_key.to_string(),
+            chapters: vec![full],
+            links: vec![slice_links(&links, 0, doc_len)],
+            starts: vec![0],
+            anchors,
+        };
     }
-    split_chapters(full, entries, &anchors)
+    let (pairs, starts) = split_chapters_ext(full, &links, entries, &anchors);
+    let mut chapters = Vec::with_capacity(pairs.len());
+    let mut links_ch = Vec::with_capacity(pairs.len());
+    for (ch, links) in pairs {
+        chapters.push(ch);
+        links_ch.push(links);
+    }
+    SplitDoc {
+        key: chapter_key.to_string(),
+        chapters,
+        links: links_ch,
+        starts,
+        anchors,
+    }
 }
 
 /// Projection with an injectable resource reader, so the string behaviour is
@@ -283,17 +361,19 @@ where
     project_full_with(tree, title, cover_hrefs, read).0
 }
 
-/// The full-document projection plus its anchor map.
+/// The full-document projection plus its anchor map and its raw link list.
 ///
 /// The body/runs/images are the unsplit document (Task 7 output); `anchors`
 /// maps every `id`/`<a name>` id to the UTF-16 offset of the first visible
 /// character following it — the split positions [`split_chapters`] uses.
+/// `links` are the collected `<a href>` extents (see [`RawLink`]); they attach
+/// to chapters after [`split_chapters`] slices them.
 fn project_full_with<F>(
     tree: &BlockTree,
     title: String,
     cover_hrefs: &HashSet<String>,
     read: F,
-) -> (ChapterDto, HashMap<String, u32>)
+) -> (ChapterDto, HashMap<String, u32>, Vec<RawLink>)
 where
     F: Fn(&str) -> (String, Option<Vec<u8>>),
 {
@@ -309,6 +389,7 @@ where
         node_start: vec![None; tree.nodes.len()],
         node_end: vec![0; tree.nodes.len()],
         open: Vec::new(),
+        links: Vec::new(),
         pending_newlines: 0,
         pending_space: false,
         last_char: None,
@@ -405,9 +486,21 @@ struct RawImage {
 }
 
 /// A node currently on the open path, with the byte offset of its first text.
+/// `href` carries the target of an open `<a href>` for the link-extent seal.
 struct OpenNode {
     index: usize,
     start: Option<usize>,
+    href: Option<String>,
+}
+
+/// An in-book link collected from an `<a href>` extent, in UTF-16 code units
+/// against the projected body (`href` is the raw attribute value). Still
+/// unresolved: `resolve_split_links` maps each to a global chapter index.
+#[derive(Debug, Clone)]
+struct RawLink {
+    start: u32,
+    end: u32,
+    href: String,
 }
 
 struct Projector<'a, F> {
@@ -426,6 +519,9 @@ struct Projector<'a, F> {
     node_start: Vec<Option<usize>>,
     node_end: Vec<usize>,
     open: Vec<OpenNode>,
+    /// `<a href>` extents as body-byte offsets, sealed at [`Projector::exit`]
+    /// and converted to UTF-16 in [`Projector::finish`].
+    links: Vec<(usize, usize, String)>,
     pending_newlines: usize,
     pending_space: bool,
     last_char: Option<char>,
@@ -498,7 +594,15 @@ where
             self.italic += 1;
         }
 
-        self.open.push(OpenNode { index, start: None });
+        self.open.push(OpenNode {
+            index,
+            start: None,
+            href: if tag == "a" {
+                self.tree.nodes[index].attrs.href.clone()
+            } else {
+                None
+            },
+        });
         stack.push(Action::Exit(index));
 
         // Direct text = the parent's range minus its children's ranges, in order.
@@ -544,6 +648,26 @@ where
             if let Some(start) = node.start {
                 self.node_start[node.index] = Some(start);
                 self.node_end[node.index] = self.body.len();
+                // An `<a href>` whose extent holds visible body text becomes a
+                // link candidate: its end seals here (byte offsets; `finish`
+                // clamps them against the trimmed body, so a whitespace tail
+                // never widens the tap range). The recorded start sits before
+                // the lazy-fit collapse; skip the flushed leading space that
+                // the collapse folded in there, so the tap range starts at the
+                // first linked character. Empty anchors (image-only or pure
+                // whitespace) produce nothing.
+                if tag == "a" && node.href.is_some() {
+                    let mut bytes = self.body.as_bytes();
+                    let mut first_text = start;
+                    while first_text < bytes.len()
+                        && matches!(bytes[first_text], b' ' | b'\n')
+                    {
+                        first_text += 1;
+                    }
+                    if first_text < bytes.len() {
+                        self.links.push((first_text, self.body.len(), node.href.unwrap()));
+                    }
+                }
             }
         }
     }
@@ -757,7 +881,7 @@ where
 
     /// Trims the body, converts byte offsets to UTF-16, and assembles the DTO,
     /// plus the anchor map in UTF-16 coordinates.
-    fn finish(mut self, title: String) -> (ChapterDto, HashMap<String, u32>) {
+    fn finish(mut self, title: String) -> (ChapterDto, HashMap<String, u32>, Vec<RawLink>) {
         let end = self.body.trim_end_matches(is_trim_ws).len();
         self.body.truncate(end);
 
@@ -834,6 +958,24 @@ where
             .map(|(id, byte)| (id, offsets[byte]))
             .collect();
 
+        // Link extents share the runs' byte→UTF-16 promotion; clamped against
+        // the trimmed body so a whitespace tail does not widen the range.
+        let links = self
+            .links
+            .into_iter()
+            .filter_map(|(start, end, href)| {
+                let end = end.min(self.body.len());
+                if end <= start {
+                    return None;
+                }
+                Some(RawLink {
+                    start: offsets[start],
+                    end: offsets[end],
+                    href,
+                })
+            })
+            .collect();
+
         (
             ChapterDto {
                 title,
@@ -841,8 +983,10 @@ where
                 runs,
                 images,
                 blocks,
+                links: Vec::new(),
             },
             anchors,
+            links,
         )
     }
 
@@ -983,6 +1127,24 @@ pub fn split_chapters(
     entries: &[SplitEntry],
     anchors: &HashMap<String, u32>,
 ) -> Vec<ChapterDto> {
+    split_chapters_ext(full, &[], entries, anchors)
+        .0
+        .into_iter()
+        .map(|(ch, _)| ch)
+        .collect()
+}
+
+/// [`split_chapters`] also returning each chapter's href-carrying links,
+/// rebased to slice-local offsets (and past the heading strip) in lockstep
+/// with the chapter itself, plus the chapter starts in the full-document
+/// UTF-16 space for the resolver. Target resolution happens later, in
+/// [`resolve_split_links`].
+fn split_chapters_ext(
+    full: ChapterDto,
+    links: &[RawLink],
+    entries: &[SplitEntry],
+    anchors: &HashMap<String, u32>,
+) -> (Vec<(ChapterDto, Vec<RawLink>)>, Vec<u32>) {
     let body_len = units::utf16_len(&full.body);
     // offset -> title, first entry wins when two anchors land together.
     let mut cuts: HashMap<u32, String> = HashMap::new();
@@ -1006,13 +1168,31 @@ pub fn split_chapters(
             images,
             ..
         } = full;
-        return vec![strip_duplicate_heading(ChapterDto {
+        let doc_len = units::utf16_len(&body);
+        // No split means no cut offsets, but the heading rebase still applies
+        // to runs, images, and links alike.
+        let (ch, dropped) = strip_duplicate_heading(ChapterDto {
             title,
             body,
             runs,
             images,
             blocks: Vec::new(),
-        })];
+            links: Vec::new(),
+        });
+        return (
+            vec![(
+                ChapterDto {
+                    title: ch.title,
+                    body: ch.body,
+                    runs: ch.runs,
+                    images: ch.images,
+                    blocks: Vec::new(),
+                    links: Vec::new(),
+                },
+                slice_links(links, dropped, doc_len),
+            )],
+            vec![0],
+        );
     }
 
     let mut offsets: Vec<u32> = cuts.keys().copied().collect();
@@ -1021,7 +1201,9 @@ pub fn split_chapters(
         offsets.insert(0, 0);
     }
 
-    let mut out = Vec::new();
+    let full_links: Vec<RawLink> = links.to_vec();
+    let mut out: Vec<(ChapterDto, Vec<RawLink>)> = Vec::new();
+    let mut starts: Vec<u32> = Vec::new();
     for (i, &start) in offsets.iter().enumerate() {
         let end = if i + 1 < offsets.len() {
             offsets[i + 1]
@@ -1035,28 +1217,179 @@ pub fn split_chapters(
         if slice.trim().is_empty() {
             continue;
         }
-        out.push(ChapterDto {
+        // The strip runs on the raw slice; its rebase applies to runs, images,
+        // and links alike so all offsets index the final emitted body.
+        let (stripped, dropped) = strip_duplicate_heading(ChapterDto {
             title: cuts.get(&start).cloned().unwrap_or_default(),
             body: slice.to_string(),
             runs: slice_runs(&full.runs, start, end),
             images: slice_images(&full.images, start, end),
-            // Empty by Phase-A policy (see the `ChapterDto` docs): the tree
-            // stays reachable via `block_tree()`, and cloning it per slice
-            // cost O(chapters × tree) for no consumer.
             blocks: Vec::new(),
+            links: Vec::new(),
         });
+        starts.push(start);
+        out.push((
+            ChapterDto {
+                title: stripped.title,
+                body: stripped.body,
+                runs: stripped.runs,
+                images: stripped.images,
+                // Empty by Phase-A policy (see the `ChapterDto` docs): the tree
+                // stays reachable via `block_tree()`, and cloning it per slice
+                // cost O(chapters × tree) for no consumer.
+                blocks: Vec::new(),
+                links: Vec::new(),
+            },
+            // Rebasing and the strip rebase in one clip: links fully inside
+            // the dropped heading lose their nothing there.
+            slice_links(&full_links, start + dropped, end),
+        ));
     }
     if out.is_empty() {
         let title = entries.first().map(|e| e.title.clone()).unwrap_or_default();
-        return vec![ChapterDto {
-            title,
-            body: full.body,
-            runs: full.runs,
-            images: full.images,
-            blocks: Vec::new(),
-        }];
+        return (
+            vec![(
+                ChapterDto {
+                    title,
+                    body: full.body,
+                    runs: full.runs,
+                    images: full.images,
+                    blocks: Vec::new(),
+                    links: Vec::new(),
+                },
+                slice_links(&full_links, 0, body_len),
+            )],
+            vec![0],
+        );
     }
-    out.into_iter().map(strip_duplicate_heading).collect()
+    (out, starts)
+}
+
+/// One projected spine document awaiting global link resolution: the split
+/// chapters (their `links` fields still empty), the parallel href-carrying
+/// link lists (chapter-local UTF-16), the chapter starts in the document's
+/// own UTF-16 space, and the full-document anchor map the resolver uses to
+/// turn hrefs into chapter targets.
+#[derive(Debug, Clone, Default)]
+pub struct SplitDoc {
+    pub key: String,
+    pub chapters: Vec<ChapterDto>,
+    pub links: Vec<Vec<RawLink>>,
+    pub starts: Vec<u32>,
+    pub anchors: HashMap<String, u32>,
+}
+
+/// Resolves every [`SplitDoc`]'s raw links into global chapter targets,
+/// returning the flat chapter list with [`ChapterDto::links`] filled.
+///
+/// An href resolves by splitting `path#fragment`: a whole-file link targets
+/// the document's first chapter; a fragment targets the chapter containing
+/// the anchor (a split anchor is its own chapter; any other registered anchor
+/// — e.g. a footnote — targets the chapter it lives in). External http(s)
+/// hrefs, hrefs naming no spine document, and fragments with no matching
+/// anchor are dropped: they never cross the FFI.
+///
+/// Paths resolve through the book's normalised key space ([`resolve_href`]:
+/// percent-decoded, lowercased, `..`/`.` segments collapsed); fragments reuse
+/// the split map's tolerance ([`anchor_offset`]).
+pub fn resolve_split_links(docs: Vec<SplitDoc>) -> Vec<ChapterDto> {
+    // Base index of each document's first chapter in the flat list.
+    let mut bases: Vec<u32> = Vec::with_capacity(docs.len());
+    let mut total: u32 = 0;
+    for doc in &docs {
+        bases.push(total);
+        total += doc.chapters.len() as u32;
+    }
+
+    let mut resolved: Vec<Vec<LinkDto>> = vec![Vec::new(); total as usize];
+    for (di, doc) in docs.iter().enumerate() {
+        for (ci, ch_links) in doc.links.iter().enumerate() {
+            let mut out_links = Vec::with_capacity(ch_links.len());
+            for link in ch_links {
+                if let Some(target) = resolve_target(&docs, &bases, di, link) {
+                    out_links.push(LinkDto {
+                        start: link.start,
+                        end: link.end,
+                        target,
+                    });
+                }
+            }
+            resolved[bases[di] as usize + ci] = out_links;
+        }
+    }
+
+    let mut out: Vec<ChapterDto> = Vec::with_capacity(total as usize);
+    for doc in docs {
+        for (ci, mut ch) in doc.chapters.into_iter().enumerate() {
+            ch.links = std::mem::take(&mut resolved[out.len()]);
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Maps one link's href to a global chapter index, or `None` to drop it.
+fn resolve_target(
+    docs: &[SplitDoc],
+    bases: &[u32],
+    di: usize,
+    link: &RawLink,
+) -> Option<u32> {
+    let (path, fragment) = match link.href.split_once('#') {
+        Some((path, fragment)) => (path, Some(fragment)),
+        None => (link.href.as_str(), None),
+    };
+    let trimmed = path.trim();
+    let scheme = trimmed.to_lowercase();
+    if scheme.starts_with("http://") || scheme.starts_with("https://") {
+        return None;
+    }
+    // Same-document links omit the path entirely.
+    let key = if trimmed.is_empty() {
+        docs[di].key.clone()
+    } else {
+        resolve_href(&dir_of(&docs[di].key), trimmed)
+    };
+    // First spine occurrence wins for duplicate archive keys.
+    let ti = docs.iter().position(|d| d.key == key)?;
+    let base = bases[ti];
+    // The chapter containing the anchor: the last chapter whose start is at
+    // or before the anchor offset. Splitting anchors are their own chapter;
+    // bare anchors (footnotes) fall inside one.
+    let local = match fragment {
+        None => 0,
+        Some(fragment) => {
+            let offset = anchor_offset(&docs[ti].anchors, fragment)?;
+            let idx = docs[ti].starts.partition_point(|&start| start <= offset);
+            idx.saturating_sub(1) as u32
+        }
+    };
+    Some(base + local)
+}
+
+/// Clips `links` to `[start, end)` and shifts them to slice-local offsets,
+/// mirroring [`slice_runs`] (a link crossing the cut is clipped, one holding
+/// visible body text on both cuts is split where it must not survive whole —
+/// the clip drops it only when nothing of the text remains).
+fn slice_links(links: &[RawLink], start: u32, end: u32) -> Vec<RawLink> {
+    if links.is_empty() {
+        return Vec::new();
+    }
+    links
+        .iter()
+        .filter_map(|link| {
+            let s = link.start.max(start);
+            let e = link.end.min(end);
+            if e <= s {
+                return None;
+            }
+            Some(RawLink {
+                start: s - start,
+                end: e - start,
+                href: link.href.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Looks up `fragment` among `anchors`, tolerating percent-encoding
@@ -1078,34 +1411,40 @@ fn anchor_offset(anchors: &HashMap<String, u32>, fragment: &str) -> Option<u32> 
 ///
 /// A port of Dart's `_stripDuplicateHeading`: the whole first line must equal
 /// the title after collapsing whitespace and case, and a chapter holding
-/// nothing but its title is left alone. Runs/images are rebased past the
-/// dropped line (Dart's `_sliceRuns`/`_sliceImages` from the rest offset).
-fn strip_duplicate_heading(ch: ChapterDto) -> ChapterDto {
+/// nothing but its title is left alone. Returns the chapter with that line
+/// removed and the UTF-16 length of the dropped prefix, so runs, images, and
+/// links rebase past it (Dart's `_sliceRuns`/`_sliceImages` from the rest
+/// offset).
+fn strip_duplicate_heading(ch: ChapterDto) -> (ChapterDto, u32) {
     let title = normalize_heading(&ch.title);
     if title.is_empty() {
-        return ch;
+        return (ch, 0);
     }
     let Some(nl) = ch.body.find('\n') else {
-        return ch;
+        return (ch, 0);
     };
     if normalize_heading(&ch.body[..nl]) != title {
-        return ch;
+        return (ch, 0);
     }
     let after = &ch.body[nl + 1..];
     let rest_byte = nl + 1 + (after.len() - after.trim_start().len());
     if ch.body[rest_byte..].is_empty() {
-        return ch;
+        return (ch, 0);
     }
     let start = units::byte_to_utf16(&ch.body, rest_byte);
     let body_len = units::utf16_len(&ch.body);
-    ChapterDto {
-        title: ch.title,
-        body: ch.body[rest_byte..].to_string(),
-        runs: slice_runs(&ch.runs, start, body_len),
-        images: slice_images(&ch.images, start, body_len),
-        // Empty by Phase-A policy (see the `ChapterDto` docs).
-        blocks: Vec::new(),
-    }
+    (
+        ChapterDto {
+            title: ch.title,
+            body: ch.body[rest_byte..].to_string(),
+            runs: slice_runs(&ch.runs, start, body_len),
+            images: slice_images(&ch.images, start, body_len),
+            // Empty by Phase-A policy (see the `ChapterDto` docs).
+            blocks: Vec::new(),
+            links: Vec::new(),
+        },
+        start,
+    )
 }
 
 /// Collapses whitespace runs to one space, trims, and lowercases (matching
@@ -1842,7 +2181,7 @@ mod tests {
             "<body><p>Intro</p><h2 id=\"two\">Two</h2><p id=\"three\">Three</p></body>",
             "",
         );
-        let (full, anchors) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
+        let (full, anchors, _) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
             (src.to_string(), None)
         });
         // The break belongs to the previous section, not the anchored one.
@@ -1863,7 +2202,7 @@ mod tests {
     #[test]
     fn legacy_a_name_anchors_resolve() {
         let tree = styled("<body><p>One</p><a name=\"two\">Two</a></body>", "");
-        let (full, anchors) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
+        let (full, anchors, _) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
             (src.to_string(), None)
         });
         assert!(
@@ -1877,7 +2216,7 @@ mod tests {
             "<body><p id=\"dup\">First</p><p id=\"dup\">Second</p></body>",
             "",
         );
-        let (full, anchors) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
+        let (full, anchors, _) = project_full_with(&tree, String::new(), &HashSet::new(), |src| {
             (src.to_string(), None)
         });
         assert!(
@@ -2039,6 +2378,7 @@ mod tests {
             ],
             images: Vec::new(),
             blocks: Vec::new(),
+            links: Vec::new(),
         };
         let chapters = split_chapters(full, &[entry(None, "Chapter One")], &HashMap::new());
         assert_eq!(chapters.len(), 1);
@@ -2063,7 +2403,9 @@ mod tests {
             runs: Vec::new(),
             images: Vec::new(),
             blocks: Vec::new(),
-        });
+            links: Vec::new(),
+        })
+        .0;
         assert_eq!(kept.body, "Foreword\n\nSome text here");
 
         let alone = strip_duplicate_heading(ChapterDto {
@@ -2072,7 +2414,9 @@ mod tests {
             runs: Vec::new(),
             images: Vec::new(),
             blocks: Vec::new(),
-        });
+            links: Vec::new(),
+        })
+        .0;
         assert_eq!(alone.body, "CHAPTER ONE");
     }
 
@@ -2109,5 +2453,124 @@ mod tests {
         assert_eq!(size(&out[0]), Some(12.0));
         assert_eq!(size(&out[1]), Some(14.0));
         assert_eq!(size(&out[2]), Some(12.0));
+    }
+
+    // ---- In-book links ---------------------------------------------------
+
+    /// Projects a document under test key `key`, with the injectable reader.
+    fn split_ext(tree: &BlockTree, key: &str, entries: &[SplitEntry]) -> SplitDoc {
+        project_split_ext_with(
+            tree,
+            String::new(),
+            key,
+            entries,
+            &HashSet::new(),
+            |src| (src.to_string(), None),
+        )
+    }
+
+    /// UTF-16 offset of `needle` inside `body` (asserting it exists at all).
+    fn at(body: &str, needle: &str) -> u32 {
+        utf16_slice(&body, 0, usize::MAX);
+        let idx = body.find(needle).expect(needle);
+        units::byte_to_utf16(body, idx)
+    }
+
+    #[test]
+    fn same_document_anchor_link_resolves_to_its_chapter() {
+        let tree = styled(
+            "<body><h2 id=\"a\">One</h2><p>Read the <a href=\"#b\">second chapter</a> now</p>\
+             <h2 id=\"b\">Two</h2><p>beta body</p></body>",
+            "",
+        );
+        let chapters = resolve_split_links(vec![split_ext(
+            &tree,
+            "doc1.xhtml",
+            &[entry(Some("a"), "One"), entry(Some("b"), "Two")],
+        )]);
+        assert_eq!(chapters.len(), 2);
+        // The link's visible text "second chapter" lands on chapter 1 start.
+        assert_eq!(chapters[0].links.len(), 1);
+        let link = &chapters[0].links[0];
+        assert_eq!(link.start, at(&chapters[0].body, "second chapter"));
+        assert_eq!(link.end, link.start + 14);
+        assert_eq!(link.target, 1);
+        assert!(chapters[1].links.is_empty());
+    }
+
+    #[test]
+    fn cross_document_links_resolve_through_the_book() {
+        let d1 = styled(
+            "<body><p><a href=\"doc2.xhtml\">skip ahead</a> and <a href=\"doc2.xhtml#y\">jump</a></p></body>",
+            "",
+        );
+        let d2 = styled(
+            "<body><p id=\"x\">X part</p><h2 id=\"y\">Y head</h2><p>Y body</p></body>",
+            "",
+        );
+        let chapters = resolve_split_links(vec![
+            split_ext(&d1, "doc1.xhtml", &[]),
+            split_ext(&d2, "doc2.xhtml", &[entry(Some("y"), "Second")]),
+        ]);
+        // Doc 2 splits at "y": an untitled leading chapter, then the "y" one.
+        assert_eq!(chapters.len(), 3);
+        assert_eq!(chapters[0].links.len(), 2);
+        // Source order: whole-file link first, then the fragment link.
+        assert_eq!(chapters[0].links[0].target, 1);
+        assert_eq!(chapters[0].links[0].start, at(&chapters[0].body, "skip ahead"));
+        assert_eq!(chapters[0].links[1].target, 2);
+        assert_eq!(chapters[0].links[1].start, at(&chapters[0].body, "jump"));
+    }
+
+    #[test]
+    fn external_and_unresolvable_hrefs_are_dropped() {
+        let tree = styled(
+            "<body><p><a href=\"https://example.com\">out</a><a href=\"xml.css\">style</a>\
+             <a href=\"#ghost\">gone</a><p>text</p></p></body>",
+            "",
+        );
+        let chapters = resolve_split_links(vec![split_ext(&tree, "doc1.xhtml", &[])]);
+        assert_eq!(chapters.len(), 1);
+        assert!(chapters[0].links.is_empty());
+    }
+
+    #[test]
+    fn mid_chapter_anchor_targets_the_containing_chapter() {
+        let tree = styled(
+            "<body><h2 id=\"a\">One</h2><p><a href=\"#mid\">deep link</a></p>\
+             <h2 id=\"b\">Two</h2><p>beta <em id=\"mid\">anchor</em> tail</p></body>",
+            "",
+        );
+        let chapters = resolve_split_links(vec![split_ext(
+            &tree,
+            "doc1.xhtml",
+            &[entry(Some("a"), "One"), entry(Some("b"), "Two")],
+        )]);
+        assert_eq!(chapters.len(), 2);
+        // "mid" is not a TOC anchor; the link still lands on chapter 1's start.
+        assert_eq!(chapters[0].links.len(), 1);
+        assert_eq!(chapters[0].links[0].target, 1);
+    }
+
+    #[test]
+    fn links_rebase_past_a_stripped_duplicate_heading() {
+        let tree = styled(
+            "<body><h2 id=\"a\">One</h2><p>One</p><p>go <a href=\"#b\">there</a></p>\
+             <h2 id=\"b\">Two</h2><p>beta</p></body>",
+            "",
+        );
+        let chapters = resolve_split_links(vec![split_ext(
+            &tree,
+            "doc1.xhtml",
+            &[entry(Some("a"), "One"), entry(Some("b"), "Two")],
+        )]);
+        assert_eq!(chapters.len(), 2);
+        assert_eq!(chapters[0].title, "One");
+        // The leading "One" line was stripped: offsets are final-body offsets.
+        assert_eq!(chapters[0].links.len(), 1);
+        let link = &chapters[0].links[0];
+        assert_eq!(link.start, at(&chapters[0].body, "there"));
+        assert_eq!(link.end, link.start + 5);
+        assert_eq!(link.target, 1);
     }
 }

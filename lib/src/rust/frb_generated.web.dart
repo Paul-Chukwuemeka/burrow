@@ -110,6 +110,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImageRunDto dco_decode_image_run_dto(dynamic raw);
 
   @protected
+  LinkDto dco_decode_link_dto(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
@@ -129,6 +132,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ImageRunDto> dco_decode_list_image_run_dto(dynamic raw);
+
+  @protected
+  List<LinkDto> dco_decode_list_link_dto(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -276,6 +282,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImageRunDto sse_decode_image_run_dto(SseDeserializer deserializer);
 
   @protected
+  LinkDto sse_decode_link_dto(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
@@ -297,6 +306,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ImageRunDto> sse_decode_list_image_run_dto(SseDeserializer deserializer);
+
+  @protected
+  List<LinkDto> sse_decode_list_link_dto(SseDeserializer deserializer);
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
@@ -453,6 +465,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_image_run_dto(ImageRunDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_link_dto(LinkDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
@@ -487,6 +502,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<ImageRunDto> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_link_dto(List<LinkDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_32_strict(
