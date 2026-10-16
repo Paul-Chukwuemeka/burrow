@@ -23,6 +23,7 @@ fn corpus() -> Vec<&'static str> {
         "anchor-split.epub",
         "annotated-meta.epub",
         "cover-inline.epub",
+        "css-only-runs.epub",
         "dangling-spine.epub",
         "dual-toc.epub",
         "embedded-font.epub",
@@ -99,6 +100,20 @@ fn placeholders_and_offsets_are_consistent() {
                     "{name} chapter {index}: run {}-{} outside body {body_len}",
                     run.start,
                     run.end,
+                );
+            }
+            // Sorted and disjoint: the Dart paginator walks runs with a
+            // running index and re-slices them per paragraph, so overlapping
+            // ranges corrupt its measurement (the reader "laying out pages"
+            // freeze). `merge_runs` must always hand back a partition.
+            for pair in dto.runs.windows(2) {
+                assert!(
+                    pair[0].end <= pair[1].start,
+                    "{name} chapter {index}: runs {}-{} and {}-{} overlap",
+                    pair[0].start,
+                    pair[0].end,
+                    pair[1].start,
+                    pair[1].end,
                 );
             }
             for image in &dto.images {

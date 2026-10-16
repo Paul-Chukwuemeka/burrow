@@ -567,6 +567,80 @@ def build_repeated_paragraphs() -> None:
     )
 
 
+def build_css_only_runs() -> None:
+    # Regression fixture for the reader "laying out pages" freeze: every styled
+    # node here is class-styled and the chapter has no emphasis markup at all,
+    # so the projected run list carries CSS runs only — nested node ranges,
+    # including a parent/child pair with identical extents. Those runs must come
+    # out sorted, disjoint and in-bounds; when they overlap, the Dart paginator
+    # re-emits covered text while measuring, line offsets run past the chapter
+    # body and the first pagination pass dies on a RangeError (silently, in
+    # release builds).
+    css = (
+        ".wrap { color: #111111; }\n"
+        ".para { font-size: 15px; }\n"
+        ".em { font-weight: 700; }\n"
+        ".outer { color: #222222; }\n"
+        ".inner { font-size: 14px; }\n"
+        ".tail { font-size: 16px; }\n"
+    )
+
+    filler = (
+        "Nested class styling must not corrupt run offsets. An overlapping "
+        "run makes the paginator measure text that is not there, so every "
+        "line offset past the duplicated span lands out of range. "
+    )
+
+    ch1 = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head>\n"
+        "<title>CSS Only</title>\n"
+        "<style>\n" + css + "</style>\n"
+        "</head>\n"
+        "<body>\n"
+        "<h1>CSS Only</h1>\n"
+        '<div class="wrap">\n'
+        f'<p class="para">{filler}<span class="em">{filler}</span>{filler}</p>\n'
+        f'<div class="outer"><p class="inner">{filler}</p></div>\n'
+        f'<p class="tail">{filler}</p>\n'
+        "</div>\n"
+        "</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+        'unique-identifier="BookId">\n'
+        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        "    <dc:title>CSS Only Runs</dc:title>\n"
+        "    <dc:creator>C. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:css-only-runs</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "css-only-runs.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", ch1, True),
+        ],
+    )
+
+
 def build_external_css() -> None:
     # External stylesheet with an `@font-face`, a tag rule, a class rule (to pin
     # specificity), a descendant combinator, and an `align` presentational hint.
@@ -1244,6 +1318,7 @@ def main() -> None:
     build_nonbmp()
     build_scripted()
     build_repeated_paragraphs()
+    build_css_only_runs()
     build_external_css()
     build_projection()
     build_anchor_split()
