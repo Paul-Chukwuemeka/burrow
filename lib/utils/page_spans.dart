@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import 'package:burrow/models/document.dart' show ChapterLink;
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/book_search.dart';
@@ -22,6 +23,7 @@ List<InlineSpan> buildPageSpans({
   required ReaderSettings settings,
   List<StyleRun> runs = const [],
   List<ImageRun> images = const [],
+  List<ChapterLink> links = const [],
   double renderWidth = 300,
   double maxHeight = double.infinity,
   double devicePixelRatio = 1.0,
@@ -33,6 +35,7 @@ List<InlineSpan> buildPageSpans({
   if (runs.isEmpty &&
       matches.isEmpty &&
       images.isEmpty &&
+      links.isEmpty &&
       selectedRange == null) {
     return [TextSpan(text: slice, style: base)];
   }
@@ -45,7 +48,9 @@ List<InlineSpan> buildPageSpans({
     }
   }
 
-  // Cut points: range bounds plus every run/match/image boundary inside it.
+  // Cut points: range bounds plus every run/match/image/link boundary inside
+  // it. Links add their own edges so adjacent or styled links never merge.
+  final pageLinks = <ChapterLink>[];
   final cuts = SplayTreeSet<int>()..addAll([start, end]);
   for (final r in runs) {
     if (r.start > start && r.start < end) cuts.add(r.start);
@@ -57,6 +62,14 @@ List<InlineSpan> buildPageSpans({
     if (ms >= me) continue;
     cuts.add(ms);
     cuts.add(me);
+  }
+  for (final link in links) {
+    final ls = link.start.clamp(start, end);
+    final le = link.end.clamp(start, end);
+    if (ls >= le) continue;
+    pageLinks.add(ChapterLink(ls, le, link.target));
+    cuts.add(ls);
+    cuts.add(le);
   }
   for (final imgOff in imageMap.keys) {
     cuts.add(imgOff);
@@ -74,6 +87,8 @@ List<InlineSpan> buildPageSpans({
 
   // Copy before sorting: callers pass immutable or shared lists.
   final sortedRuns = List<StyleRun>.of(runs)
+    ..sort((a, b) => a.start.compareTo(b.start));
+  final sortedLinks = List<ChapterLink>.of(pageLinks)
     ..sort((a, b) => a.start.compareTo(b.start));
   final sortedMatches = List<SearchResult>.of(matches)
     ..sort((a, b) => a.offset.compareTo(b.offset));
@@ -163,6 +178,13 @@ List<InlineSpan> buildPageSpans({
             sortedMatches[matchIdx].offset <= segStart
         ? sortedMatches[matchIdx]
         : null;
+    ChapterLink? link;
+    for (final l in sortedLinks) {
+      if (l.start <= segStart && segEnd <= l.end) {
+        link = l;
+        break;
+      }
+    }
 
     var segStyle = styleForRun(
       base,
@@ -188,6 +210,16 @@ List<InlineSpan> buildPageSpans({
           backgroundColor: theme.accent.withValues(alpha: 0.25),
         );
       }
+    }
+    // Links carry a guaranteed look, even where the source styles nothing:
+    // the full accent colour plus an underline, in the strongest colour class
+    // so emphasis runs and quote styling cannot override it.
+    if (link != null) {
+      segStyle = segStyle.copyWith(
+        color: theme.accent,
+        decoration: TextDecoration.underline,
+        decorationColor: theme.accent,
+      );
     }
     final textContent = slice.substring(segStart - start, segEnd - start);
     // Skip if this is just the \uFFFC placeholder text (shouldn't reach here

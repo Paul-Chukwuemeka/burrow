@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:burrow/models/css_style.dart';
+import 'package:burrow/models/document.dart' show ChapterLink;
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/book_search.dart';
@@ -226,6 +227,91 @@ void main() {
 
       expect(span.toPlainText(), text.substring(0, 10));
       expect(leaves(span).every((p) => p.$2?.fontWeight == null), isTrue);
+    });
+
+    test('links carry guaranteed accent underline styling', () {
+      // Link covers "quick brown" (4..15); no source styling at all.
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 4,
+          end: 19,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          links: const [ChapterLink(4, 15, 3)],
+        ),
+      );
+
+      final hits = leaves(span);
+      // The whole page text is still tiled.
+      expect(span.toPlainText(), text.substring(4, 19));
+      final linked = hits.where((p) => p.$2?.decoration != null).toList();
+      expect(linked.map((p) => p.$1).join(), 'quick brown');
+      for (final (_, line) in linked) {
+        expect(line?.color, theme.accent);
+        expect(line?.decoration, TextDecoration.underline);
+      }
+      // The unlinked remainder keeps the plain styles ("fox" plus the gap
+      // between the link and the page edge).
+      expect(hits.last.$1, ' fox');
+      expect(hits.last.$2?.decoration, isNull);
+      expect(hits.last.$2?.color, isNull);
+    });
+
+    test('a link boundary cuts the styled spans apart', () {
+      // Two adjacent links over one page: they must not merge into one span.
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 4,
+          end: 19,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          links: const [
+            ChapterLink(4, 9, 1),
+            ChapterLink(10, 15, 2),
+          ],
+        ),
+      );
+
+      final linked = leaves(span);
+      // Tile: "quick"(link) | " " (the gap belongs to neither) |
+      // "brown"(link) | " fox"(unstyled).
+      expect(linked, hasLength(4));
+      expect(linked[0].$1, 'quick');
+      expect(linked[0].$2?.decoration, TextDecoration.underline);
+      expect(linked[1].$1, ' ');
+      expect(linked[1].$2?.decoration, isNull);
+      expect(linked[2].$1, 'brown');
+      expect(linked[2].$2?.decoration, TextDecoration.underline);
+      expect(linked[3].$1, ' fox');
+      expect(linked[3].$2?.decoration, isNull);
+    });
+
+    test('a styled run inside a link keeps bold and gains accent', () {
+      final span = wrapSpans(
+        buildPageSpans(
+          text: text,
+          start: 4,
+          end: 19,
+          base: style,
+          theme: theme,
+          settings: ReaderSettings(),
+          runs: const [StyleRun(4, 9, bold: true)],
+          links: const [ChapterLink(4, 15, 3)],
+        ),
+      );
+
+      final linked = leaves(span);
+      // Tile: "quick" (bold run + link) | " brown " (link only) | " fox ".
+      expect(linked[0].$2?.fontWeight, FontWeight.w700);
+      expect(linked[0].$2?.color, theme.accent);
+      final brown = linked.firstWhere((p) => p.$1.contains('brown'));
+      expect(brown.$2?.fontWeight, isNull);
+      expect(brown.$2?.color, theme.accent);
+      expect(linked.last.$2?.color, isNull);
     });
   });
 
