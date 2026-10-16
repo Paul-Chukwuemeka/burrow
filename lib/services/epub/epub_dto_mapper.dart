@@ -25,6 +25,7 @@ abstract final class EpubDtoMapper {
     dto.body,
     dto.runs.map(_toStyleRun).toList(),
     dto.images.map(_toImageRun).toList(),
+    dto.links.map((l) => ChapterLink(l.start, l.end, l.target)).toList(),
   );
 
   /// Builds a [ParsedDocument] from the projected chapters and the book's

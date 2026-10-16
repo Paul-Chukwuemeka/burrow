@@ -12,6 +12,7 @@ class Chapter {
     this.body, [
     this.runs = const [],
     this.images = const [],
+    this.links = const [],
   ]);
   final String title;
   final String body;
@@ -22,6 +23,21 @@ class Chapter {
 
   /// Inline images embedded in [body] at the corresponding `\uFFFC` offsets.
   final List<ImageRun> images;
+
+  /// Tappable in-book links over [body] (UTF-16 ranges jumping to the chapter
+  /// index they target). Empty for sources without links; the engine already
+  /// dropped external/unresolvable hrefs.
+  final List<ChapterLink> links;
+}
+
+/// One internal EPUB link, projection-local: `start`/`end` index the chapter's
+/// own body ([Chapter.links]), `target` is the flat chapter index to jump to.
+class ChapterLink {
+  const ChapterLink(this.start, this.end, this.target);
+
+  final int start;
+  final int end;
+  final int target;
 }
 
 class ParsedDocument {
