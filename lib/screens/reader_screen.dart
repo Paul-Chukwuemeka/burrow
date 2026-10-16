@@ -15,6 +15,7 @@ import '../controllers/pdf_controller.dart';
 import '../controllers/reading_session.dart';
 import '../controllers/search_controller.dart';
 import '../services/brightness_controller.dart';
+import '../services/comic_decode_ahead.dart';
 import '../models/book.dart';
 import '../models/reader_settings.dart';
 import '../models/style_run.dart';
@@ -299,6 +300,7 @@ class ReaderScreenState extends State<ReaderScreen>
       _loadDocument();
     }
     if (_isComic) {
+      _comicDecodeAhead = _createComicDecodeAhead();
       _loadComicPages();
     }
     _searchCtrl.searchController.addListener(_searchCtrl.onSearchTextChanged);
@@ -388,6 +390,7 @@ class ReaderScreenState extends State<ReaderScreen>
     );
     _searchCtrl.dispose();
     _dictOverlay?.dismissDictionaryButton();
+    _comicDecodeAhead?.dispose();
     _comicTransformationController?.dispose();
     _doc = null;
     WakelockPlus.disable();
@@ -1634,6 +1637,7 @@ class ReaderScreenState extends State<ReaderScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _prefetchComicPages(_comicCtrl.comicPage);
+          _comicDecodeAhead?.advance(_comicCtrl.comicPage);
           _comicCtrl.restoreComicPosition();
         });
       },
@@ -1713,6 +1717,9 @@ class ReaderScreenState extends State<ReaderScreen>
           child: PageView.builder(
             reverse: rtl,
             controller: _comicCtrl.comicPageController!,
+            // Warm the adjacent pages during flips: combined with the
+            // decode-ahead window they render without a decode stall.
+            allowImplicitScrolling: true,
             itemCount: _comicCtrl.comicPageCount,
             onPageChanged: (i) {
               _comicCtrl.notePageChanged(i);
@@ -1724,19 +1731,39 @@ class ReaderScreenState extends State<ReaderScreen>
                     ? 0
                     : (i + 1) / _comicCtrl.comicPageCount,
               );
-              if (_comicCtrl.isLazy) _prefetchComicPages(i);
+                      if (_comicCtrl.isLazy) _prefetchComicPages(i);
+              _comicDecodeAhead?.advance(i);
               if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(i);
             },
             itemBuilder: (context, i) {
+              final meta = _comicCtrl.pageMetaAt(i);
+              final bounds = meta == null
+                  ? null
+                  : comicPageDecodeBounds(
+                      fit: _comicCtrl.boxFit,
+                      viewport: MediaQuery.sizeOf(context),
+                      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                      intrinsic: (
+                        meta.intrinsicWidth,
+                        meta.intrinsicHeight,
+                      ),
+                    );
               final page = _comicCtrl.isLazy
                   ? _LazyComicPageWidget(
                       provider: _comicCtrl.comicPageProvider!,
                       pageIndex: i,
                       fit: _comicCtrl.boxFit,
+                      bounds: bounds,
                     )
                   : ComicImage(
                       bytes: _comicCtrl.comicPages[i],
                       fit: _comicCtrl.boxFit,
+                      provider: bounds == null
+                          ? null
+                          : comicPageImageProvider(
+                              _comicCtrl.comicPages[i],
+                              bounds,
+                            ),
                     );
               if (_zoomMode) {
                 return InteractiveViewer(
@@ -1854,9 +1881,52 @@ class ReaderScreenState extends State<ReaderScreen>
     );
   }
 
+  /// Warmup pass for horizontal comic reading: decodes the ±3-page window
+  /// around the reader position into the image cache so flips paint without
+  /// a decode stall (vertical mode keeps widget-built lazy loads).
+  ComicDecodeAhead? _comicDecodeAhead;
+
+  @visibleForTesting
+  ComicDecodeAhead? get debugComicDecodeAhead => _comicDecodeAhead;
+
   /// Prefetch pages within ±3 of [center] and evict those further out.
   void _prefetchComicPages(int center) =>
       unawaited(_comicCtrl.prefetchComicPages(center));
+
+  /// Wires the decode-ahead pass to the live comic state. Closures run on
+  /// later frames, so reading [context]/[MediaQuery] here is safe even
+  /// though this is built during [initState].
+  ComicDecodeAhead _createComicDecodeAhead() => ComicDecodeAhead(
+        loadBytes: (index) async {
+          final ctrl = _comicCtrl;
+          if (index < 0 || index >= ctrl.comicPageCount) return null;
+          final provider = ctrl.comicPageProvider;
+          if (provider != null) return provider.loadPage(index);
+          return index < ctrl.comicPages.length
+              ? ctrl.comicPages[index]
+              : null;
+        },
+        resolveBounds: (index) {
+          final meta = _comicCtrl.pageMetaAt(index);
+          if (meta == null) return null;
+          return comicPageDecodeBounds(
+            fit: _comicCtrl.boxFit,
+            viewport: MediaQuery.sizeOf(context),
+            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+            intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
+          );
+        },
+        warmup: (provider) {
+          if (!mounted) return;
+          unawaited(
+            precacheImage(provider, context).catchError((Object e) {
+              debugPrint('comic decode-ahead dropped a page: $e');
+            }),
+          );
+        },
+        onSkip: (index, reason) =>
+            debugPrint('comic decode-ahead skipped page $index: $reason'),
+      );
 
   void _scrollToPreviewPage(int page) => _comicCtrl.scrollToPreviewPage(page);
 
@@ -2624,12 +2694,17 @@ class _LazyComicPageWidget extends StatefulWidget {
     required this.provider,
     required this.pageIndex,
     required this.fit,
+    this.bounds,
     this.cacheWidth,
   });
 
   final ComicPageSource provider;
   final int pageIndex;
   final BoxFit fit;
+
+  /// Decode bounds shared with the decode-ahead pass; when set, the rendered
+  /// provider matches the warmed cache key exactly.
+  final (int, int)? bounds;
   final int? cacheWidth;
 
   @override
@@ -2681,9 +2756,15 @@ class _LazyComicPageWidgetState extends State<_LazyComicPageWidget> {
   @override
   Widget build(BuildContext context) {
     if (_bytes != null) {
+      // With decode bounds the provider matches the decode-ahead warmup key
+      // exactly, so the pre-decoded frame paints with zero stall.
+      final bounds = widget.bounds;
       return ComicImage(
         bytes: _bytes!,
         fit: widget.fit,
+        provider: bounds == null
+            ? null
+            : comicPageImageProvider(_bytes!, bounds),
         cacheWidth: widget.cacheWidth,
       );
     }

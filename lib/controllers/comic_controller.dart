@@ -25,6 +25,18 @@ class ComicReaderController extends ChangeNotifier {
   final VoidCallback? onPageFlipped;
 
   List<Uint8List> comicPages = [];
+
+  /// Intrinsic dimensions for CBR pages, captured at parse (Rust supplies
+  /// them per image) so the decode-ahead pass can bound decodes the same way
+  /// the CBZ provider's metadata already does.
+  List<ComicPageMeta> comicPageMetas = const [];
+
+  /// Page metadata for either backing: the CBZ provider's list, or the
+  /// parse-time list captured for CBR.
+  ComicPageMeta? pageMetaAt(int index) {
+    final source = comicPageProvider?.pages ?? comicPageMetas;
+    return index >= 0 && index < source.length ? source[index] : null;
+  }
   int comicPage = 0;
   bool comicLoading = true;
   ScrollController? comicVerticalScrollController;
@@ -141,13 +153,23 @@ class ComicReaderController extends ChangeNotifier {
       // (`rars`); there is no Dart engine anymore.
       final doc = await createEpubEngine(library.epubEngine).parse(book.path);
       final pages = <Uint8List>[];
+      final metas = <ComicPageMeta>[];
       for (final chapter in doc.chapters) {
         for (final img in chapter.images) {
           pages.add(img.bytes);
+          metas.add(
+            ComicPageMeta(
+              index: metas.length,
+              entryName: '',
+              intrinsicWidth: img.intrinsicWidth,
+              intrinsicHeight: img.intrinsicHeight,
+            ),
+          );
         }
       }
       if (!_mounted) return;
       comicPages = pages;
+      comicPageMetas = metas;
       if (pages.isEmpty) {
         comicLoading = false;
         notifyListeners();

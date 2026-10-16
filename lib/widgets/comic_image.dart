@@ -9,17 +9,32 @@ class ComicImage extends StatelessWidget {
     super.key,
     required this.bytes,
     required this.fit,
+    this.provider,
     this.cacheWidth,
     this.cacheHeight,
   });
 
   final Uint8List bytes;
   final BoxFit fit;
+
+  /// Pre-sized provider shared with the decode-ahead warmup. When set, it is
+  /// rendered directly so the image cache key matches exactly; [bytes] and
+  /// the `cacheWidth/cacheHeight` path then only apply to callers without
+  /// decode bounds (vertical mode, thumbnails).
+  final ImageProvider? provider;
+
   final int? cacheWidth;
   final int? cacheHeight;
 
   @override
   Widget build(BuildContext context) {
+    if (provider != null) {
+      return Image(
+        image: provider!,
+        fit: fit,
+        errorBuilder: (context, error, stack) => const _ComicImageError(),
+      );
+    }
     return Image.memory(
       bytes,
       fit: fit,
