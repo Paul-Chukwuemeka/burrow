@@ -25,6 +25,12 @@ void main() {
     expect(wordBoundsAt(0, 'a — b', 0)!.end, 1); // em dash is not a word
   });
 
+  test('wordBoundsAt returns null when the press is not on a word char', () {
+    const body = 'The first chapter.';
+    expect(wordBoundsAt(17, body, 0), isNull); // the period
+    expect(wordBoundsAt(3, body, 0), isNull); // the space after "The"
+  });
+
   test('wordBoundsAt clamps to the page window', () {
     const body = 'one two three';
     // Window covering only "two" (flat 4..7): a press at 4 must not return "one".

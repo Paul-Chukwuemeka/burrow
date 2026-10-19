@@ -92,6 +92,10 @@ int chapterForOffset(int flat, List<int> charsBefore) {
   if (i < lo) i = lo;
   if (i >= hi) i = hi - 1;
 
+  // A press on whitespace, punctuation, or an image selects nothing: the
+  // selection only starts once the finger is over a word character.
+  if (!isWordChar(chapterBody.codeUnitAt(i))) return null;
+
   var start = i;
   var end = i;
   while (start > lo && isWordChar(chapterBody.codeUnitAt(start - 1))) {
