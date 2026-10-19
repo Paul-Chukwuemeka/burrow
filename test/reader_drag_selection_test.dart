@@ -47,6 +47,15 @@ Offset globalForWord(WidgetTester tester, String word) {
   return p.localToGlobal(caret + const Offset(0, 6));
 }
 
+/// Body text currently rendered on screen.
+String visibleText(WidgetTester tester) {
+  final buffer = StringBuffer();
+  for (final rt in tester.widgetList<RichText>(find.byType(RichText))) {
+    buffer.write(rt.text.toPlainText());
+  }
+  return buffer.toString();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -190,6 +199,9 @@ void main() {
     final size = tester.getSize(find.byType(ReaderScreen));
     await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
     await tester.pumpAndSettle();
+    // The barrier must forward the tap to the page's tap-zone logic: a
+    // right-zone tap flips to the next chapter but keeps the selection.
+    expect(visibleText(tester), contains('The second chapter.'));
     expect(state.debugSelection.isActive, isTrue); // flipped, kept
     await tester.tapAt(Offset(size.width * 0.5, size.height * 0.5));
     await tester.pumpAndSettle();

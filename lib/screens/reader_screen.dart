@@ -1539,6 +1539,20 @@ class ReaderScreenState extends State<ReaderScreen>
       context: context,
       theme: _settings.colors,
       library: widget.library,
+      onOutsideTap: (globalPosition) {
+        if (!_selection.isActive) return;
+        // The barrier covers the page, so reproduce the page's tap-zone
+        // triage here: edge taps flip and keep the selection, centre clears.
+        final w = MediaQuery.sizeOf(context).width;
+        final dx = globalPosition.dx;
+        if (dx < w * 0.3) {
+          _flip(-1);
+        } else if (dx > w * 0.7) {
+          _flip(1);
+        } else {
+          _clearSelection();
+        }
+      },
     );
     _selectionToolbar!.show(
       globalPosition,

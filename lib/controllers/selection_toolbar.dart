@@ -21,6 +21,7 @@ class SelectionToolbarOverlay {
     required this.theme,
     required this.library,
     this.onDismiss,
+    this.onOutsideTap,
   }) : _context = context;
 
   final BuildContext _context;
@@ -31,8 +32,15 @@ class SelectionToolbarOverlay {
   /// selection state that lives outside the overlay.
   final VoidCallback? onDismiss;
 
+  /// Called (after dismissal) when the toolbar's full-screen barrier is
+  /// tapped, with the tap's global position. The owner uses this to perform
+  /// the same tap-zone triage the page would have received had the barrier not
+  /// been covering it.
+  final void Function(Offset globalPosition)? onOutsideTap;
+
   OverlayEntry? _toolbarEntry;
   String _text = '';
+  Offset? _outsideTapDown;
 
   void show(
     Offset globalPosition, {
@@ -50,7 +58,17 @@ class SelectionToolbarOverlay {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: dismiss,
+                onTapDown: (details) {
+                  _outsideTapDown = details.globalPosition;
+                },
+                onTap: () {
+                  final position = _outsideTapDown;
+                  _outsideTapDown = null;
+                  // Dismiss first so the reader callback cannot re-show the
+                  // toolbar (or recurse) when it flips/clears.
+                  dismiss();
+                  if (position != null) onOutsideTap?.call(position);
+                },
               ),
             ),
             Positioned(
