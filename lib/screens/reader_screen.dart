@@ -13,6 +13,7 @@ import '../controllers/bookmark_helper.dart';
 import '../controllers/comic_controller.dart';
 import '../controllers/selection_toolbar.dart';
 import '../controllers/pdf_controller.dart';
+import '../controllers/reader_selection.dart';
 import '../controllers/reading_session.dart';
 import '../controllers/search_controller.dart';
 import '../services/brightness_controller.dart';
@@ -29,6 +30,7 @@ import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
+import '../utils/text_selection.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/comic_image.dart';
 import '../widgets/settings_sheet.dart';
@@ -240,7 +242,11 @@ class ReaderScreenState extends State<ReaderScreen>
 
   // Selection toolbar state.
   SelectionToolbarOverlay? _selectionToolbar;
-  ({int start, int end})? _selectedWordRange;
+  final ReaderSelection _selection = ReaderSelection();
+
+  void _onSelectionChanged() {
+    if (mounted) setState(() {});
+  }
 
   bool get _isPdf => _book.format == BookFormat.pdf;
   bool get _isComic =>
@@ -291,6 +297,7 @@ class ReaderScreenState extends State<ReaderScreen>
     _searchCtrl.addListener(() {
       if (mounted) setState(() {});
     });
+    _selection.addListener(_onSelectionChanged);
     _bookmarkCtrl.addListener(() {
       if (mounted) setState(() {});
     });
@@ -399,6 +406,8 @@ class ReaderScreenState extends State<ReaderScreen>
       _searchCtrl.onSearchTextChanged,
     );
     _searchCtrl.dispose();
+    _selection.removeListener(_onSelectionChanged);
+    _selection.dispose();
     _selectionToolbar?.dismiss();
     _comicDecodeAhead?.dispose();
     for (final tc in _comicTransformListeners) {
@@ -1171,6 +1180,26 @@ class ReaderScreenState extends State<ReaderScreen>
   @visibleForTesting
   int get debugReadyCount => _paginationReady.where((r) => r).length;
 
+  /// Test-only: the live word selection model.
+  @visibleForTesting
+  ReaderSelection get debugSelection => _selection;
+
+  /// Test-only: the plain text of the current selection, or `null` when there
+  /// is no selection (or no document).
+  @visibleForTesting
+  String? get debugSelectionText {
+    final doc = _doc;
+    final start = _selection.start;
+    final end = _selection.end;
+    if (doc == null || start == null || end == null) return null;
+    return selectionText(
+      start: start,
+      end: end,
+      chapterBodies: doc.chapters.map((c) => c.body).toList(),
+      charsBefore: _charsBefore,
+    );
+  }
+
   /// Test-only: suspends the background layout pass so a test can observe the
   /// first-paint state deterministically instead of racing the frame budget.
   @visibleForTesting
@@ -1219,7 +1248,6 @@ class ReaderScreenState extends State<ReaderScreen>
     // Recreate the selection toolbar with fresh theme on next use.
     _selectionToolbar?.dismiss();
     _selectionToolbar = null;
-    _selectedWordRange = null;
     // Update wakelock.
     if (_settings.keepScreenOn) {
       WakelockPlus.enable();
@@ -1511,10 +1539,6 @@ class ReaderScreenState extends State<ReaderScreen>
       context: context,
       theme: _settings.colors,
       library: widget.library,
-      onDismiss: () {
-        _selectedWordRange = null;
-        if (context.mounted) setState(() {});
-      },
     );
     _selectionToolbar!.show(
       globalPosition,
@@ -1525,10 +1549,54 @@ class ReaderScreenState extends State<ReaderScreen>
     setState(() {});
   }
 
+  /// Shows the toolbar for the live selection (if any) at [globalPosition],
+  /// which is where the finger lifted.
+  void _showSelectionToolbarAt(Offset globalPosition) {
+    final doc = _doc;
+    final start = _selection.start;
+    final end = _selection.end;
+    if (doc == null || start == null || end == null) return;
+
+    final bodies = doc.chapters.map((c) => c.body).toList();
+    final text = selectionText(
+      start: start,
+      end: end,
+      chapterBodies: bodies,
+      charsBefore: _charsBefore,
+    );
+    if (text.trim().isEmpty) return;
+
+    final singleWord = isSingleWordRange(
+      start: start,
+      end: end,
+      chapterBodies: bodies,
+      charsBefore: _charsBefore,
+    );
+    _showSelectionToolbar(
+      globalPosition,
+      singleWord: singleWord,
+      word: _firstWordOf(text),
+      text: text,
+    );
+  }
+
+  /// The first word of [text], punctuation-trimmed. Used for the dictionary
+  /// action, which only appears for a single-word selection.
+  static String _firstWordOf(String text) {
+    final match = RegExp(
+      r"[A-Za-z0-9\u00C0-\u024F]+(?:['\u2019][A-Za-z0-9\u00C0-\u024F]+)*",
+    ).firstMatch(text);
+    return match?.group(0) ?? text.trim();
+  }
+
   void _dismissSelectionToolbar() {
     _selectionToolbar?.dismiss();
-    _selectedWordRange = null;
     if (mounted) setState(() {});
+  }
+
+  void _clearSelection() {
+    _selection.clear();
+    _dismissSelectionToolbar();
   }
 
   // ---------------------------------------------------------------------------
@@ -2190,6 +2258,14 @@ class ReaderScreenState extends State<ReaderScreen>
                   runs: _doc!.chapters[chapter].runs,
                   images: _doc!.chapters[chapter].images,
                   links: _doc!.chapters[chapter].links,
+                  chapterStartFlat: _charsBefore[chapter],
+                  selectionStart: _selection.start,
+                  selectionEnd: _selection.end,
+                  onWordSelected: (start, end) =>
+                      _selection.beginWord(start, end),
+                  onWordDragged: (start, end) =>
+                      _selection.dragToWord(start, end),
+                  onSelectionSettled: _showSelectionToolbarAt,
                   onTapLink: (target) {
                     _dismissSelectionToolbar();
                     _jumpToChapter(target);
@@ -2207,8 +2283,11 @@ class ReaderScreenState extends State<ReaderScreen>
                     _flip(1);
                   },
                   onTapCenter: () {
-                    _dismissSelectionToolbar();
-                    setState(() => _chromeVisible = !_chromeVisible);
+                    if (_selection.isActive) {
+                      _clearSelection();
+                    } else {
+                      setState(() => _chromeVisible = !_chromeVisible);
+                    }
                   },
                   highlightMatches: highlights,
                   currentMatch:
@@ -2219,16 +2298,6 @@ class ReaderScreenState extends State<ReaderScreen>
                             .currentResultIndex]
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
-                  onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
-                    _selectedWordRange = (start: bodyStart, end: bodyEnd);
-                    _showSelectionToolbar(
-                      globalPosition,
-                      singleWord: true,
-                      word: word,
-                      text: word,
-                    );
-                  },
-                  selectedWordRange: _selectedWordRange,
                   textAlign:
                       _settings.textJustification == TextJustification.justify
                       ? TextAlign.justify
@@ -2931,7 +3000,7 @@ class _ComicPageError extends StatelessWidget {
 }
 
 /// One rendered page of a reflowable document with tap zones.
-class _PageContent extends StatelessWidget {
+class _PageContent extends StatefulWidget {
   const _PageContent({
     required this.chapterTitle,
     required this.text,
@@ -2942,6 +3011,7 @@ class _PageContent extends StatelessWidget {
     required this.onTapPrev,
     required this.onTapNext,
     required this.onTapCenter,
+    required this.chapterStartFlat,
     this.runs = const [],
     this.images = const [],
     this.links = const [],
@@ -2949,8 +3019,19 @@ class _PageContent extends StatelessWidget {
     this.highlightMatches,
     this.currentMatch,
     this.pageMaxHeight = double.infinity,
-    this.onLongPressWord,
-    this.selectedWordRange,
+    this.selectionStart,
+    this.selectionEnd,
+    this.onWordSelected,
+    this.onWordDragged,
+    // Wired by the selection-handles task; declared now so this change and
+    // its tests compile first.
+    // ignore: unused_element_parameter
+    this.onHandleDragged,
+    this.onSelectionSettled,
+    // ignore: unused_element_parameter
+    this.showStartHandle = false,
+    // ignore: unused_element_parameter
+    this.showEndHandle = false,
     this.textAlign = TextAlign.justify,
     this.horizontalMargin = 20,
   });
@@ -2964,6 +3045,9 @@ class _PageContent extends StatelessWidget {
   final VoidCallback onTapPrev;
   final VoidCallback onTapNext;
   final VoidCallback onTapCenter;
+  final int chapterStartFlat;
+  final int? selectionStart;
+  final int? selectionEnd;
 
   final List<StyleRun> runs;
   final List<ImageRun> images;
@@ -2972,16 +3056,25 @@ class _PageContent extends StatelessWidget {
   final List<SearchResult>? highlightMatches;
   final SearchResult? currentMatch;
   final double pageMaxHeight;
-  final void Function(
-    String word,
-    Offset globalPosition,
-    int bodyStart,
-    int bodyEnd,
-  )?
-  onLongPressWord;
-  final ({int start, int end})? selectedWordRange;
+  final void Function(int wordStart, int wordEnd)? onWordSelected;
+  final void Function(int wordStart, int wordEnd)? onWordDragged;
+  final void Function(bool isStart, int wordStart, int wordEnd)?
+  onHandleDragged;
+  final void Function(Offset globalPos)? onSelectionSettled;
+  final bool showStartHandle;
+  final bool showEndHandle;
   final TextAlign textAlign;
   final double horizontalMargin;
+
+  @override
+  State<_PageContent> createState() => _PageContentState();
+}
+
+class _PageContentState extends State<_PageContent> {
+  /// The body paragraph, used for all paragraph-relative hit-testing.
+  final GlobalKey _bodyKey = GlobalKey();
+
+  TextPage get page => widget.page;
 
   @override
   Widget build(BuildContext context) {
@@ -2994,15 +3087,12 @@ class _PageContent extends StatelessWidget {
         // onto the body's own rendered text (the same mechanism the
         // long-press word lookup uses), so it follows the real layout rather
         // than a reconstructed TextPainter.
-        if (onTapLink != null && links.isNotEmpty) {
-          final bodyOffset = _bodyTextOffsetAt(
-            context,
-            details.globalPosition,
-          );
+        if (widget.onTapLink != null && widget.links.isNotEmpty) {
+          final bodyOffset = _bodyTextOffsetAt(details.globalPosition);
           if (bodyOffset != null) {
-            for (final link in links) {
+            for (final link in widget.links) {
               if (bodyOffset >= link.start && bodyOffset < link.end) {
-                onTapLink!(link.target);
+                widget.onTapLink!(link.target);
                 return;
               }
             }
@@ -3011,16 +3101,26 @@ class _PageContent extends StatelessWidget {
         final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
         final dx = details.localPosition.dx;
         if (dx < w * 0.3) {
-          onTapPrev();
+          widget.onTapPrev();
         } else if (dx > w * 0.7) {
-          onTapNext();
+          widget.onTapNext();
         } else {
-          onTapCenter();
+          widget.onTapCenter();
         }
       },
-      onLongPressStart: onLongPressWord != null
-          ? (details) => _handleLongPress(context, details)
-          : null,
+      onLongPressStart: (details) {
+        final bounds = _wordAt(details.globalPosition);
+        if (bounds == null) return;
+        widget.onWordSelected?.call(bounds.start, bounds.end);
+      },
+      onLongPressMoveUpdate: (details) {
+        final bounds = _wordAt(details.globalPosition);
+        if (bounds == null) return;
+        widget.onWordDragged?.call(bounds.start, bounds.end);
+      },
+      onLongPressEnd: (details) {
+        widget.onSelectionSettled?.call(_caretGlobalAt(details.globalPosition));
+      },
       // Reading text is independent of the app-wide "Text size" scale: the
       // paginator measures at no scaling, so the page content must render at
       // no scaling too (the body RichText already ignores MediaQuery).
@@ -3028,32 +3128,32 @@ class _PageContent extends StatelessWidget {
         data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: horizontalMargin,
+            horizontal: widget.horizontalMargin,
             vertical: 28,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (page.start == 0 && chapterTitle.trim().isNotEmpty) ...[
+              if (page.start == 0 && widget.chapterTitle.trim().isNotEmpty) ...[
                 Text(
-                  chapterTitle,
-                  style: style.copyWith(
-                    fontSize: (style.fontSize ?? 18) + 4,
+                  widget.chapterTitle,
+                  style: widget.style.copyWith(
+                    fontSize: (widget.style.fontSize ?? 18) + 4,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
               Expanded(
-                child: Builder(
-                  builder: (context) => RichText(
-                    textAlign: textAlign,
-                    text: TextSpan(
-                      style: style,
-                      children: _buildPageText(
-                        context,
-                        MediaQuery.sizeOf(context).width - horizontalMargin * 2,
-                      ),
+                child: RichText(
+                  key: _bodyKey,
+                  textAlign: widget.textAlign,
+                  text: TextSpan(
+                    style: widget.style,
+                    children: _buildPageText(
+                      context,
+                      MediaQuery.sizeOf(context).width -
+                          widget.horizontalMargin * 2,
                     ),
                   ),
                 ),
@@ -3066,80 +3166,59 @@ class _PageContent extends StatelessWidget {
   }
 
   /// Maps a global tap point to a body offset, or `null` when the tap misses
-  /// the rendered text (or hits the chapter title).
-  int? _bodyTextOffsetAt(BuildContext context, Offset global) {
-    RenderObject? root = context.findRenderObject();
-    RenderParagraph? hit;
-    void visit(RenderObject obj) {
-      if (hit != null) return;
-      if (obj is RenderParagraph) {
-        final local = obj.globalToLocal(global);
-        if (obj.size.contains(local)) {
-          hit = obj;
-          return;
-        }
-      }
-      obj.visitChildren(visit);
-    }
-
-    root?.visitChildren(visit);
-    if (hit == null) return null;
-    return page.start + hit!.getPositionForOffset(hit!.globalToLocal(global)).offset;
+  /// the rendered body text (or hits the chapter title).
+  int? _bodyTextOffsetAt(Offset global) {
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return null;
+    final local = paragraph.globalToLocal(global);
+    if (!paragraph.size.contains(local)) return null;
+    return page.start + paragraph.getPositionForOffset(local).offset;
   }
 
-  void _handleLongPress(BuildContext context, LongPressStartDetails details) {    if (onLongPressWord == null) return;
-
-    final renderWidth = MediaQuery.sizeOf(context).width - horizontalMargin * 2;
-    final spans = _buildPageText(context, renderWidth);
-
-    final painter = TextPainter(
-      text: TextSpan(style: style, children: spans),
-      textDirection: TextDirection.ltr,
-      maxLines: null,
-    )..layout(maxWidth: renderWidth);
-
-    final adjusted = Offset(
-      details.localPosition.dx - 20,
-      details.localPosition.dy - 28,
-    );
-    final textOffset = painter.getPositionForOffset(adjusted).offset;
-    painter.dispose();
-    final bodyOffset = page.start + textOffset;
-
-    if (bodyOffset < 0 || bodyOffset >= text.length) return;
-
-    int start = bodyOffset;
-    int end = bodyOffset;
-    while (start > 0 && _isWordChar(text[start - 1])) {
-      start--;
-    }
-    while (end < text.length && _isWordChar(text[end])) {
-      end++;
-    }
-
-    if (start == end) return;
-    var word = text.substring(start, end).trim();
-    word = word.replaceAll(RegExp(r"^[^a-zA-Z']+|[^a-zA-Z']+$"), '');
-    if (word.length < 2) return;
-
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final globalPos = box.localToGlobal(
-      Offset(details.localPosition.dx, details.localPosition.dy - 20),
-    );
-
-    onLongPressWord!(word, globalPos, start, end);
+  /// Maps a global point to a flat document offset inside this page, or `null`
+  /// when the body is not mounted.
+  ///
+  /// The paragraph's offset is clamped to `[page.start, page.end)` so a press
+  /// in the padding or past the last line cannot reach a neighbouring page.
+  int? _flatAt(Offset global) {
+    if (page.end <= page.start) return null;
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return null;
+    final local = paragraph.globalToLocal(global);
+    final offset = paragraph.getPositionForOffset(local).offset;
+    final pageOffset = (page.start + offset).clamp(page.start, page.end - 1);
+    return widget.chapterStartFlat + pageOffset;
   }
 
-  static bool _isWordChar(String ch) {
-    return ch.runes.any((r) => r > 127) ||
-        RegExp(r'[a-zA-Z\u00C0-\u024F]').hasMatch(ch);
+  /// The whole-word flat range under [global], bounded to this page.
+  ({int start, int end})? _wordAt(Offset global) {
+    final flat = _flatAt(global);
+    if (flat == null) return null;
+    return wordBoundsAt(
+      flat,
+      widget.text,
+      widget.chapterStartFlat,
+      loFlat: widget.chapterStartFlat + page.start,
+      hiFlat: widget.chapterStartFlat + page.end,
+    );
+  }
+
+  /// The global position of the caret at [global]'s offset. Used to anchor the
+  /// selection toolbar where the finger lifted.
+  Offset _caretGlobalAt(Offset global) {
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return global;
+    final local = paragraph.globalToLocal(global);
+    final position = paragraph.getPositionForOffset(local);
+    // Collapsed selection: the caret rect's top-left is the insertion point.
+    final caret = paragraph.getOffsetForCaret(position, Rect.zero);
+    return paragraph.localToGlobal(caret);
   }
 
   /// Builds the page's TextSpan, merging style runs (emphasis, quotes) with
   /// search-match highlights and inline images.
   List<InlineSpan> _buildPageText(BuildContext context, double renderWidth) {
-    final tappedImages = images.map((img) {
+    final tappedImages = widget.images.map((img) {
       if (img.onTap != null) return img;
       return ImageRun(
         offset: img.offset,
@@ -3152,21 +3231,35 @@ class _PageContent extends StatelessWidget {
       );
     }).toList();
     return buildPageSpans(
-      text: text,
+      text: widget.text,
       start: page.start,
       end: page.end,
-      base: style,
-      theme: theme,
-      settings: settings,
-      runs: runs,
+      base: widget.style,
+      theme: widget.theme,
+      settings: widget.settings,
+      runs: widget.runs,
       images: tappedImages,
-      links: links,
+      links: widget.links,
       renderWidth: renderWidth,
-      maxHeight: pageMaxHeight,
+      maxHeight: widget.pageMaxHeight,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      matches: highlightMatches ?? const [],
-      currentMatch: currentMatch,
-      selectedRange: selectedWordRange,
+      matches: widget.highlightMatches ?? const [],
+      currentMatch: widget.currentMatch,
+      selectedRange: _selectedPageRange(),
+    );
+  }
+
+  /// Clips the live selection to this page for the highlight painter.
+  ({int start, int end})? _selectedPageRange() {
+    final start = widget.selectionStart;
+    final end = widget.selectionEnd;
+    if (start == null || end == null) return null;
+    return pageLocalRange(
+      selectionStart: start,
+      selectionEnd: end,
+      chapterStartFlat: widget.chapterStartFlat,
+      pageStart: page.start,
+      pageEnd: page.end,
     );
   }
 
