@@ -3246,29 +3246,40 @@ class _PageContentState extends State<_PageContent> {
                 const SizedBox(height: 16),
               ],
               Expanded(
-                // `clipBehavior: none` lets a handle at the first/last line
-                // extend past the body's own box.
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.topLeft,
-                  children: [
-                    RichText(
-                      key: _bodyKey,
-                      textAlign: widget.textAlign,
-                      text: TextSpan(
-                        style: widget.style,
-                        children: _buildPageText(
-                          context,
-                          MediaQuery.sizeOf(context).width -
-                              widget.horizontalMargin * 2,
+                // The handle boxes are kept entirely inside the body box (see
+                // `_buildHandle`): `Clip.none` only affects painting, and a
+                // box hanging outside its parent is rejected by hit-testing.
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.topLeft,
+                    children: [
+                      RichText(
+                        key: _bodyKey,
+                        textAlign: widget.textAlign,
+                        text: TextSpan(
+                          style: widget.style,
+                          children: _buildPageText(
+                            context,
+                            MediaQuery.sizeOf(context).width -
+                                widget.horizontalMargin * 2,
+                          ),
                         ),
                       ),
-                    ),
-                    if (widget.showStartHandle && _startHandleCaret != null)
-                      _buildHandle(isStart: true, caret: _startHandleCaret!),
-                    if (widget.showEndHandle && _endHandleCaret != null)
-                      _buildHandle(isStart: false, caret: _endHandleCaret!),
-                  ],
+                      if (widget.showStartHandle && _startHandleCaret != null)
+                        _buildHandle(
+                          isStart: true,
+                          caret: _startHandleCaret!,
+                          stackSize: constraints.biggest,
+                        ),
+                      if (widget.showEndHandle && _endHandleCaret != null)
+                        _buildHandle(
+                          isStart: false,
+                          caret: _endHandleCaret!,
+                          stackSize: constraints.biggest,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -3331,12 +3342,33 @@ class _PageContentState extends State<_PageContent> {
   /// A draggable selection handle: a small accent dot inside a larger
   /// transparent hit area. The start handle sits above its caret, the end
   /// handle below.
-  Widget _buildHandle({required bool isStart, required Offset caret}) {
+  ///
+  /// The 44px hit box is clamped fully inside [stackSize] so it is always
+  /// hit-testable: `Clip.none` only affects painting, and `RenderBox.hitTest`
+  /// rejects a point outside the box's own size, so a box hanging above the
+  /// first line (or below the last) would silently let taps fall through to
+  /// the page triage. The dot is then translated inside the box to stay at the
+  /// caret, so clamping never moves the visible handle.
+  Widget _buildHandle({
+    required bool isStart,
+    required Offset caret,
+    required Size stackSize,
+  }) {
     const double hit = 44;
     const double dot = 12;
+    // Where the box would sit unclamped: start above its caret, end below.
+    final desiredLeft = caret.dx - hit / 2;
+    final desiredTop = isStart ? caret.dy - hit + 4 : caret.dy - 4;
+    final maxLeft = math.max(0.0, stackSize.width - hit);
+    final maxTop = math.max(0.0, stackSize.height - hit);
+    final left = desiredLeft.clamp(0.0, maxLeft);
+    final top = desiredTop.clamp(0.0, maxTop);
+    // Keep the dot ~18px above (start) / below (end) the caret, as before,
+    // now expressed as a translation from the clamped box's centre.
+    final dotCenterY = isStart ? caret.dy - 18 : caret.dy + 18;
     return Positioned(
-      left: caret.dx - hit / 2,
-      top: isStart ? caret.dy - hit + 4 : caret.dy - 4,
+      left: left,
+      top: top,
       width: hit,
       height: hit,
       child: GestureDetector(
@@ -3349,12 +3381,18 @@ class _PageContentState extends State<_PageContent> {
           _caretGlobalAt(details.globalPosition),
         ),
         child: Center(
-          child: Container(
-            width: dot,
-            height: dot,
-            decoration: BoxDecoration(
-              color: widget.theme.accent,
-              shape: BoxShape.circle,
+          child: Transform.translate(
+            offset: Offset(
+              caret.dx - (left + hit / 2),
+              dotCenterY - (top + hit / 2),
+            ),
+            child: Container(
+              width: dot,
+              height: dot,
+              decoration: BoxDecoration(
+                color: widget.theme.accent,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
         ),

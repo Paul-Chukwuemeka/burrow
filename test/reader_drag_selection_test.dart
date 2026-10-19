@@ -282,5 +282,35 @@ void main() {
       expect(state.debugSelectionText!.length, greaterThan(before.length));
       expect(state.debugSelectionText!.startsWith(before), isTrue);
     });
+
+    testWidgets('start handle on a page first line is hit-testable', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, multi);
+      // Long-press the first word on line 1 (the paragraph's own top-left), so
+      // the selection's start caret sits at the top of the body box — where an
+      // unclamped handle box would hang above the Stack and be unhittable.
+      // Then extend along the line so the end caret (and handle) moves clear
+      // of the start handle: the two 44px boxes overlap on a one-word
+      // selection, and the end handle (the later Stack child) would win.
+      final body = bodyParagraph(tester, 'w0');
+      final g = await tester.startGesture(body.localToGlobal(const Offset(0, 6)));
+      await tester.pump(const Duration(milliseconds: 600));
+      await g.moveTo(body.localToGlobal(Offset(body.size.width / 2, 6)));
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(state.debugSelection.isActive, isTrue);
+      final startBefore = state.debugSelection.start!;
+
+      final startHandle = find.byKey(const Key('selectionHandleStart'));
+      expect(startHandle, findsOneWidget);
+
+      // If the handle were outside the Stack this drag would miss it and the
+      // selection start would not move.
+      await tester.drag(startHandle, const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(state.debugSelection.start, greaterThan(startBefore));
+    });
   });
 }
