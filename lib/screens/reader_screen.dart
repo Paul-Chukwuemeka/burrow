@@ -11,7 +11,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/bookmark_helper.dart';
 import '../controllers/comic_controller.dart';
-import '../controllers/dictionary_overlay.dart';
+import '../controllers/selection_toolbar.dart';
 import '../controllers/pdf_controller.dart';
 import '../controllers/reading_session.dart';
 import '../controllers/search_controller.dart';
@@ -238,8 +238,9 @@ class ReaderScreenState extends State<ReaderScreen>
   // Comic state.
   late final ComicReaderController _comicCtrl;
 
-  // Dictionary state.
-  DictionaryOverlay? _dictOverlay;
+  // Selection toolbar state.
+  SelectionToolbarOverlay? _selectionToolbar;
+  ({int start, int end})? _selectedWordRange;
 
   bool get _isPdf => _book.format == BookFormat.pdf;
   bool get _isComic =>
@@ -398,7 +399,7 @@ class ReaderScreenState extends State<ReaderScreen>
       _searchCtrl.onSearchTextChanged,
     );
     _searchCtrl.dispose();
-    _dictOverlay?.dismissDictionaryButton();
+    _selectionToolbar?.dismiss();
     _comicDecodeAhead?.dispose();
     for (final tc in _comicTransformListeners) {
       tc.removeListener(_onComicTransformChanged);
@@ -1215,9 +1216,10 @@ class ReaderScreenState extends State<ReaderScreen>
     _settingsSaveDebounce = Timer(const Duration(milliseconds: 600), () {
       widget.library.saveSettings();
     });
-    // Recreate dictionary overlay with fresh theme on next use.
-    _dictOverlay?.dismissDictionaryButton();
-    _dictOverlay = null;
+    // Recreate the selection toolbar with fresh theme on next use.
+    _selectionToolbar?.dismiss();
+    _selectionToolbar = null;
+    _selectedWordRange = null;
     // Update wakelock.
     if (_settings.keepScreenOn) {
       WakelockPlus.enable();
@@ -1499,23 +1501,29 @@ class ReaderScreenState extends State<ReaderScreen>
   // Word selection toolbar
   // ---------------------------------------------------------------------------
 
-  void _showWordToolbar(
-    Offset globalPosition,
-    String word,
-    int bodyStart,
-    int bodyEnd,
-  ) {
-    _dictOverlay ??= DictionaryOverlay(
+  void _showSelectionToolbar(
+    Offset globalPosition, {
+    required bool singleWord,
+    required String word,
+    required String text,
+  }) {
+    _selectionToolbar ??= SelectionToolbarOverlay(
       context: context,
       theme: _settings.colors,
       library: widget.library,
     );
-    _dictOverlay!.showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
+    _selectionToolbar!.show(
+      globalPosition,
+      singleWord: singleWord,
+      word: word,
+      text: text,
+    );
     setState(() {});
   }
 
-  void _dismissDictionaryButton() {
-    _dictOverlay?.dismissDictionaryButton();
+  void _dismissSelectionToolbar() {
+    _selectionToolbar?.dismiss();
+    _selectedWordRange = null;
     if (mounted) setState(() {});
   }
 
@@ -1582,7 +1590,7 @@ class ReaderScreenState extends State<ReaderScreen>
           enabled: true,
           onTextSelectionChange: (selection) async {
             if (!selection.hasSelectedText) {
-              _dismissDictionaryButton();
+              _dismissSelectionToolbar();
               return;
             }
             final selectedText = await selection.getSelectedText();
@@ -1596,11 +1604,11 @@ class ReaderScreenState extends State<ReaderScreen>
               );
               if (word.length >= 2) {
                 final size = MediaQuery.sizeOf(context);
-                _showWordToolbar(
+                _showSelectionToolbar(
                   Offset(size.width / 2, size.height / 2),
-                  word,
-                  0,
-                  0,
+                  singleWord: true,
+                  word: word,
+                  text: word,
                 );
               }
             }
@@ -2179,7 +2187,7 @@ class ReaderScreenState extends State<ReaderScreen>
                   images: _doc!.chapters[chapter].images,
                   links: _doc!.chapters[chapter].links,
                   onTapLink: (target) {
-                    _dismissDictionaryButton();
+                    _dismissSelectionToolbar();
                     _jumpToChapter(target);
                   },
                   page: page,
@@ -2187,15 +2195,15 @@ class ReaderScreenState extends State<ReaderScreen>
                   theme: theme,
                   settings: _settings,
                   onTapPrev: () {
-                    _dismissDictionaryButton();
+                    _dismissSelectionToolbar();
                     _flip(-1);
                   },
                   onTapNext: () {
-                    _dismissDictionaryButton();
+                    _dismissSelectionToolbar();
                     _flip(1);
                   },
                   onTapCenter: () {
-                    _dismissDictionaryButton();
+                    _dismissSelectionToolbar();
                     setState(() => _chromeVisible = !_chromeVisible);
                   },
                   highlightMatches: highlights,
@@ -2208,9 +2216,15 @@ class ReaderScreenState extends State<ReaderScreen>
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
                   onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
-                    _showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
+                    _selectedWordRange = (start: bodyStart, end: bodyEnd);
+                    _showSelectionToolbar(
+                      globalPosition,
+                      singleWord: true,
+                      word: word,
+                      text: word,
+                    );
                   },
-                  selectedWordRange: _dictOverlay?.selectedWordRange,
+                  selectedWordRange: _selectedWordRange,
                   textAlign:
                       _settings.textJustification == TextJustification.justify
                       ? TextAlign.justify
@@ -2436,7 +2450,7 @@ class ReaderScreenState extends State<ReaderScreen>
 
   GestureTapUpCallback _handleTapZones({required VoidCallback onCenter}) {
     return (details) {
-      _dismissDictionaryButton();
+      _dismissSelectionToolbar();
       final w = MediaQuery.sizeOf(context).width;
       final dx = details.localPosition.dx;
       if (dx < w * 0.3) {

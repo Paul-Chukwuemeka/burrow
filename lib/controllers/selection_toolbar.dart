@@ -9,9 +9,14 @@ import '../screens/settings_screen.dart';
 import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
 import '../widgets/dictionary_sheet.dart';
+import '../widgets/selection_toolbar.dart';
 
-class DictionaryOverlay {
-  DictionaryOverlay({
+/// Floating toolbar shown for a word or text selection.
+///
+/// Define is only relevant for a single word; Copy and Share operate on the
+/// full [text] passed to [show].
+class SelectionToolbarOverlay {
+  SelectionToolbarOverlay({
     required BuildContext context,
     required this.theme,
     required this.library,
@@ -21,28 +26,26 @@ class DictionaryOverlay {
   final ReaderTheme theme;
   final LibraryService library;
 
-  OverlayEntry? _dictionaryButtonEntry;
-  ({int start, int end})? _selectedWordRange;
+  OverlayEntry? _toolbarEntry;
+  String _text = '';
 
-  ({int start, int end})? get selectedWordRange => _selectedWordRange;
+  void show(
+    Offset globalPosition, {
+    required bool singleWord,
+    required String word,
+    required String text,
+  }) {
+    dismiss();
+    _text = text;
 
-  void showWordToolbar(
-    Offset globalPosition,
-    String word,
-    int bodyStart,
-    int bodyEnd,
-  ) {
-    dismissDictionaryButton();
-    _selectedWordRange = (start: bodyStart, end: bodyEnd);
-
-    _dictionaryButtonEntry = OverlayEntry(
+    _toolbarEntry = OverlayEntry(
       builder: (context) {
         return Stack(
           children: [
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: dismissDictionaryButton,
+                onTap: dismiss,
               ),
             ),
             Positioned(
@@ -72,39 +75,27 @@ class DictionaryOverlay {
                     horizontal: 4,
                     vertical: 6,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _toolbarButton(
-                        label: 'Define',
-                        onTap: () {
-                          dismissDictionaryButton();
-                          openDictionarySheet(word);
-                        },
-                      ),
-                      _toolbarDivider(),
-                      _toolbarButton(
-                        label: 'Copy',
-                        onTap: () {
-                          dismissDictionaryButton();
-                          Clipboard.setData(ClipboardData(text: word));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Copied "$word"'),
-                              duration: const Duration(seconds: 1),
-                            ),
-                          );
-                        },
-                      ),
-                      _toolbarDivider(),
-                      _toolbarButton(
-                        label: 'Share',
-                        onTap: () {
-                          dismissDictionaryButton();
-                          SharePlus.instance.share(ShareParams(text: word));
-                        },
-                      ),
-                    ],
+                  child: SelectionToolbar(
+                    singleWord: singleWord,
+                    theme: theme,
+                    onDefine: () {
+                      dismiss();
+                      openDictionarySheet(word);
+                    },
+                    onCopy: () {
+                      dismiss();
+                      Clipboard.setData(ClipboardData(text: _text));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Copied "$_text"'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                    onShare: () {
+                      dismiss();
+                      SharePlus.instance.share(ShareParams(text: _text));
+                    },
                   ),
                 ),
               ),
@@ -115,43 +106,16 @@ class DictionaryOverlay {
     );
 
     if (!_context.mounted) return;
-    Overlay.of(_context).insert(_dictionaryButtonEntry!);
+    Overlay.of(_context).insert(_toolbarEntry!);
   }
 
-  Widget _toolbarButton({required String label, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: theme.text,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _toolbarDivider() {
-    return Container(
-      width: 1,
-      height: 20,
-      color: theme.muted.withValues(alpha: 0.3),
-    );
-  }
-
-  void dismissDictionaryButton() {
+  void dismiss() {
     try {
-      _dictionaryButtonEntry?.remove();
+      _toolbarEntry?.remove();
     } catch (e) {
-      debugPrint('Failed to remove dictionary overlay: $e');
+      debugPrint('Failed to remove selection toolbar overlay: $e');
     }
-    _dictionaryButtonEntry = null;
-    _selectedWordRange = null;
+    _toolbarEntry = null;
   }
 
   void openDictionarySheet(String word) {
