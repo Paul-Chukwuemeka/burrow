@@ -211,6 +211,14 @@ class ReaderScreenState extends State<ReaderScreen>
   static const double _zoomMax = 4.0;
   TransformationController? _comicTransformationController;
 
+  /// True while the zoomed comic page sits past fit scale (see
+  /// [_anyComicTransformZoomed]). While true, the outer pager/list gives up
+  /// its drag gestures so the [InteractiveViewer] can pan the zoomed page.
+  bool _comicZoomed = false;
+
+  /// Transformation controllers already wired to [_onComicTransformChanged].
+  final Set<TransformationController> _comicTransformListeners = {};
+
   // Guards the async brightness seed: a stale `current()` future must not
   // overwrite a mode toggle made while it was in flight.
   int _brightnessSeedGen = 0;
@@ -392,6 +400,10 @@ class ReaderScreenState extends State<ReaderScreen>
     _searchCtrl.dispose();
     _dictOverlay?.dismissDictionaryButton();
     _comicDecodeAhead?.dispose();
+    for (final tc in _comicTransformListeners) {
+      tc.removeListener(_onComicTransformChanged);
+    }
+    _comicTransformListeners.clear();
     _comicTransformationController?.dispose();
     _doc = null;
     WakelockPlus.disable();
@@ -428,6 +440,12 @@ class ReaderScreenState extends State<ReaderScreen>
         _zoomLevel = 1.0;
       }
     });
+    if (_isComic && !_zoomMode) {
+      // Reset every comic page back to fit scale; the per-page vertical
+      // transformers become uncontrolled when zoom mode leaves and keeping
+      // their matrices would strand those pages zoomed in.
+      _resetComicTransforms();
+    }
     _applyZoom();
   }
 
@@ -496,6 +514,56 @@ class ReaderScreenState extends State<ReaderScreen>
       ..translateByDouble(center.dx, center.dy, 0, 1)
       ..scaleByDouble(_zoomLevel, _zoomLevel, 1, 1)
       ..translateByDouble(-center.dx, -center.dy, 0, 1);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Comic zoom gesture arbitration
+  // ---------------------------------------------------------------------------
+
+  /// A page is effectively zoomed when its transform scale sits above fit.
+  /// The 1% hysteresis keeps single-pixel rounding from toggling page swipes.
+  static bool _comicTransformZoomed(TransformationController? tc) =>
+      (tc?.value.getMaxScaleOnAxis() ?? 1.0) > 1.01;
+
+  /// True when any comic transform is zoomed past fit scale. The outer
+  /// pager/list takes its drag gestures away while this is true, so drags
+  /// and pinches on the page are owned by the [InteractiveViewer] instead
+  /// of turning pages underneath it.
+  bool _anyComicTransformZoomed() {
+    if (_comicTransformZoomed(_comicTransformationController)) return true;
+    for (final tc in _comicCtrl.verticalTransformers) {
+      if (_comicTransformZoomed(tc)) return true;
+    }
+    return false;
+  }
+
+  /// Idempotently wires [tc] to the zoomed-state listener.
+  void _listenComicTransform(TransformationController tc) {
+    if (_comicTransformListeners.add(tc)) {
+      tc.addListener(_onComicTransformChanged);
+    }
+  }
+
+  /// Rebuilds when the effective zoom state crosses in or out, which flips
+  /// the outer scroller between "turn pages" and "pan the zoomed page".
+  void _onComicTransformChanged() {
+    if (!mounted) return;
+    final zoomed = _anyComicTransformZoomed();
+    if (zoomed != _comicZoomed) {
+      setState(() => _comicZoomed = zoomed);
+    }
+  }
+
+  /// Resets every comic transform to fit scale — used when leaving zoom
+  /// mode. Per-page vertical transformers must all be reset because their
+  /// InteractiveViewers become uncontrolled ([_zoomMode == false], null
+  /// controller) and would otherwise stay stuck zoomed with no gesture to
+  /// undo it.
+  void _resetComicTransforms() {
+    _comicTransformationController?.value = Matrix4.identity();
+    for (final tc in _comicCtrl.verticalTransformers.toList()) {
+      tc.value = Matrix4.identity();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1117,6 +1185,21 @@ class ReaderScreenState extends State<ReaderScreen>
   int get debugComicPage => _comicCtrl.comicPage;
 
   @visibleForTesting
+  bool get debugComicZoomed => _comicZoomed;
+
+  @visibleForTesting
+  TransformationController? get debugComicTransform =>
+      _comicTransformationController;
+
+  @visibleForTesting
+  TransformationController debugVerticalTransformerFor(int index) =>
+      _comicCtrl.verticalTransformer(index);
+
+  @visibleForTesting
+  Iterable<TransformationController> get debugAllVerticalTransformers =>
+      _comicCtrl.verticalTransformers;
+
+  @visibleForTesting
   double get debugComicPreviewOffset =>
       _comicCtrl.comicPreviewScrollController.hasClients
       ? _comicCtrl.comicPreviewScrollController.offset
@@ -1698,6 +1781,11 @@ class ReaderScreenState extends State<ReaderScreen>
   Widget _buildComicPaginated(ReaderTheme theme) {
     final rtl = _settings.comicReadingDirection == ComicReadingDirection.rtl;
     _comicTransformationController ??= TransformationController();
+    _listenComicTransform(_comicTransformationController!);
+    // While the page is zoomed in, the pager must not compete for the drag:
+    // one-finger drags pan the zoomed page and two-finger pinches reach the
+    // InteractiveViewer instead of flipping to the next page.
+    final zoomed = _anyComicTransformZoomed();
     return Stack(
       children: [
         GestureDetector(
@@ -1718,6 +1806,7 @@ class ReaderScreenState extends State<ReaderScreen>
           child: PageView.builder(
             reverse: rtl,
             controller: _comicCtrl.comicPageController!,
+            physics: zoomed ? const NeverScrollableScrollPhysics() : null,
             // Warm the adjacent pages during flips: combined with the
             // decode-ahead window they render without a decode stall.
             allowImplicitScrolling: true,
@@ -1835,27 +1924,34 @@ class ReaderScreenState extends State<ReaderScreen>
             controller: controller,
             padding: EdgeInsets.zero,
             itemCount: _comicCtrl.comicPageCount,
-            itemBuilder: (context, i) => InteractiveViewer(
-              key: _comicCtrl.verticalPageKey(i),
-              transformationController: _zoomMode
-                  ? _comicCtrl.verticalTransformer(i)
-                  : null,
-              minScale: 1.0,
-              maxScale: _zoomMode ? _zoomMax : 1.0,
-              scaleEnabled: _zoomMode,
-              child: Center(
-                child: _comicCtrl.isLazy
-                    ? _LazyComicPageWidget(
-                        provider: _comicCtrl.comicPageProvider!,
-                        pageIndex: i,
-                        fit: _comicCtrl.boxFit,
-                      )
-                    : ComicImage(
-                        bytes: _comicCtrl.comicPages[i],
-                        fit: _comicCtrl.boxFit,
-                      ),
-              ),
-            ),
+            // While a page is zoomed in, the list must not compete for the
+            // drag: drags pan the zoomed page instead of scrolling pages.
+            physics: _anyComicTransformZoomed()
+                ? const NeverScrollableScrollPhysics()
+                : null,
+            itemBuilder: (context, i) {
+              final transform = _comicCtrl.verticalTransformer(i);
+              _listenComicTransform(transform);
+              return InteractiveViewer(
+                key: _comicCtrl.verticalPageKey(i),
+                transformationController: _zoomMode ? transform : null,
+                minScale: 1.0,
+                maxScale: _zoomMode ? _zoomMax : 1.0,
+                scaleEnabled: _zoomMode,
+                child: Center(
+                  child: _comicCtrl.isLazy
+                      ? _LazyComicPageWidget(
+                          provider: _comicCtrl.comicPageProvider!,
+                          pageIndex: i,
+                          fit: _comicCtrl.boxFit,
+                        )
+                      : ComicImage(
+                          bytes: _comicCtrl.comicPages[i],
+                          fit: _comicCtrl.boxFit,
+                        ),
+                ),
+              );
+            },
           ),
         ),
         IgnorePointer(

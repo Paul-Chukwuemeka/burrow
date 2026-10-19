@@ -85,6 +85,10 @@ class ComicReaderController extends ChangeNotifier {
   TransformationController verticalTransformer(int index) =>
       _verticalTransformers.putIfAbsent(index, TransformationController.new);
 
+  /// All live per-page transformation controllers (unmodifiable view).
+  Iterable<TransformationController> get verticalTransformers =>
+      _verticalTransformers.values;
+
   void _evictOldKeys(int currentPage) {
     if (_verticalPageKeys.length > 50) {
       final keysToRemove = _verticalPageKeys.keys
