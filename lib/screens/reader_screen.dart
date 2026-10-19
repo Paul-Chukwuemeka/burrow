@@ -1511,6 +1511,10 @@ class ReaderScreenState extends State<ReaderScreen>
       context: context,
       theme: _settings.colors,
       library: widget.library,
+      onDismiss: () {
+        _selectedWordRange = null;
+        if (context.mounted) setState(() {});
+      },
     );
     _selectionToolbar!.show(
       globalPosition,

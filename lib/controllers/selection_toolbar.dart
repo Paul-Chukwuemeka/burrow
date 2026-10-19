@@ -20,11 +20,16 @@ class SelectionToolbarOverlay {
     required BuildContext context,
     required this.theme,
     required this.library,
+    this.onDismiss,
   }) : _context = context;
 
   final BuildContext _context;
   final ReaderTheme theme;
   final LibraryService library;
+
+  /// Called after the toolbar is dismissed so the owner can clear any
+  /// selection state that lives outside the overlay.
+  final VoidCallback? onDismiss;
 
   OverlayEntry? _toolbarEntry;
   String _text = '';
@@ -35,7 +40,7 @@ class SelectionToolbarOverlay {
     required String word,
     required String text,
   }) {
-    dismiss();
+    _removeEntry();
     _text = text;
 
     _toolbarEntry = OverlayEntry(
@@ -109,13 +114,18 @@ class SelectionToolbarOverlay {
     Overlay.of(_context).insert(_toolbarEntry!);
   }
 
-  void dismiss() {
+  void _removeEntry() {
     try {
       _toolbarEntry?.remove();
     } catch (e) {
       debugPrint('Failed to remove selection toolbar overlay: $e');
     }
     _toolbarEntry = null;
+  }
+
+  void dismiss() {
+    _removeEntry();
+    onDismiss?.call();
   }
 
   void openDictionarySheet(String word) {
