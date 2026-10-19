@@ -199,8 +199,9 @@ void main() {
     final size = tester.getSize(find.byType(ReaderScreen));
     await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
     await tester.pumpAndSettle();
-    // The barrier must forward the tap to the page's tap-zone logic: a
-    // right-zone tap flips to the next chapter but keeps the selection.
+    // The page receives the tap directly (no toolbar barrier on the EPUB
+    // path): a right-zone tap flips to the next chapter but keeps the
+    // selection.
     expect(visibleText(tester), contains('The second chapter.'));
     expect(state.debugSelection.isActive, isTrue); // flipped, kept
     await tester.tapAt(Offset(size.width * 0.5, size.height * 0.5));

@@ -20,27 +20,24 @@ class SelectionToolbarOverlay {
     required BuildContext context,
     required this.theme,
     required this.library,
-    this.onDismiss,
-    this.onOutsideTap,
+    this.modalBarrier = true,
   }) : _context = context;
 
   final BuildContext _context;
   final ReaderTheme theme;
   final LibraryService library;
 
-  /// Called after the toolbar is dismissed so the owner can clear any
-  /// selection state that lives outside the overlay.
-  final VoidCallback? onDismiss;
-
-  /// Called (after dismissal) when the toolbar's full-screen barrier is
-  /// tapped, with the tap's global position. The owner uses this to perform
-  /// the same tap-zone triage the page would have received had the barrier not
-  /// been covering it.
-  final void Function(Offset globalPosition)? onOutsideTap;
+  /// Whether to install a full-screen tap barrier under the toolbar.
+  ///
+  /// The PDF reader has no page-level gesture layer of its own for the
+  /// overlay to fall through to, so it keeps the barrier (tap-outside
+  /// dismisses). The reflowable reader passes `false`: taps outside the
+  /// toolbar must reach `_PageContent`, whose `onTapUp` decides link vs. page
+  /// flip vs. centre tap.
+  final bool modalBarrier;
 
   OverlayEntry? _toolbarEntry;
   String _text = '';
-  Offset? _outsideTapDown;
 
   void show(
     Offset globalPosition, {
@@ -55,22 +52,13 @@ class SelectionToolbarOverlay {
       builder: (context) {
         return Stack(
           children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTapDown: (details) {
-                  _outsideTapDown = details.globalPosition;
-                },
-                onTap: () {
-                  final position = _outsideTapDown;
-                  _outsideTapDown = null;
-                  // Dismiss first so the reader callback cannot re-show the
-                  // toolbar (or recurse) when it flips/clears.
-                  dismiss();
-                  if (position != null) onOutsideTap?.call(position);
-                },
+            if (modalBarrier)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: dismiss,
+                ),
               ),
-            ),
             Positioned(
               left: (globalPosition.dx - 140).clamp(
                 8.0,
@@ -143,7 +131,6 @@ class SelectionToolbarOverlay {
 
   void dismiss() {
     _removeEntry();
-    onDismiss?.call();
   }
 
   void openDictionarySheet(String word) {
