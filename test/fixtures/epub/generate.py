@@ -1333,6 +1333,26 @@ def build_cover_inline() -> None:
     )
 
 
+def build_multipage() -> None:
+    # Task 5 (drag selection) fixture: one chapter of 600 numbered words so the
+    # reader paginates it across several pages, letting a test drag a selection
+    # to a page boundary and then extend it from the next page. The numbered
+    # words make the expected page text trivial to assert.
+    #
+    # `_raw_xhtml` (not `_xhtml`) deliberately: `_xhtml` prepends an `<h1>`
+    # that the no-TOC projection keeps in the body (`<title>`/`<h1>` fallback
+    # titles are not heading-stripped), so the chapter body would be
+    # `"Multi\n\nw0 ..."` and the page's RichText would carry the title. The
+    # reader's drag-selection test compares the whole rendered page against the
+    # selection, so the body must be exactly the word list.
+    body = " ".join(f"w{i}" for i in range(600))
+    _write_chapter_epub(
+        "multipage.epub",
+        "Multi",
+        [("ch1", "ch1.xhtml", _raw_xhtml("Multi", f"<p>{body}</p>"))],
+    )
+
+
 def build_annotated_meta() -> None:
     # Final-fix parity fixture: the OPF carries `calibre:annotation`,
     # `dc:type` and `dc:source`. The parity differ compares these fields, but
@@ -1427,6 +1447,7 @@ def main() -> None:
     build_rich_meta()
     build_cover_inline()
     build_annotated_meta()
+    build_multipage()
     build_mini_cbz()
     print("wrote fixtures to", HERE)
 

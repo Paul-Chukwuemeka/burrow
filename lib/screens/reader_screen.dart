@@ -2211,6 +2211,12 @@ class ReaderScreenState extends State<ReaderScreen>
             PageView.builder(
               controller: controller,
               itemCount: itemCount,
+              // While a word selection is live, a drag belongs to the
+              // selection handles, not to page swiping. Programmatic flips
+              // (`_flip` / `animateToPage`) still work under this physics.
+              physics: _selection.isActive
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
               onPageChanged: (i) {
                 final programmatic = _programmaticTarget == i;
                 _programmaticTarget = null;
@@ -2256,6 +2262,40 @@ class ReaderScreenState extends State<ReaderScreen>
                 final renderStyle = chapterStyle.copyWith(
                   color: _settings.colors.text,
                 );
+                // Selection handles render only on the page the reader is on,
+                // so their keys stay unique across the PageView's window.
+                final pageFlatStart = _charsBefore[chapter] + page.start;
+                final pageFlatEnd = _charsBefore[chapter] + page.end;
+                final selStart = _selection.start;
+                final selEnd = _selection.end;
+                final showStart =
+                    i == _flatPage &&
+                    selStart != null &&
+                    selStart >= pageFlatStart &&
+                    selStart < pageFlatEnd;
+                // The paginator drops the whitespace between pages (it belongs
+                // to no page), so a selection ending on the previous page's
+                // last word sits one or more offsets before this page's start.
+                // Attach the end handle to this page in that case, or a
+                // cross-page selection would have no end handle at all.
+                int? prevPageFlatEnd;
+                if (i > 0) {
+                  final prev = _refAt(i - 1);
+                  if (prev != null) {
+                    prevPageFlatEnd =
+                        _charsBefore[prev.$1] +
+                        _paginators[prev.$1].pages[prev.$2].end;
+                  }
+                }
+                final showEnd =
+                    i == _flatPage &&
+                    selEnd != null &&
+                    ((selEnd >= pageFlatStart &&
+                            (selEnd == pageFlatStart ||
+                                selEnd < pageFlatEnd ||
+                                (selEnd == pageFlatEnd &&
+                                    i == itemCount - 1))) ||
+                        selEnd == prevPageFlatEnd);
                 return _PageContent(
                   chapterTitle: _doc!.chapters[chapter].title,
                   text: _doc!.chapters[chapter].body,
@@ -2270,6 +2310,11 @@ class ReaderScreenState extends State<ReaderScreen>
                   onWordDragged: (start, end) =>
                       _selection.dragToWord(start, end),
                   onSelectionSettled: _showSelectionToolbarAt,
+                  onHandleDragged: (isStart, s, e) => isStart
+                      ? _selection.setStart(s)
+                      : _selection.setEnd(e),
+                  showStartHandle: showStart,
+                  showEndHandle: showEnd,
                   onTapLink: (target) {
                     _dismissSelectionToolbar();
                     _jumpToChapter(target);
@@ -3027,14 +3072,9 @@ class _PageContent extends StatefulWidget {
     this.selectionEnd,
     this.onWordSelected,
     this.onWordDragged,
-    // Wired by the selection-handles task; declared now so this change and
-    // its tests compile first.
-    // ignore: unused_element_parameter
     this.onHandleDragged,
     this.onSelectionSettled,
-    // ignore: unused_element_parameter
     this.showStartHandle = false,
-    // ignore: unused_element_parameter
     this.showEndHandle = false,
     this.textAlign = TextAlign.justify,
     this.horizontalMargin = 20,
@@ -3079,6 +3119,63 @@ class _PageContentState extends State<_PageContent> {
   final GlobalKey _bodyKey = GlobalKey();
 
   TextPage get page => widget.page;
+
+  /// Caret positions of the shown selection handles, in the body [Stack]'s
+  /// coordinate space (the paragraph sits at its top-left). Measured from the
+  /// rendered paragraph after layout, since caret offsets depend on the real
+  /// line breaks.
+  Offset? _startHandleCaret;
+  Offset? _endHandleCaret;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleHandleMeasure();
+  }
+
+  @override
+  void didUpdateWidget(_PageContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Selection or page changed: re-measure against the laid-out paragraph.
+    _scheduleHandleMeasure();
+  }
+
+  void _scheduleHandleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureHandles());
+  }
+
+  /// Measures both handle carets and rebuilds only when they actually moved.
+  void _measureHandles() {
+    if (!mounted) return;
+    final start = _caretForHandle(isStart: true);
+    final end = _caretForHandle(isStart: false);
+    if (start == _startHandleCaret && end == _endHandleCaret) return;
+    setState(() {
+      _startHandleCaret = start;
+      _endHandleCaret = end;
+    });
+  }
+
+  /// The caret point for a handle in the body [Stack]'s space, or `null` when
+  /// the handle is hidden or the paragraph is not mounted.
+  Offset? _caretForHandle({required bool isStart}) {
+    final show = isStart ? widget.showStartHandle : widget.showEndHandle;
+    final selection = isStart ? widget.selectionStart : widget.selectionEnd;
+    if (!show || selection == null) return null;
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return null;
+    // The selection boundary is a flat chapter offset; clamp it to this page
+    // and rebase to the page-relative offset the RichText actually renders.
+    final chapterLocal = selection - widget.chapterStartFlat;
+    final clamped = chapterLocal.clamp(page.start, page.end).toInt();
+    final paragraphOffset = (clamped - page.start)
+        .clamp(0, page.end - page.start)
+        .toInt();
+    return paragraph.getOffsetForCaret(
+      TextPosition(offset: paragraphOffset),
+      Rect.zero,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3149,17 +3246,29 @@ class _PageContentState extends State<_PageContent> {
                 const SizedBox(height: 16),
               ],
               Expanded(
-                child: RichText(
-                  key: _bodyKey,
-                  textAlign: widget.textAlign,
-                  text: TextSpan(
-                    style: widget.style,
-                    children: _buildPageText(
-                      context,
-                      MediaQuery.sizeOf(context).width -
-                          widget.horizontalMargin * 2,
+                // `clipBehavior: none` lets a handle at the first/last line
+                // extend past the body's own box.
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.topLeft,
+                  children: [
+                    RichText(
+                      key: _bodyKey,
+                      textAlign: widget.textAlign,
+                      text: TextSpan(
+                        style: widget.style,
+                        children: _buildPageText(
+                          context,
+                          MediaQuery.sizeOf(context).width -
+                              widget.horizontalMargin * 2,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (widget.showStartHandle && _startHandleCaret != null)
+                      _buildHandle(isStart: true, caret: _startHandleCaret!),
+                    if (widget.showEndHandle && _endHandleCaret != null)
+                      _buildHandle(isStart: false, caret: _endHandleCaret!),
+                  ],
                 ),
               ),
             ],
@@ -3217,6 +3326,47 @@ class _PageContentState extends State<_PageContent> {
     // Collapsed selection: the caret rect's top-left is the insertion point.
     final caret = paragraph.getOffsetForCaret(position, Rect.zero);
     return paragraph.localToGlobal(caret);
+  }
+
+  /// A draggable selection handle: a small accent dot inside a larger
+  /// transparent hit area. The start handle sits above its caret, the end
+  /// handle below.
+  Widget _buildHandle({required bool isStart, required Offset caret}) {
+    const double hit = 44;
+    const double dot = 12;
+    return Positioned(
+      left: caret.dx - hit / 2,
+      top: isStart ? caret.dy - hit + 4 : caret.dy - 4,
+      width: hit,
+      height: hit,
+      child: GestureDetector(
+        key: Key(isStart ? 'selectionHandleStart' : 'selectionHandleEnd'),
+        behavior: HitTestBehavior.opaque,
+        // Swallow the tap so it never reaches the page triage below.
+        onTap: () {},
+        onPanUpdate: (details) => _dragHandle(isStart, details.globalPosition),
+        onPanEnd: (details) => widget.onSelectionSettled?.call(
+          _caretGlobalAt(details.globalPosition),
+        ),
+        child: Center(
+          child: Container(
+            width: dot,
+            height: dot,
+            decoration: BoxDecoration(
+              color: widget.theme.accent,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Moves a selection boundary to the word under a handle drag.
+  void _dragHandle(bool isStart, Offset global) {
+    final bounds = _wordAt(global);
+    if (bounds == null) return;
+    widget.onHandleDragged?.call(isStart, bounds.start, bounds.end);
   }
 
   /// Builds the page's TextSpan, merging style runs (emphasis, quotes) with

@@ -118,7 +118,22 @@ void main() {
     await tester.pump();
   }
 
-  Future<ReaderScreenState> mountReader(WidgetTester tester) async {
+  /// Copies a committed fixture into the temp dir and returns a [Book] backed
+  /// by it, so a test can mount a reader on a different fixture than [setUp]'s.
+  Future<Book> makeBook(String fixtureFile, String title) async {
+    final dest = '${tmp.path}/$title.epub';
+    await File(dest).writeAsBytes(File(fixtureFile).readAsBytesSync());
+    return Book(
+      id: 'b-$title',
+      title: title,
+      author: 'A. Author',
+      path: dest,
+      format: BookFormat.epub,
+      addedAt: 1000,
+    );
+  }
+
+  Future<ReaderScreenState> mountReaderFor(WidgetTester tester, Book b) async {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(412, 915);
     addTearDown(tester.view.reset);
@@ -128,7 +143,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderScreen(book: book, library: library),
+        home: ReaderScreen(book: b, library: library),
       ),
     );
     final state = readerState(tester);
@@ -146,6 +161,9 @@ void main() {
     expect(state.debugAllReady, isTrue);
     return state;
   }
+
+  Future<ReaderScreenState> mountReader(WidgetTester tester) =>
+      mountReaderFor(tester, book);
 
   testWidgets('long-press on a chapter first page selects the pressed word', (
     tester,
@@ -207,5 +225,62 @@ void main() {
     await tester.tapAt(Offset(size.width * 0.5, size.height * 0.5));
     await tester.pumpAndSettle();
     expect(state.debugSelection.isActive, isFalse); // centre cleared
+  });
+
+  group('selection handles and cross-page continuation', () {
+    late Book multi;
+
+    setUp(() async {
+      multi = await makeBook('test/fixtures/epub/multipage.epub', 'Multi');
+    });
+
+    testWidgets('drag to the page bottom clamps to the last word on this page', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, multi);
+      final g = await tester.startGesture(globalForWord(tester, 'w0'));
+      await tester.pump(const Duration(milliseconds: 600));
+      final body = bodyParagraph(tester, 'w0');
+      final pageText = body.text.toPlainText().trim();
+      await g.moveTo(
+        // The right edge of the last line, so the drag reaches this page's
+        // final word: a middle-of-line x would land on the second-to-last word.
+        body.localToGlobal(Offset(body.size.width - 2, body.size.height - 2)),
+      );
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(state.debugSelectionText, pageText); // whole page, not past it
+      expect(find.byKey(const Key('selectionHandleEnd')), findsNothing);
+    });
+
+    testWidgets('end handle on the next page extends across the boundary', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, multi);
+      final g = await tester.startGesture(globalForWord(tester, 'w0'));
+      await tester.pump(const Duration(milliseconds: 600));
+      final body = bodyParagraph(tester, 'w0');
+      await g.moveTo(
+        // The right edge of the last line, so the drag reaches this page's
+        // final word: a middle-of-line x would land on the second-to-last word.
+        body.localToGlobal(Offset(body.size.width - 2, body.size.height - 2)),
+      );
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+      final before = state.debugSelectionText!;
+      final size = tester.getSize(find.byType(ReaderScreen));
+      await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('selectionHandleEnd')), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('selectionHandleEnd')),
+        const Offset(0, 120),
+      );
+      await tester.pumpAndSettle();
+      expect(state.debugSelectionText!.length, greaterThan(before.length));
+      expect(state.debugSelectionText!.startsWith(before), isTrue);
+    });
   });
 }
