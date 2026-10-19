@@ -31,6 +31,19 @@ void main() {
     expect(wordBoundsAt(3, body, 0), isNull); // the space after "The"
   });
 
+  test(
+    'wordBoundsAt returns null when the press is on a word-edge apostrophe',
+    () {
+      expect(wordBoundsAt(0, "'tis", 0), isNull); // leading apostrophe
+      expect(wordBoundsAt(4, 'word’ next', 0), isNull); // trailing apostrophe
+    },
+  );
+
+  test('wordBoundsAt treats astral letters as word characters', () {
+    const body = 'a\u{20000}b';
+    expect(wordBoundsAt(0, body, 0), (start: 0, end: 4));
+  });
+
   test('wordBoundsAt clamps to the page window', () {
     const body = 'one two three';
     // Window covering only "two" (flat 4..7): a press at 4 must not return "one".

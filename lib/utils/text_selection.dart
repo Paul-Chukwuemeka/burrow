@@ -81,46 +81,108 @@ int chapterForOffset(int flat, List<int> charsBefore) {
   final length = chapterBody.length;
   if (length == 0) return null;
 
-  // Window in chapter-local coordinates.
+  // Window in chapter-local code-unit coordinates.
   var lo = (loFlat ?? chapterStartFlat) - chapterStartFlat;
   var hi = (hiFlat ?? chapterStartFlat + length) - chapterStartFlat;
   if (lo < 0) lo = 0;
   if (hi > length) hi = length;
   if (lo >= hi) return null;
 
-  var i = flat - chapterStartFlat;
-  if (i < lo) i = lo;
-  if (i >= hi) i = hi - 1;
+  // Scan by code points, not UTF-16 code units: astral-plane letters must behave
+  // like any other word character. [runeStarts] maps rune index -> code-unit
+  // offset (with a sentinel at the end), so returned offsets and substring
+  // indices stay in code units.
+  final runeStarts = <int>[];
+  final runes = <int>[];
+  var codeUnit = 0;
+  for (final rune in chapterBody.runes) {
+    runeStarts.add(codeUnit);
+    runes.add(rune);
+    codeUnit += rune > 0xFFFF ? 2 : 1;
+  }
+  runeStarts.add(codeUnit);
+
+  final runeLo = _lowerBoundRuneStart(runeStarts, lo);
+  final runeHi = _lowerBoundRuneStart(runeStarts, hi);
+  if (runeLo >= runeHi) return null;
+
+  var press = flat - chapterStartFlat;
+  if (press < lo) press = lo;
+  if (press >= hi) press = hi - 1;
+
+  var i = _runeIndexAtOrBefore(runeStarts, press);
+  if (i < runeLo) i = runeLo;
+  if (i >= runeHi) i = runeHi - 1;
 
   // A press on whitespace, punctuation, or an image selects nothing: the
-  // selection only starts once the finger is over a word character.
-  if (!isWordChar(chapterBody.codeUnitAt(i))) return null;
+  // selection only starts once the finger is over an in-word character.
+  if (!isWordChar(runes[i])) return null;
 
   var start = i;
   var end = i;
-  while (start > lo && isWordChar(chapterBody.codeUnitAt(start - 1))) {
+  while (start > runeLo && isWordChar(runes[start - 1])) {
     start--;
   }
-  while (end < hi && isWordChar(chapterBody.codeUnitAt(end))) {
+  while (end < runeHi && isWordChar(runes[end])) {
     end++;
   }
 
   // Apostrophes are word characters, but only in-word: trim them from the edges.
-  while (start < end && _isApostrophe(chapterBody.codeUnitAt(start))) {
+  while (start < end && _isApostrophe(runes[start])) {
     start++;
   }
-  while (end > start && _isApostrophe(chapterBody.codeUnitAt(end - 1))) {
+  while (end > start && _isApostrophe(runes[end - 1])) {
     end--;
   }
   if (start >= end) return null;
 
-  final slice = chapterBody.substring(start, end);
-  if (!_isLetterOrDigit(slice.runes.first) ||
-      !_isLetterOrDigit(slice.runes.last)) {
+  // The press itself must survive trimming: a finger on a word-edge apostrophe
+  // selects nothing.
+  if (i < start || i >= end) return null;
+
+  // An edge rune must be a letter or digit (e.g. a word of only apostrophes).
+  if (!_isLetterOrDigit(runes[start]) || !_isLetterOrDigit(runes[end - 1])) {
     return null;
   }
 
-  return (start: start + chapterStartFlat, end: end + chapterStartFlat);
+  return (
+    start: runeStarts[start] + chapterStartFlat,
+    end: runeStarts[end] + chapterStartFlat,
+  );
+}
+
+/// First rune index whose code-unit offset is `>= [codeUnit]`.
+int _lowerBoundRuneStart(List<int> runeStarts, int codeUnit) {
+  var low = 0;
+  var high = runeStarts.length;
+  while (low < high) {
+    final mid = (low + high) >> 1;
+    if (runeStarts[mid] < codeUnit) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
+}
+
+/// Index of the rune containing [codeUnit] (the last rune starting at or before).
+int _runeIndexAtOrBefore(List<int> runeStarts, int codeUnit) {
+  final runeCount = runeStarts.length - 1;
+  if (runeCount <= 0) return 0;
+  var low = 0;
+  var high = runeCount - 1;
+  var result = 0;
+  while (low <= high) {
+    final mid = (low + high) >> 1;
+    if (runeStarts[mid] <= codeUnit) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return result;
 }
 
 /// The plain-text of the flat range `[start, end)`, joining chapters with `\n`.
