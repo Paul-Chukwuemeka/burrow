@@ -358,6 +358,10 @@ class ReaderScreenState extends State<ReaderScreen>
       }
       _totalChars = cumulative;
       if (!mounted) return;
+      // A reload replaces the body that any live selection points into; drop
+      // it before the new document is installed. Guarding on isActive keeps
+      // the initState kick-off (which has no selection) off the setState path.
+      if (_selection.isActive) _clearSelection();
       // Pagination is kicked off by the reflowable LayoutBuilder, which owns
       // the viewport. Deriving it from a second place risks a signature that
       // disagrees with the layout and repaginating forever.
@@ -1322,6 +1326,7 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   void _jumpToResult(int index) {
+    _clearSelection();
     if (index < 0 || index >= _searchCtrl.searchResults.length) return;
     _searchCtrl.jumpToResult(index);
     if (!_isPdf) {
@@ -2316,7 +2321,7 @@ class ReaderScreenState extends State<ReaderScreen>
                   showStartHandle: showStart,
                   showEndHandle: showEnd,
                   onTapLink: (target) {
-                    _dismissSelectionToolbar();
+                    _clearSelection();
                     _jumpToChapter(target);
                   },
                   page: page,
@@ -2452,6 +2457,7 @@ class ReaderScreenState extends State<ReaderScreen>
 
   /// Jump directly to the start of [chapterIndex].
   void _jumpToChapter(int chapterIndex) {
+    _clearSelection();
     if (_doc == null || _pageController == null) return;
     _ensureChapterReady(chapterIndex);
     final flat = _flatIndexForChapter(chapterIndex);

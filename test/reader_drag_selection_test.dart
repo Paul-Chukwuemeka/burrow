@@ -122,7 +122,9 @@ void main() {
   /// by it, so a test can mount a reader on a different fixture than [setUp]'s.
   Future<Book> makeBook(String fixtureFile, String title) async {
     final dest = '${tmp.path}/$title.epub';
-    await File(dest).writeAsBytes(File(fixtureFile).readAsBytesSync());
+    // Sync write: a real async file write never completes inside the
+    // FakeAsync zone that testWidgets runs the test body in.
+    File(dest).writeAsBytesSync(File(fixtureFile).readAsBytesSync());
     return Book(
       id: 'b-$title',
       title: title,
@@ -312,5 +314,36 @@ void main() {
       await tester.pumpAndSettle();
       expect(state.debugSelection.start, greaterThan(startBefore));
     });
+  });
+
+  testWidgets('tapping an in-book link jumps and clears the selection', (
+    tester,
+  ) async {
+    final state = await mountReaderFor(
+      tester,
+      await makeBook('test/fixtures/epub/inbook-links.epub', 'Link Book'),
+    );
+    // The contents page's "Footnote" link targets a mid-chapter anchor, so the
+    // jump lands on a page whose body reads "Third body ... at the foot.".
+    await tester.longPressAt(globalForWord(tester, 'Footnote'));
+    await tester.pumpAndSettle();
+    expect(state.debugSelection.isActive, isTrue);
+    expect(find.text('Define'), findsOneWidget);
+
+    await tester.tapAt(globalForWord(tester, 'Footnote'));
+    await tester.pumpAndSettle();
+    expect(state.debugSelection.isActive, isFalse);
+    expect(find.text('Define'), findsNothing);
+
+    // The tap must have followed the link, not merely cleared the selection
+    // (a centre-zone clear would satisfy the assertion above).
+    var jumped = visibleText(tester).contains('Third body') ||
+        visibleText(tester).contains('at the foot.');
+    for (var i = 0; i < 400 && !jumped; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      jumped = visibleText(tester).contains('Third body') ||
+          visibleText(tester).contains('at the foot.');
+    }
+    expect(jumped, isTrue, reason: 'the link tap must jump to the footnote target');
   });
 }
