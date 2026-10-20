@@ -125,5 +125,12 @@ void main() {
       );
       expect(ReaderSettings.fromJson({}).scanMode, ScanMode.device);
     });
+
+    test('scanFolder defaults to empty and round-trips', () {
+      expect(ReaderSettings().scanFolder, '');
+      final s = ReaderSettings()..scanFolder = '/storage/books';
+      final r = ReaderSettings.fromJson(s.toJson());
+      expect(r.scanFolder, '/storage/books');
+    });
   });
 }

@@ -201,6 +201,7 @@ class ReaderSettings {
     this.overrideCssTextAlign = false,
     this.overrideCssMargin = false,
     this.scanMode = ScanMode.device,
+    this.scanFolder = '',
   });
 
   double fontSize;
@@ -243,6 +244,9 @@ class ReaderSettings {
   /// Preferred scan type for the library's scan actions.
   ScanMode scanMode;
 
+  /// Remembered folder for [ScanMode.folder]; empty until the user picks one.
+  String scanFolder;
+
   ReaderTheme get colors => ReaderTheme.byMode(readerTheme);
 
   TextStyle textStyle(BuildContext context) {
@@ -280,6 +284,7 @@ class ReaderSettings {
     'overrideCssTextAlign': overrideCssTextAlign,
     'overrideCssMargin': overrideCssMargin,
     'scanMode': scanMode.name,
+    'scanFolder': scanFolder,
   };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
@@ -363,6 +368,7 @@ class ReaderSettings {
       (m) => m.name == json['scanMode'],
       orElse: () => ScanMode.device,
     ),
+    scanFolder: json['scanFolder'] as String? ?? '',
   );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.
