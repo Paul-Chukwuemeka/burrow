@@ -88,101 +88,131 @@ int chapterForOffset(int flat, List<int> charsBefore) {
   if (hi > length) hi = length;
   if (lo >= hi) return null;
 
-  // Scan by code points, not UTF-16 code units: astral-plane letters must behave
-  // like any other word character. [runeStarts] maps rune index -> code-unit
-  // offset (with a sentinel at the end), so returned offsets and substring
-  // indices stay in code units.
-  final runeStarts = <int>[];
-  final runes = <int>[];
-  var codeUnit = 0;
-  for (final rune in chapterBody.runes) {
-    runeStarts.add(codeUnit);
-    runes.add(rune);
-    codeUnit += rune > 0xFFFF ? 2 : 1;
+  // Align the window to rune boundaries: an edge landing on the low half of a
+  // surrogate pair would otherwise expose half a rune. This mirrors the old
+  // rune-index window, which started at the first rune beginning at or after
+  // `lo` and stopped before any rune beginning at or after `hi`.
+  if (lo > 0 && lo < length && _isLowSurrogate(chapterBody.codeUnitAt(lo))) {
+    lo++;
   }
-  runeStarts.add(codeUnit);
-
-  final runeLo = _lowerBoundRuneStart(runeStarts, lo);
-  final runeHi = _lowerBoundRuneStart(runeStarts, hi);
-  if (runeLo >= runeHi) return null;
+  if (hi > lo && hi < length && _isLowSurrogate(chapterBody.codeUnitAt(hi))) {
+    hi--;
+  }
+  if (lo >= hi) return null;
 
   var press = flat - chapterStartFlat;
   if (press < lo) press = lo;
   if (press >= hi) press = hi - 1;
 
-  var i = _runeIndexAtOrBefore(runeStarts, press);
-  if (i < runeLo) i = runeLo;
-  if (i >= runeHi) i = runeHi - 1;
+  // Offsets are code units, so a press that lands on the low half of a
+  // surrogate pair steps back to the rune's first unit. The scan itself is
+  // bounded to the window: no whole-chapter rune arrays are allocated.
+  if (press > lo &&
+      _isLowSurrogate(chapterBody.codeUnitAt(press)) &&
+      _isHighSurrogate(chapterBody.codeUnitAt(press - 1))) {
+    press--;
+  }
 
   // A press on whitespace, punctuation, or an image selects nothing: the
   // selection only starts once the finger is over an in-word character.
-  if (!isWordChar(runes[i])) return null;
+  if (!isWordChar(_runeAt(chapterBody, press))) return null;
 
-  var start = i;
-  var end = i;
-  while (start > runeLo && isWordChar(runes[start - 1])) {
-    start--;
+  var start = press;
+  while (start > lo) {
+    final prev = _runeStartBefore(chapterBody, start);
+    if (prev < lo || !isWordChar(_runeAt(chapterBody, prev))) break;
+    start = prev;
   }
-  while (end < runeHi && isWordChar(runes[end])) {
-    end++;
+
+  var end = press + _runeLengthAt(chapterBody, press);
+  while (end < hi) {
+    if (!isWordChar(_runeAt(chapterBody, end))) break;
+    end += _runeLengthAt(chapterBody, end);
   }
 
   // Apostrophes are word characters, but only in-word: trim them from the edges.
-  while (start < end && _isApostrophe(runes[start])) {
-    start++;
+  while (start < end && _isApostrophe(_runeAt(chapterBody, start))) {
+    start += _runeLengthAt(chapterBody, start);
   }
-  while (end > start && _isApostrophe(runes[end - 1])) {
-    end--;
+  while (end > start &&
+      _isApostrophe(_runeAt(chapterBody, _runeStartBefore(chapterBody, end)))) {
+    end = _runeStartBefore(chapterBody, end);
   }
   if (start >= end) return null;
 
   // The press itself must survive trimming: a finger on a word-edge apostrophe
   // selects nothing.
-  if (i < start || i >= end) return null;
+  if (press < start || press >= end) return null;
 
   // An edge rune must be a letter or digit (e.g. a word of only apostrophes).
-  if (!_isLetterOrDigit(runes[start]) || !_isLetterOrDigit(runes[end - 1])) {
+  if (!_isLetterOrDigit(_runeAt(chapterBody, start)) ||
+      !_isLetterOrDigit(
+        _runeAt(chapterBody, _runeStartBefore(chapterBody, end)),
+      )) {
     return null;
   }
 
-  return (
-    start: runeStarts[start] + chapterStartFlat,
-    end: runeStarts[end] + chapterStartFlat,
-  );
+  return (start: start + chapterStartFlat, end: end + chapterStartFlat);
 }
 
-/// First rune index whose code-unit offset is `>= [codeUnit]`.
-int _lowerBoundRuneStart(List<int> runeStarts, int codeUnit) {
-  var low = 0;
-  var high = runeStarts.length;
-  while (low < high) {
-    final mid = (low + high) >> 1;
-    if (runeStarts[mid] < codeUnit) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
+
+/// The number of code units occupied by the rune starting at [offset].
+int _runeLengthAt(String text, int offset) {
+  final unit = text.codeUnitAt(offset);
+  if (_isHighSurrogate(unit) &&
+      offset + 1 < text.length &&
+      _isLowSurrogate(text.codeUnitAt(offset + 1))) {
+    return 2;
   }
-  return low;
+  return 1;
 }
 
-/// Index of the rune containing [codeUnit] (the last rune starting at or before).
-int _runeIndexAtOrBefore(List<int> runeStarts, int codeUnit) {
-  final runeCount = runeStarts.length - 1;
-  if (runeCount <= 0) return 0;
-  var low = 0;
-  var high = runeCount - 1;
-  var result = 0;
-  while (low <= high) {
-    final mid = (low + high) >> 1;
-    if (runeStarts[mid] <= codeUnit) {
-      result = mid;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
+/// The rune starting at the code-unit [offset].
+int _runeAt(String text, int offset) {
+  final unit = text.codeUnitAt(offset);
+  if (_isHighSurrogate(unit) &&
+      offset + 1 < text.length &&
+      _isLowSurrogate(text.codeUnitAt(offset + 1))) {
+    final low = text.codeUnitAt(offset + 1);
+    return 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
   }
-  return result;
+  return unit;
+}
+
+/// The code-unit offset where the rune ending at [offset] (exclusive) begins.
+int _runeStartBefore(String text, int offset) {
+  var index = offset - 1;
+  if (_isLowSurrogate(text.codeUnitAt(index)) &&
+      index > 0 &&
+      _isHighSurrogate(text.codeUnitAt(index - 1))) {
+    index--;
+  }
+  return index;
+}
+
+/// Whether the selection's end handle should render on the current page.
+///
+/// Handles render only on the reader's current flat page. When the selection's
+/// end lies on the previous page — including the whitespace the paginator drops
+/// between pages and trailing punctuation the word scan excludes — the end
+/// handle waits at the top of the current (next) page.
+bool showsSelectionEndHandle({
+  required bool isCurrentPage,
+  required int? selectionEnd,
+  required int pageFlatStart,
+  required int pageFlatEnd,
+  required int? previousPageFlatStart,
+  required bool isLastPage,
+}) {
+  if (!isCurrentPage || selectionEnd == null) return false;
+  if (selectionEnd >= pageFlatStart) {
+    return selectionEnd < pageFlatEnd ||
+        (selectionEnd == pageFlatEnd && isLastPage);
+  }
+  return previousPageFlatStart != null && selectionEnd >= previousPageFlatStart;
 }
 
 /// The plain-text of the flat range `[start, end)`, joining chapters with `\n`.
@@ -207,11 +237,13 @@ String selectionText({
     final lo = start > chapterStart ? start : chapterStart;
     final hi = end < chapterEnd ? end : chapterEnd;
     if (hi <= lo) continue;
-    parts.add(
-      body
-          .substring(lo - chapterStart, hi - chapterStart)
-          .replaceAll(_imagePlaceholder, ''),
-    );
+    final piece = body
+        .substring(lo - chapterStart, hi - chapterStart)
+        .replaceAll(_imagePlaceholder, '');
+    // An image-only slice would otherwise contribute an empty part and split
+    // the joined text with a blank line.
+    if (piece.isEmpty) continue;
+    parts.add(piece);
   }
   return parts.join('\n');
 }

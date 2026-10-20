@@ -212,6 +212,33 @@ void main() {
     expect(state.debugSelection.isActive, isFalse);
   });
 
+  testWidgets('a long-press that hits no word clears the selection', (
+    tester,
+  ) async {
+    final state = await mountReader(tester);
+    await tester.longPressAt(globalForWord(tester, 'first'));
+    await tester.pumpAndSettle();
+    expect(state.debugSelectionText, 'first');
+    expect(find.text('Define'), findsOneWidget);
+
+    // A fresh long-press on the period starts no selection; it must not leave
+    // the previous word selected (and its toolbar on screen).
+    await tester.longPressAt(globalForWord(tester, '.'));
+    await tester.pumpAndSettle();
+    expect(state.debugSelection.isActive, isFalse);
+    expect(find.text('Define'), findsNothing);
+  });
+
+  testWidgets('long-press outside the body selects nothing', (tester) async {
+    final state = await mountReader(tester);
+    // 15px above the body paragraph: the chapter-title band, not reading text.
+    await tester.longPressAt(
+      bodyParagraph(tester, 'first').localToGlobal(const Offset(20, -15)),
+    );
+    await tester.pumpAndSettle();
+    expect(state.debugSelection.isActive, isFalse);
+  });
+
   testWidgets('centre tap clears; side tap flips and keeps', (tester) async {
     final state = await mountReader(tester);
     await tester.longPressAt(globalForWord(tester, 'first'));
@@ -296,7 +323,9 @@ void main() {
       // of the start handle: the two 44px boxes overlap on a one-word
       // selection, and the end handle (the later Stack child) would win.
       final body = bodyParagraph(tester, 'w0');
-      final g = await tester.startGesture(body.localToGlobal(const Offset(0, 6)));
+      final g = await tester.startGesture(
+        body.localToGlobal(const Offset(0, 6)),
+      );
       await tester.pump(const Duration(milliseconds: 600));
       await g.moveTo(body.localToGlobal(Offset(body.size.width / 2, 6)));
       await tester.pump();
@@ -308,11 +337,100 @@ void main() {
       final startHandle = find.byKey(const Key('selectionHandleStart'));
       expect(startHandle, findsOneWidget);
 
-      // If the handle were outside the Stack this drag would miss it and the
-      // selection start would not move.
-      await tester.drag(startHandle, const Offset(80, 0));
+      // Drag the *painted dot*, not the box centre: on a first-line start
+      // handle the box clamps to the top of the Stack while the dot is
+      // translated upward. The dot must be clamped back inside the hit box or
+      // this gesture falls through and the selection start does not move.
+      final dot = find.descendant(
+        of: startHandle,
+        matching: find.byType(Container),
+      );
+      expect(dot, findsOneWidget);
+      await tester.drag(dot, const Offset(120, 0));
       await tester.pumpAndSettle();
       expect(state.debugSelection.start, greaterThan(startBefore));
+    });
+
+    testWidgets('dragging the start handle past the end keeps whole words', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, multi);
+      final body = bodyParagraph(tester, 'w0');
+      final tokens = body.text.toPlainText().trim().split(RegExp(r'\s+'));
+
+      // Extend a few lines down: the toolbar anchors at the lift caret (the
+      // end), so the start handle on line 1 stays clear of it and is the
+      // widget that receives the drag below.
+      final g = await tester.startGesture(globalForWord(tester, tokens.first));
+      await tester.pump(const Duration(milliseconds: 600));
+      await g.moveTo(globalForWord(tester, tokens[20]));
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+      final before = state.debugSelectionText ?? '';
+      expect(before, isNotEmpty);
+      expect(before.split(' ').length, greaterThan(1));
+
+      final startHandle = find.byKey(const Key('selectionHandleStart'));
+      expect(startHandle, findsOneWidget);
+
+      // Cross the start handle over the end. Word snapping must refuse the
+      // crossed position instead of clamping to `end - 1` (half a word), so
+      // the start can advance to a word boundary but never leave a partial
+      // word behind.
+      await tester.drag(
+        startHandle,
+        globalForWord(tester, tokens[21]) - tester.getCenter(startHandle),
+      );
+      await tester.pumpAndSettle();
+      final after = state.debugSelectionText!;
+      expect(before.endsWith(after), isTrue);
+      expect(
+        after.split(' ').every((word) => RegExp(r'^w\d+$').hasMatch(word)),
+        isTrue,
+        reason: 'crossing must not leave a partial word: $after',
+      );
+    });
+  });
+
+  group('page ending in punctuation keeps the cross-page end handle', () {
+    late Book punct;
+
+    setUp(() async {
+      punct = await makeBook(
+        'test/fixtures/epub/multipage-punct.epub',
+        'Multi Punct',
+      );
+    });
+
+    testWidgets('drag to the last word then flip still shows the end handle', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, punct);
+      final body = bodyParagraph(tester, 'w0');
+      final pageText = body.text.toPlainText().trim();
+      final lastToken = pageText.split(RegExp(r'\s+')).last;
+      final lastWord = lastToken.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+
+      final g = await tester.startGesture(globalForWord(tester, 'w0'));
+      await tester.pump(const Duration(milliseconds: 600));
+      await g.moveTo(globalForWord(tester, lastWord));
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+
+      // The word scan stops before the page's final period, so the selection
+      // ends before `page.end` — the case the old equality bridge missed.
+      final selected = state.debugSelectionText!;
+      expect(pageText.startsWith(selected), isTrue);
+      expect(selected.endsWith('.'), isFalse);
+      // On this page the handle sits at the selection end, before the period.
+      expect(find.byKey(const Key('selectionHandleEnd')), findsOneWidget);
+
+      final size = tester.getSize(find.byType(ReaderScreen));
+      await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('selectionHandleEnd')), findsOneWidget);
     });
   });
 
@@ -323,8 +441,9 @@ void main() {
       tester,
       await makeBook('test/fixtures/epub/inbook-links.epub', 'Link Book'),
     );
-    // The contents page's "Footnote" link targets a mid-chapter anchor, so the
-    // jump lands on a page whose body reads "Third body ... at the foot.".
+    // The contents page's "Footnote" link jumps to a later chapter, so the
+    // selection must clear and the reader must land on a page whose body reads
+    // "Third body ... at the foot.".
     await tester.longPressAt(globalForWord(tester, 'Footnote'));
     await tester.pumpAndSettle();
     expect(state.debugSelection.isActive, isTrue);
@@ -337,13 +456,19 @@ void main() {
 
     // The tap must have followed the link, not merely cleared the selection
     // (a centre-zone clear would satisfy the assertion above).
-    var jumped = visibleText(tester).contains('Third body') ||
+    var jumped =
+        visibleText(tester).contains('Third body') ||
         visibleText(tester).contains('at the foot.');
     for (var i = 0; i < 400 && !jumped; i++) {
       await tester.pump(const Duration(milliseconds: 20));
-      jumped = visibleText(tester).contains('Third body') ||
+      jumped =
+          visibleText(tester).contains('Third body') ||
           visibleText(tester).contains('at the foot.');
     }
-    expect(jumped, isTrue, reason: 'the link tap must jump to the footnote target');
+    expect(
+      jumped,
+      isTrue,
+      reason: 'the link tap must jump to the footnote target',
+    );
   });
 }

@@ -116,7 +116,12 @@ class SelectionToolbarOverlay {
       },
     );
 
-    if (!_context.mounted) return;
+    if (!_context.mounted) {
+      // The entry was never inserted; forget it so a later dismiss() cannot
+      // try to remove an uninserted overlay.
+      _toolbarEntry = null;
+      return;
+    }
     Overlay.of(_context).insert(_toolbarEntry!);
   }
 

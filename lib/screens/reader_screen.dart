@@ -2223,6 +2223,10 @@ class ReaderScreenState extends State<ReaderScreen>
                   ? const NeverScrollableScrollPhysics()
                   : null,
               onPageChanged: (i) {
+                // Slider and volume-key flips also land here; the tap paths
+                // dismiss the toolbar explicitly, so do it for every page
+                // change. The selection itself persists.
+                _dismissSelectionToolbar();
                 final programmatic = _programmaticTarget == i;
                 _programmaticTarget = null;
                 setState(() => _flatPage = i);
@@ -2279,28 +2283,28 @@ class ReaderScreenState extends State<ReaderScreen>
                     selStart >= pageFlatStart &&
                     selStart < pageFlatEnd;
                 // The paginator drops the whitespace between pages (it belongs
-                // to no page), so a selection ending on the previous page's
-                // last word sits one or more offsets before this page's start.
-                // Attach the end handle to this page in that case, or a
-                // cross-page selection would have no end handle at all.
-                int? prevPageFlatEnd;
+                // to no page) and word snapping stops before trailing
+                // punctuation, so a selection ending on the previous page can
+                // sit several offsets before this page's start. Anchor the
+                // bridge at that page's start so any such end still gets a
+                // handle at the top of this page.
+                int? previousPageFlatStart;
                 if (i > 0) {
                   final prev = _refAt(i - 1);
                   if (prev != null) {
-                    prevPageFlatEnd =
+                    previousPageFlatStart =
                         _charsBefore[prev.$1] +
-                        _paginators[prev.$1].pages[prev.$2].end;
+                        _paginators[prev.$1].pages[prev.$2].start;
                   }
                 }
-                final showEnd =
-                    i == _flatPage &&
-                    selEnd != null &&
-                    ((selEnd >= pageFlatStart &&
-                            (selEnd == pageFlatStart ||
-                                selEnd < pageFlatEnd ||
-                                (selEnd == pageFlatEnd &&
-                                    i == itemCount - 1))) ||
-                        selEnd == prevPageFlatEnd);
+                final showEnd = showsSelectionEndHandle(
+                  isCurrentPage: i == _flatPage,
+                  selectionEnd: selEnd,
+                  pageFlatStart: pageFlatStart,
+                  pageFlatEnd: pageFlatEnd,
+                  previousPageFlatStart: previousPageFlatStart,
+                  isLastPage: i == itemCount - 1,
+                );
                 return _PageContent(
                   chapterTitle: _doc!.chapters[chapter].title,
                   text: _doc!.chapters[chapter].body,
@@ -2314,6 +2318,7 @@ class ReaderScreenState extends State<ReaderScreen>
                       _selection.beginWord(start, end),
                   onWordDragged: (start, end) =>
                       _selection.dragToWord(start, end),
+                  onSelectionMissed: _clearSelection,
                   onSelectionSettled: _showSelectionToolbarAt,
                   onHandleDragged: (isStart, s, e) => isStart
                       ? _selection.setStart(s)
@@ -3078,6 +3083,7 @@ class _PageContent extends StatefulWidget {
     this.selectionEnd,
     this.onWordSelected,
     this.onWordDragged,
+    this.onSelectionMissed,
     this.onHandleDragged,
     this.onSelectionSettled,
     this.showStartHandle = false,
@@ -3108,6 +3114,10 @@ class _PageContent extends StatefulWidget {
   final double pageMaxHeight;
   final void Function(int wordStart, int wordEnd)? onWordSelected;
   final void Function(int wordStart, int wordEnd)? onWordDragged;
+
+  /// Called when a long press lands on no word (punctuation, whitespace, an
+  /// image), so a new press that selects nothing clears the old selection.
+  final VoidCallback? onSelectionMissed;
   final void Function(bool isStart, int wordStart, int wordEnd)?
   onHandleDragged;
   final void Function(Offset globalPos)? onSelectionSettled;
@@ -3217,7 +3227,12 @@ class _PageContentState extends State<_PageContent> {
       },
       onLongPressStart: (details) {
         final bounds = _wordAt(details.globalPosition);
-        if (bounds == null) return;
+        if (bounds == null) {
+          // A fresh long-press that hits no word starts no selection; clear any
+          // previous one so an old highlight cannot linger.
+          widget.onSelectionMissed?.call();
+          return;
+        }
         widget.onWordSelected?.call(bounds.start, bounds.end);
       },
       onLongPressMoveUpdate: (details) {
@@ -3315,6 +3330,9 @@ class _PageContentState extends State<_PageContent> {
     final paragraph = _bodyKey.currentContext?.findRenderObject();
     if (paragraph is! RenderParagraph) return null;
     final local = paragraph.globalToLocal(global);
+    // Reject presses outside the rendered body (chapter-title band, blank
+    // space below a short page) rather than selecting the nearest line's word.
+    if (!paragraph.size.contains(local)) return null;
     final offset = paragraph.getPositionForOffset(local).offset;
     final pageOffset = (page.start + offset).clamp(page.start, page.end - 1);
     return widget.chapterStartFlat + pageOffset;
@@ -3369,9 +3387,16 @@ class _PageContentState extends State<_PageContent> {
     final maxTop = math.max(0.0, stackSize.height - hit);
     final left = desiredLeft.clamp(0.0, maxLeft);
     final top = desiredTop.clamp(0.0, maxTop);
-    // Keep the dot ~18px above (start) / below (end) the caret, as before,
-    // now expressed as a translation from the clamped box's centre.
-    final dotCenterY = isStart ? caret.dy - 18 : caret.dy + 18;
+    // Keep the dot ~18px above (start) / below (end) the caret, now expressed
+    // as a translation from the clamped box's centre. Clamp both axes so the
+    // painted dot stays inside its hit box: a first-line start handle's box
+    // clamps to `top = 0`, and an unclamped dot at `caret.dy - 18` would hang
+    // above the box where hit-testing cannot reach it.
+    final dotCenterX = caret.dx.clamp(left + dot / 2, left + hit - dot / 2);
+    final dotCenterY = (isStart ? caret.dy - 18 : caret.dy + 18).clamp(
+      top + dot / 2,
+      top + hit - dot / 2,
+    );
     return Positioned(
       left: left,
       top: top,
@@ -3389,7 +3414,7 @@ class _PageContentState extends State<_PageContent> {
         child: Center(
           child: Transform.translate(
             offset: Offset(
-              caret.dx - (left + hit / 2),
+              dotCenterX - (left + hit / 2),
               dotCenterY - (top + hit / 2),
             ),
             child: Container(
@@ -3407,9 +3432,19 @@ class _PageContentState extends State<_PageContent> {
   }
 
   /// Moves a selection boundary to the word under a handle drag.
+  ///
+  /// A handle may not cross the opposite boundary: the model's clamps would
+  /// otherwise leave a partial word (`end - 1` / `start + 1`). The handle
+  /// stops at the opposite end; dragging onto that end's word is still valid
+  /// because it keeps the whole word.
   void _dragHandle(bool isStart, Offset global) {
     final bounds = _wordAt(global);
     if (bounds == null) return;
+    final start = widget.selectionStart;
+    final end = widget.selectionEnd;
+    if (start != null && end != null) {
+      if (isStart ? bounds.start >= end : bounds.end <= start) return;
+    }
     widget.onHandleDragged?.call(isStart, bounds.start, bounds.end);
   }
 

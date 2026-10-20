@@ -1353,6 +1353,20 @@ def build_multipage() -> None:
     )
 
 
+def build_multipage_punct() -> None:
+    # Cross-page end-handle fixture: like `multipage`, but every word ends in a
+    # period. The paginator only trims whitespace at a page edge, so `page.end`
+    # sits after the final period while word snapping stops before it. A drag to
+    # the last word therefore ends several offsets before the next page's start;
+    # the end handle must still wait at the top of the next page.
+    body = " ".join(f"w{i}." for i in range(600))
+    _write_chapter_epub(
+        "multipage-punct.epub",
+        "Multi Punct",
+        [("ch1", "ch1.xhtml", _raw_xhtml("Multi Punct", f"<p>{body}</p>"))],
+    )
+
+
 def build_annotated_meta() -> None:
     # Final-fix parity fixture: the OPF carries `calibre:annotation`,
     # `dc:type` and `dc:source`. The parity differ compares these fields, but
@@ -1448,6 +1462,7 @@ def main() -> None:
     build_cover_inline()
     build_annotated_meta()
     build_multipage()
+    build_multipage_punct()
     build_mini_cbz()
     print("wrote fixtures to", HERE)
 

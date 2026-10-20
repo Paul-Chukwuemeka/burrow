@@ -50,6 +50,102 @@ void main() {
     expect(wordBoundsAt(4, body, 0, loFlat: 4, hiFlat: 7), (start: 4, end: 7));
   });
 
+  test('showsSelectionEndHandle bridges a page ending in punctuation', () {
+    // Synthetic boundaries: the page runs flat 541..1080 and the word scan
+    // stops at 539, before the final period, so the end is on the previous
+    // page and the handle belongs at the top of this one.
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: true,
+        selectionEnd: 539,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 0,
+        isLastPage: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('showsSelectionEndHandle rejects an end before the previous page', () {
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: true,
+        selectionEnd: 539,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 540,
+        isLastPage: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('showsSelectionEndHandle accepts a mid-page end', () {
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: true,
+        selectionEnd: 700,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 0,
+        isLastPage: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('showsSelectionEndHandle accepts an end at the last page end', () {
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: true,
+        selectionEnd: 1080,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 0,
+        isLastPage: true,
+      ),
+      isTrue,
+    );
+    // The same end on a non-last page belongs to the next page instead.
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: true,
+        selectionEnd: 1080,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 0,
+        isLastPage: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('showsSelectionEndHandle is false off the current page', () {
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: false,
+        selectionEnd: 700,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 0,
+        isLastPage: false,
+      ),
+      isFalse,
+    );
+    expect(
+      showsSelectionEndHandle(
+        isCurrentPage: true,
+        selectionEnd: null,
+        pageFlatStart: 541,
+        pageFlatEnd: 1080,
+        previousPageFlatStart: 0,
+        isLastPage: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('selectionText joins chapters with newline and strips placeholders', () {
     final bodies = ['ab\uFFFCcd', 'EF'];
     const charsBefore = [0, 6];
@@ -61,6 +157,18 @@ void main() {
         charsBefore: charsBefore,
       ),
       'abcd\nEF',
+    );
+  });
+
+  test('selectionText skips an image-only chapter without a blank line', () {
+    expect(
+      selectionText(
+        start: 0,
+        end: 3,
+        chapterBodies: ['A', '\uFFFC', 'B'],
+        charsBefore: [0, 1, 2],
+      ),
+      'A\nB',
     );
   });
 
