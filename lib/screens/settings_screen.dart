@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/reader_settings.dart';
@@ -13,10 +14,17 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.library,
     this.autoDownloadDictionary = false,
+    this.pickFolder = _defaultPickFolder,
   });
 
   final LibraryService library;
   final bool autoDownloadDictionary;
+
+  /// Seeded by tests; production picks a folder via the system picker.
+  final Future<String?> Function() pickFolder;
+
+  static Future<String?> _defaultPickFolder() =>
+      FilePicker.getDirectoryPath();
 
   static void show(
     BuildContext context, {
@@ -60,6 +68,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _update(void Function() mutate) {
     setState(mutate);
     widget.library.saveSettings();
+  }
+
+  /// Prompts for the folder scope when the user selects Single folder.
+  /// Source of truth: the picked folder is remembered in settings; cancelling
+  /// the picker leaves the previous scan type in place.
+  Future<void> _chooseScanFolder() async {
+    final dir = await widget.pickFolder();
+    if (dir == null || dir.isEmpty) {
+      if (mounted) setState(() {}); // redraw with unchanged value
+      return;
+    }
+    _update(() {
+      _s.scanMode = ScanMode.folder;
+      _s.scanFolder = dir;
+    });
   }
 
   Future<void> _startDictDownload() async {
@@ -218,7 +241,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(
               switch (_s.scanMode) {
                 ScanMode.device => 'Walk the whole device for new books',
-                ScanMode.folder => 'Scan a single folder you pick',
+                ScanMode.folder =>
+                  _s.scanFolder.isEmpty
+                      ? 'Scan a single folder you pick'
+                      : 'Scanning: ${_s.scanFolder.split('/').last}',
                 ScanMode.quick => 'Only re-check your library folders',
               },
               style: TextStyle(
@@ -243,7 +269,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
               ],
               onChanged: (v) {
-                if (v != null) _update(() => _s.scanMode = v);
+                if (v == null) return;
+                // Folder scope needs a folder: prompt immediately, keep the
+                // old mode if the user cancels the picker.
+                if (v == ScanMode.folder) {
+                  _chooseScanFolder();
+                } else {
+                  _update(() => _s.scanMode = v);
+                }
               },
             ),
           ),
