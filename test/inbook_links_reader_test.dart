@@ -41,6 +41,24 @@ String _plainOf(InlineSpan span) {
   return buffer.toString();
 }
 
+/// Global point in the middle of the first [word] in [paragraph], using the
+/// paragraph's own metrics so it follows the real rendered layout.
+Offset _wordPoint(RenderParagraph paragraph, String word) {
+  final text = paragraph.text.toPlainText();
+  final offset = text.indexOf(word) + word.length ~/ 2;
+  final painter = TextPainter(
+    text: paragraph.text,
+    textDirection: paragraph.textDirection,
+  )..layout(maxWidth: paragraph.size.width);
+  final caret = painter.getOffsetForCaret(
+    TextPosition(offset: offset),
+    Rect.zero,
+  );
+  painter.dispose();
+  // The caret sits at the line's top edge; land inside the line box.
+  return paragraph.localToGlobal(caret + const Offset(4, 12));
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -144,5 +162,68 @@ void main() {
           .any((t) => t.contains('First body.'));
     }
     expect(jumped, isTrue, reason: 'the link tap must land on chapter 1');
+  });
+
+  testWidgets('an in-book link still wins while a selection toolbar is up', (
+    tester,
+  ) async {
+    final book = Book(
+      id: 'b1',
+      title: 'Link Book',
+      author: 'L. Author',
+      path: '${tmp.path}/Link Book.epub',
+      format: BookFormat.epub,
+      addedAt: 1000,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderScreen(book: book, library: library),
+      ),
+    );
+    final state = tester.state<ReaderScreenState>(find.byType(ReaderScreen));
+
+    for (var i = 0; i < 200; i++) {
+      if (state.debugHasDocument) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(state.debugHasDocument, isTrue);
+
+    RenderParagraph? paragraph;
+    for (var i = 0; i < 200 && paragraph == null; i++) {
+      final renders = tester
+          .renderObjectList<RenderParagraph>(find.byType(RichText))
+          .where((p) => p.text.toPlainText().contains('Footnote'));
+      if (renders.isNotEmpty) {
+        paragraph = renders.first;
+        break;
+      }
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(paragraph, isNotNull, reason: 'the contents page must be rendered');
+
+    final point = _wordPoint(paragraph!, 'Footnote');
+    await tester.longPressAt(point);
+    await tester.pumpAndSettle();
+    expect(find.text('Define'), findsOneWidget);
+
+    // Tapping the link while the selection toolbar is up must still follow
+    // the link, not fall into a page-flip tap zone.
+    await tester.tapAt(point);
+    await tester.pumpAndSettle();
+
+    var jumped = false;
+    for (var i = 0; i < 400 && !jumped; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      jumped = tester
+          .widgetList<RichText>(find.byType(RichText))
+          .map((rt) => _plainOf(rt.text))
+          .any((t) => t.contains('Third body') || t.contains('at the foot.'));
+    }
+    expect(jumped, isTrue, reason: 'the link must reach the footnote body');
+    expect(find.text('Define'), findsNothing);
   });
 }

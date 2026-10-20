@@ -9,42 +9,56 @@ import '../screens/settings_screen.dart';
 import '../services/dictionary_service.dart';
 import '../services/library_service.dart';
 import '../widgets/dictionary_sheet.dart';
+import '../widgets/selection_toolbar.dart';
 
-class DictionaryOverlay {
-  DictionaryOverlay({
+/// Floating toolbar shown for a word or text selection.
+///
+/// Define is only relevant for a single word; Copy and Share operate on the
+/// full [text] passed to [show].
+class SelectionToolbarOverlay {
+  SelectionToolbarOverlay({
     required BuildContext context,
     required this.theme,
     required this.library,
+    this.modalBarrier = true,
   }) : _context = context;
 
   final BuildContext _context;
   final ReaderTheme theme;
   final LibraryService library;
 
-  OverlayEntry? _dictionaryButtonEntry;
-  ({int start, int end})? _selectedWordRange;
+  /// Whether to install a full-screen tap barrier under the toolbar.
+  ///
+  /// The PDF reader has no page-level gesture layer of its own for the
+  /// overlay to fall through to, so it keeps the barrier (tap-outside
+  /// dismisses). The reflowable reader passes `false`: taps outside the
+  /// toolbar must reach `_PageContent`, whose `onTapUp` decides link vs. page
+  /// flip vs. centre tap.
+  final bool modalBarrier;
 
-  ({int start, int end})? get selectedWordRange => _selectedWordRange;
+  OverlayEntry? _toolbarEntry;
+  String _text = '';
 
-  void showWordToolbar(
-    Offset globalPosition,
-    String word,
-    int bodyStart,
-    int bodyEnd,
-  ) {
-    dismissDictionaryButton();
-    _selectedWordRange = (start: bodyStart, end: bodyEnd);
+  void show(
+    Offset globalPosition, {
+    required bool singleWord,
+    required String word,
+    required String text,
+  }) {
+    _removeEntry();
+    _text = text;
 
-    _dictionaryButtonEntry = OverlayEntry(
+    _toolbarEntry = OverlayEntry(
       builder: (context) {
         return Stack(
           children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: dismissDictionaryButton,
+            if (modalBarrier)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: dismiss,
+                ),
               ),
-            ),
             Positioned(
               left: (globalPosition.dx - 140).clamp(
                 8.0,
@@ -72,39 +86,27 @@ class DictionaryOverlay {
                     horizontal: 4,
                     vertical: 6,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _toolbarButton(
-                        label: 'Define',
-                        onTap: () {
-                          dismissDictionaryButton();
-                          openDictionarySheet(word);
-                        },
-                      ),
-                      _toolbarDivider(),
-                      _toolbarButton(
-                        label: 'Copy',
-                        onTap: () {
-                          dismissDictionaryButton();
-                          Clipboard.setData(ClipboardData(text: word));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Copied "$word"'),
-                              duration: const Duration(seconds: 1),
-                            ),
-                          );
-                        },
-                      ),
-                      _toolbarDivider(),
-                      _toolbarButton(
-                        label: 'Share',
-                        onTap: () {
-                          dismissDictionaryButton();
-                          SharePlus.instance.share(ShareParams(text: word));
-                        },
-                      ),
-                    ],
+                  child: SelectionToolbar(
+                    singleWord: singleWord,
+                    theme: theme,
+                    onDefine: () {
+                      dismiss();
+                      openDictionarySheet(word);
+                    },
+                    onCopy: () {
+                      dismiss();
+                      Clipboard.setData(ClipboardData(text: _text));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Copied "$_text"'),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                    onShare: () {
+                      dismiss();
+                      SharePlus.instance.share(ShareParams(text: _text));
+                    },
                   ),
                 ),
               ),
@@ -114,44 +116,26 @@ class DictionaryOverlay {
       },
     );
 
-    if (!_context.mounted) return;
-    Overlay.of(_context).insert(_dictionaryButtonEntry!);
-  }
-
-  Widget _toolbarButton({required String label, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: theme.text,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _toolbarDivider() {
-    return Container(
-      width: 1,
-      height: 20,
-      color: theme.muted.withValues(alpha: 0.3),
-    );
-  }
-
-  void dismissDictionaryButton() {
-    try {
-      _dictionaryButtonEntry?.remove();
-    } catch (e) {
-      debugPrint('Failed to remove dictionary overlay: $e');
+    if (!_context.mounted) {
+      // The entry was never inserted; forget it so a later dismiss() cannot
+      // try to remove an uninserted overlay.
+      _toolbarEntry = null;
+      return;
     }
-    _dictionaryButtonEntry = null;
-    _selectedWordRange = null;
+    Overlay.of(_context).insert(_toolbarEntry!);
+  }
+
+  void _removeEntry() {
+    try {
+      _toolbarEntry?.remove();
+    } catch (e) {
+      debugPrint('Failed to remove selection toolbar overlay: $e');
+    }
+    _toolbarEntry = null;
+  }
+
+  void dismiss() {
+    _removeEntry();
   }
 
   void openDictionarySheet(String word) {

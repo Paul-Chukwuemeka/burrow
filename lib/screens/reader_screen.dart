@@ -11,8 +11,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/bookmark_helper.dart';
 import '../controllers/comic_controller.dart';
-import '../controllers/dictionary_overlay.dart';
+import '../controllers/selection_toolbar.dart';
 import '../controllers/pdf_controller.dart';
+import '../controllers/reader_selection.dart';
 import '../controllers/reading_session.dart';
 import '../controllers/search_controller.dart';
 import '../services/brightness_controller.dart';
@@ -29,6 +30,7 @@ import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
+import '../utils/text_selection.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/comic_image.dart';
 import '../widgets/settings_sheet.dart';
@@ -238,8 +240,13 @@ class ReaderScreenState extends State<ReaderScreen>
   // Comic state.
   late final ComicReaderController _comicCtrl;
 
-  // Dictionary state.
-  DictionaryOverlay? _dictOverlay;
+  // Selection toolbar state.
+  SelectionToolbarOverlay? _selectionToolbar;
+  final ReaderSelection _selection = ReaderSelection();
+
+  void _onSelectionChanged() {
+    if (mounted) setState(() {});
+  }
 
   bool get _isPdf => _book.format == BookFormat.pdf;
   bool get _isComic =>
@@ -290,6 +297,7 @@ class ReaderScreenState extends State<ReaderScreen>
     _searchCtrl.addListener(() {
       if (mounted) setState(() {});
     });
+    _selection.addListener(_onSelectionChanged);
     _bookmarkCtrl.addListener(() {
       if (mounted) setState(() {});
     });
@@ -350,6 +358,10 @@ class ReaderScreenState extends State<ReaderScreen>
       }
       _totalChars = cumulative;
       if (!mounted) return;
+      // A reload replaces the body that any live selection points into; drop
+      // it before the new document is installed. Guarding on isActive keeps
+      // the initState kick-off (which has no selection) off the setState path.
+      if (_selection.isActive) _clearSelection();
       // Pagination is kicked off by the reflowable LayoutBuilder, which owns
       // the viewport. Deriving it from a second place risks a signature that
       // disagrees with the layout and repaginating forever.
@@ -398,7 +410,9 @@ class ReaderScreenState extends State<ReaderScreen>
       _searchCtrl.onSearchTextChanged,
     );
     _searchCtrl.dispose();
-    _dictOverlay?.dismissDictionaryButton();
+    _selection.removeListener(_onSelectionChanged);
+    _selection.dispose();
+    _selectionToolbar?.dismiss();
     _comicDecodeAhead?.dispose();
     for (final tc in _comicTransformListeners) {
       tc.removeListener(_onComicTransformChanged);
@@ -1170,6 +1184,26 @@ class ReaderScreenState extends State<ReaderScreen>
   @visibleForTesting
   int get debugReadyCount => _paginationReady.where((r) => r).length;
 
+  /// Test-only: the live word selection model.
+  @visibleForTesting
+  ReaderSelection get debugSelection => _selection;
+
+  /// Test-only: the plain text of the current selection, or `null` when there
+  /// is no selection (or no document).
+  @visibleForTesting
+  String? get debugSelectionText {
+    final doc = _doc;
+    final start = _selection.start;
+    final end = _selection.end;
+    if (doc == null || start == null || end == null) return null;
+    return selectionText(
+      start: start,
+      end: end,
+      chapterBodies: doc.chapters.map((c) => c.body).toList(),
+      charsBefore: _charsBefore,
+    );
+  }
+
   /// Test-only: suspends the background layout pass so a test can observe the
   /// first-paint state deterministically instead of racing the frame budget.
   @visibleForTesting
@@ -1215,9 +1249,9 @@ class ReaderScreenState extends State<ReaderScreen>
     _settingsSaveDebounce = Timer(const Duration(milliseconds: 600), () {
       widget.library.saveSettings();
     });
-    // Recreate dictionary overlay with fresh theme on next use.
-    _dictOverlay?.dismissDictionaryButton();
-    _dictOverlay = null;
+    // Recreate the selection toolbar with fresh theme on next use.
+    _selectionToolbar?.dismiss();
+    _selectionToolbar = null;
     // Update wakelock.
     if (_settings.keepScreenOn) {
       WakelockPlus.enable();
@@ -1292,6 +1326,7 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   void _jumpToResult(int index) {
+    _clearSelection();
     if (index < 0 || index >= _searchCtrl.searchResults.length) return;
     _searchCtrl.jumpToResult(index);
     if (!_isPdf) {
@@ -1499,24 +1534,78 @@ class ReaderScreenState extends State<ReaderScreen>
   // Word selection toolbar
   // ---------------------------------------------------------------------------
 
-  void _showWordToolbar(
-    Offset globalPosition,
-    String word,
-    int bodyStart,
-    int bodyEnd,
-  ) {
-    _dictOverlay ??= DictionaryOverlay(
+  void _showSelectionToolbar(
+    Offset globalPosition, {
+    required bool singleWord,
+    required String word,
+    required String text,
+  }) {
+    _selectionToolbar ??= SelectionToolbarOverlay(
       context: context,
       theme: _settings.colors,
       library: widget.library,
+      // The reflowable reader relies on its own page tap layer (links, page
+      // flips, centre clear) when the toolbar is up, so it must not install a
+      // barrier. The PDF reader has no such layer and keeps one.
+      modalBarrier: _isPdf,
     );
-    _dictOverlay!.showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
+    _selectionToolbar!.show(
+      globalPosition,
+      singleWord: singleWord,
+      word: word,
+      text: text,
+    );
     setState(() {});
   }
 
-  void _dismissDictionaryButton() {
-    _dictOverlay?.dismissDictionaryButton();
+  /// Shows the toolbar for the live selection (if any) at [globalPosition],
+  /// which is where the finger lifted.
+  void _showSelectionToolbarAt(Offset globalPosition) {
+    final doc = _doc;
+    final start = _selection.start;
+    final end = _selection.end;
+    if (doc == null || start == null || end == null) return;
+
+    final bodies = doc.chapters.map((c) => c.body).toList();
+    final text = selectionText(
+      start: start,
+      end: end,
+      chapterBodies: bodies,
+      charsBefore: _charsBefore,
+    );
+    if (text.trim().isEmpty) return;
+
+    final singleWord = isSingleWordRange(
+      start: start,
+      end: end,
+      chapterBodies: bodies,
+      charsBefore: _charsBefore,
+    );
+    _showSelectionToolbar(
+      globalPosition,
+      singleWord: singleWord,
+      word: _firstWordOf(text),
+      text: text,
+    );
+  }
+
+  /// The first word of [text], punctuation-trimmed. Used for the dictionary
+  /// action, which only appears for a single-word selection.
+  static String _firstWordOf(String text) {
+    final match = RegExp(
+      r"[A-Za-z0-9\u00C0-\u024F]+(?:['\u2019][A-Za-z0-9\u00C0-\u024F]+)*",
+    ).firstMatch(text);
+    return match?.group(0) ?? text.trim();
+  }
+
+  void _dismissSelectionToolbar() {
+    _selectionToolbar?.dismiss();
     if (mounted) setState(() {});
+  }
+
+  void _clearSelection() {
+    _selection.clear();
+    _dismissSelectionToolbar();
   }
 
   // ---------------------------------------------------------------------------
@@ -1582,7 +1671,7 @@ class ReaderScreenState extends State<ReaderScreen>
           enabled: true,
           onTextSelectionChange: (selection) async {
             if (!selection.hasSelectedText) {
-              _dismissDictionaryButton();
+              _dismissSelectionToolbar();
               return;
             }
             final selectedText = await selection.getSelectedText();
@@ -1596,11 +1685,11 @@ class ReaderScreenState extends State<ReaderScreen>
               );
               if (word.length >= 2) {
                 final size = MediaQuery.sizeOf(context);
-                _showWordToolbar(
+                _showSelectionToolbar(
                   Offset(size.width / 2, size.height / 2),
-                  word,
-                  0,
-                  0,
+                  singleWord: true,
+                  word: word,
+                  text: word,
                 );
               }
             }
@@ -2127,7 +2216,17 @@ class ReaderScreenState extends State<ReaderScreen>
             PageView.builder(
               controller: controller,
               itemCount: itemCount,
+              // While a word selection is live, a drag belongs to the
+              // selection handles, not to page swiping. Programmatic flips
+              // (`_flip` / `animateToPage`) still work under this physics.
+              physics: _selection.isActive
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
               onPageChanged: (i) {
+                // Slider and volume-key flips also land here; the tap paths
+                // dismiss the toolbar explicitly, so do it for every page
+                // change. The selection itself persists.
+                _dismissSelectionToolbar();
                 final programmatic = _programmaticTarget == i;
                 _programmaticTarget = null;
                 setState(() => _flatPage = i);
@@ -2172,14 +2271,62 @@ class ReaderScreenState extends State<ReaderScreen>
                 final renderStyle = chapterStyle.copyWith(
                   color: _settings.colors.text,
                 );
+                // Selection handles render only on the page the reader is on,
+                // so their keys stay unique across the PageView's window.
+                final pageFlatStart = _charsBefore[chapter] + page.start;
+                final pageFlatEnd = _charsBefore[chapter] + page.end;
+                final selStart = _selection.start;
+                final selEnd = _selection.end;
+                final showStart =
+                    i == _flatPage &&
+                    selStart != null &&
+                    selStart >= pageFlatStart &&
+                    selStart < pageFlatEnd;
+                // The paginator drops the whitespace between pages (it belongs
+                // to no page) and word snapping stops before trailing
+                // punctuation, so a selection ending on the previous page can
+                // sit several offsets before this page's start. Anchor the
+                // bridge at that page's start so any such end still gets a
+                // handle at the top of this page.
+                int? previousPageFlatStart;
+                if (i > 0) {
+                  final prev = _refAt(i - 1);
+                  if (prev != null) {
+                    previousPageFlatStart =
+                        _charsBefore[prev.$1] +
+                        _paginators[prev.$1].pages[prev.$2].start;
+                  }
+                }
+                final showEnd = showsSelectionEndHandle(
+                  isCurrentPage: i == _flatPage,
+                  selectionEnd: selEnd,
+                  pageFlatStart: pageFlatStart,
+                  pageFlatEnd: pageFlatEnd,
+                  previousPageFlatStart: previousPageFlatStart,
+                  isLastPage: i == itemCount - 1,
+                );
                 return _PageContent(
                   chapterTitle: _doc!.chapters[chapter].title,
                   text: _doc!.chapters[chapter].body,
                   runs: _doc!.chapters[chapter].runs,
                   images: _doc!.chapters[chapter].images,
                   links: _doc!.chapters[chapter].links,
+                  chapterStartFlat: _charsBefore[chapter],
+                  selectionStart: _selection.start,
+                  selectionEnd: _selection.end,
+                  onWordSelected: (start, end) =>
+                      _selection.beginWord(start, end),
+                  onWordDragged: (start, end) =>
+                      _selection.dragToWord(start, end),
+                  onSelectionMissed: _clearSelection,
+                  onSelectionSettled: _showSelectionToolbarAt,
+                  onHandleDragged: (isStart, s, e) => isStart
+                      ? _selection.setStart(s)
+                      : _selection.setEnd(e),
+                  showStartHandle: showStart,
+                  showEndHandle: showEnd,
                   onTapLink: (target) {
-                    _dismissDictionaryButton();
+                    _clearSelection();
                     _jumpToChapter(target);
                   },
                   page: page,
@@ -2187,16 +2334,19 @@ class ReaderScreenState extends State<ReaderScreen>
                   theme: theme,
                   settings: _settings,
                   onTapPrev: () {
-                    _dismissDictionaryButton();
+                    _dismissSelectionToolbar();
                     _flip(-1);
                   },
                   onTapNext: () {
-                    _dismissDictionaryButton();
+                    _dismissSelectionToolbar();
                     _flip(1);
                   },
                   onTapCenter: () {
-                    _dismissDictionaryButton();
-                    setState(() => _chromeVisible = !_chromeVisible);
+                    if (_selection.isActive) {
+                      _clearSelection();
+                    } else {
+                      setState(() => _chromeVisible = !_chromeVisible);
+                    }
                   },
                   highlightMatches: highlights,
                   currentMatch:
@@ -2207,10 +2357,6 @@ class ReaderScreenState extends State<ReaderScreen>
                             .currentResultIndex]
                       : null,
                   pageMaxHeight: _lastViewport?.height ?? double.infinity,
-                  onLongPressWord: (word, globalPosition, bodyStart, bodyEnd) {
-                    _showWordToolbar(globalPosition, word, bodyStart, bodyEnd);
-                  },
-                  selectedWordRange: _dictOverlay?.selectedWordRange,
                   textAlign:
                       _settings.textJustification == TextJustification.justify
                       ? TextAlign.justify
@@ -2316,6 +2462,7 @@ class ReaderScreenState extends State<ReaderScreen>
 
   /// Jump directly to the start of [chapterIndex].
   void _jumpToChapter(int chapterIndex) {
+    _clearSelection();
     if (_doc == null || _pageController == null) return;
     _ensureChapterReady(chapterIndex);
     final flat = _flatIndexForChapter(chapterIndex);
@@ -2436,7 +2583,7 @@ class ReaderScreenState extends State<ReaderScreen>
 
   GestureTapUpCallback _handleTapZones({required VoidCallback onCenter}) {
     return (details) {
-      _dismissDictionaryButton();
+      _dismissSelectionToolbar();
       final w = MediaQuery.sizeOf(context).width;
       final dx = details.localPosition.dx;
       if (dx < w * 0.3) {
@@ -2913,7 +3060,7 @@ class _ComicPageError extends StatelessWidget {
 }
 
 /// One rendered page of a reflowable document with tap zones.
-class _PageContent extends StatelessWidget {
+class _PageContent extends StatefulWidget {
   const _PageContent({
     required this.chapterTitle,
     required this.text,
@@ -2924,6 +3071,7 @@ class _PageContent extends StatelessWidget {
     required this.onTapPrev,
     required this.onTapNext,
     required this.onTapCenter,
+    required this.chapterStartFlat,
     this.runs = const [],
     this.images = const [],
     this.links = const [],
@@ -2931,8 +3079,15 @@ class _PageContent extends StatelessWidget {
     this.highlightMatches,
     this.currentMatch,
     this.pageMaxHeight = double.infinity,
-    this.onLongPressWord,
-    this.selectedWordRange,
+    this.selectionStart,
+    this.selectionEnd,
+    this.onWordSelected,
+    this.onWordDragged,
+    this.onSelectionMissed,
+    this.onHandleDragged,
+    this.onSelectionSettled,
+    this.showStartHandle = false,
+    this.showEndHandle = false,
     this.textAlign = TextAlign.justify,
     this.horizontalMargin = 20,
   });
@@ -2946,6 +3101,9 @@ class _PageContent extends StatelessWidget {
   final VoidCallback onTapPrev;
   final VoidCallback onTapNext;
   final VoidCallback onTapCenter;
+  final int chapterStartFlat;
+  final int? selectionStart;
+  final int? selectionEnd;
 
   final List<StyleRun> runs;
   final List<ImageRun> images;
@@ -2954,16 +3112,86 @@ class _PageContent extends StatelessWidget {
   final List<SearchResult>? highlightMatches;
   final SearchResult? currentMatch;
   final double pageMaxHeight;
-  final void Function(
-    String word,
-    Offset globalPosition,
-    int bodyStart,
-    int bodyEnd,
-  )?
-  onLongPressWord;
-  final ({int start, int end})? selectedWordRange;
+  final void Function(int wordStart, int wordEnd)? onWordSelected;
+  final void Function(int wordStart, int wordEnd)? onWordDragged;
+
+  /// Called when a long press lands on no word (punctuation, whitespace, an
+  /// image), so a new press that selects nothing clears the old selection.
+  final VoidCallback? onSelectionMissed;
+  final void Function(bool isStart, int wordStart, int wordEnd)?
+  onHandleDragged;
+  final void Function(Offset globalPos)? onSelectionSettled;
+  final bool showStartHandle;
+  final bool showEndHandle;
   final TextAlign textAlign;
   final double horizontalMargin;
+
+  @override
+  State<_PageContent> createState() => _PageContentState();
+}
+
+class _PageContentState extends State<_PageContent> {
+  /// The body paragraph, used for all paragraph-relative hit-testing.
+  final GlobalKey _bodyKey = GlobalKey();
+
+  TextPage get page => widget.page;
+
+  /// Caret positions of the shown selection handles, in the body [Stack]'s
+  /// coordinate space (the paragraph sits at its top-left). Measured from the
+  /// rendered paragraph after layout, since caret offsets depend on the real
+  /// line breaks.
+  Offset? _startHandleCaret;
+  Offset? _endHandleCaret;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleHandleMeasure();
+  }
+
+  @override
+  void didUpdateWidget(_PageContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Selection or page changed: re-measure against the laid-out paragraph.
+    _scheduleHandleMeasure();
+  }
+
+  void _scheduleHandleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureHandles());
+  }
+
+  /// Measures both handle carets and rebuilds only when they actually moved.
+  void _measureHandles() {
+    if (!mounted) return;
+    final start = _caretForHandle(isStart: true);
+    final end = _caretForHandle(isStart: false);
+    if (start == _startHandleCaret && end == _endHandleCaret) return;
+    setState(() {
+      _startHandleCaret = start;
+      _endHandleCaret = end;
+    });
+  }
+
+  /// The caret point for a handle in the body [Stack]'s space, or `null` when
+  /// the handle is hidden or the paragraph is not mounted.
+  Offset? _caretForHandle({required bool isStart}) {
+    final show = isStart ? widget.showStartHandle : widget.showEndHandle;
+    final selection = isStart ? widget.selectionStart : widget.selectionEnd;
+    if (!show || selection == null) return null;
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return null;
+    // The selection boundary is a flat chapter offset; clamp it to this page
+    // and rebase to the page-relative offset the RichText actually renders.
+    final chapterLocal = selection - widget.chapterStartFlat;
+    final clamped = chapterLocal.clamp(page.start, page.end).toInt();
+    final paragraphOffset = (clamped - page.start)
+        .clamp(0, page.end - page.start)
+        .toInt();
+    return paragraph.getOffsetForCaret(
+      TextPosition(offset: paragraphOffset),
+      Rect.zero,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2976,15 +3204,12 @@ class _PageContent extends StatelessWidget {
         // onto the body's own rendered text (the same mechanism the
         // long-press word lookup uses), so it follows the real layout rather
         // than a reconstructed TextPainter.
-        if (onTapLink != null && links.isNotEmpty) {
-          final bodyOffset = _bodyTextOffsetAt(
-            context,
-            details.globalPosition,
-          );
+        if (widget.onTapLink != null && widget.links.isNotEmpty) {
+          final bodyOffset = _bodyTextOffsetAt(details.globalPosition);
           if (bodyOffset != null) {
-            for (final link in links) {
+            for (final link in widget.links) {
               if (bodyOffset >= link.start && bodyOffset < link.end) {
-                onTapLink!(link.target);
+                widget.onTapLink!(link.target);
                 return;
               }
             }
@@ -2993,16 +3218,31 @@ class _PageContent extends StatelessWidget {
         final w = context.size?.width ?? MediaQuery.sizeOf(context).width;
         final dx = details.localPosition.dx;
         if (dx < w * 0.3) {
-          onTapPrev();
+          widget.onTapPrev();
         } else if (dx > w * 0.7) {
-          onTapNext();
+          widget.onTapNext();
         } else {
-          onTapCenter();
+          widget.onTapCenter();
         }
       },
-      onLongPressStart: onLongPressWord != null
-          ? (details) => _handleLongPress(context, details)
-          : null,
+      onLongPressStart: (details) {
+        final bounds = _wordAt(details.globalPosition);
+        if (bounds == null) {
+          // A fresh long-press that hits no word starts no selection; clear any
+          // previous one so an old highlight cannot linger.
+          widget.onSelectionMissed?.call();
+          return;
+        }
+        widget.onWordSelected?.call(bounds.start, bounds.end);
+      },
+      onLongPressMoveUpdate: (details) {
+        final bounds = _wordAt(details.globalPosition);
+        if (bounds == null) return;
+        widget.onWordDragged?.call(bounds.start, bounds.end);
+      },
+      onLongPressEnd: (details) {
+        widget.onSelectionSettled?.call(_caretGlobalAt(details.globalPosition));
+      },
       // Reading text is independent of the app-wide "Text size" scale: the
       // paginator measures at no scaling, so the page content must render at
       // no scaling too (the body RichText already ignores MediaQuery).
@@ -3010,33 +3250,56 @@ class _PageContent extends StatelessWidget {
         data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: horizontalMargin,
+            horizontal: widget.horizontalMargin,
             vertical: 28,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (page.start == 0 && chapterTitle.trim().isNotEmpty) ...[
+              if (page.start == 0 && widget.chapterTitle.trim().isNotEmpty) ...[
                 Text(
-                  chapterTitle,
-                  style: style.copyWith(
-                    fontSize: (style.fontSize ?? 18) + 4,
+                  widget.chapterTitle,
+                  style: widget.style.copyWith(
+                    fontSize: (widget.style.fontSize ?? 18) + 4,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
               Expanded(
-                child: Builder(
-                  builder: (context) => RichText(
-                    textAlign: textAlign,
-                    text: TextSpan(
-                      style: style,
-                      children: _buildPageText(
-                        context,
-                        MediaQuery.sizeOf(context).width - horizontalMargin * 2,
+                // The handle boxes are kept entirely inside the body box (see
+                // `_buildHandle`): `Clip.none` only affects painting, and a
+                // box hanging outside its parent is rejected by hit-testing.
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.topLeft,
+                    children: [
+                      RichText(
+                        key: _bodyKey,
+                        textAlign: widget.textAlign,
+                        text: TextSpan(
+                          style: widget.style,
+                          children: _buildPageText(
+                            context,
+                            MediaQuery.sizeOf(context).width -
+                                widget.horizontalMargin * 2,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (widget.showStartHandle && _startHandleCaret != null)
+                        _buildHandle(
+                          isStart: true,
+                          caret: _startHandleCaret!,
+                          stackSize: constraints.biggest,
+                        ),
+                      if (widget.showEndHandle && _endHandleCaret != null)
+                        _buildHandle(
+                          isStart: false,
+                          caret: _endHandleCaret!,
+                          stackSize: constraints.biggest,
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -3048,80 +3311,147 @@ class _PageContent extends StatelessWidget {
   }
 
   /// Maps a global tap point to a body offset, or `null` when the tap misses
-  /// the rendered text (or hits the chapter title).
-  int? _bodyTextOffsetAt(BuildContext context, Offset global) {
-    RenderObject? root = context.findRenderObject();
-    RenderParagraph? hit;
-    void visit(RenderObject obj) {
-      if (hit != null) return;
-      if (obj is RenderParagraph) {
-        final local = obj.globalToLocal(global);
-        if (obj.size.contains(local)) {
-          hit = obj;
-          return;
-        }
-      }
-      obj.visitChildren(visit);
-    }
-
-    root?.visitChildren(visit);
-    if (hit == null) return null;
-    return page.start + hit!.getPositionForOffset(hit!.globalToLocal(global)).offset;
+  /// the rendered body text (or hits the chapter title).
+  int? _bodyTextOffsetAt(Offset global) {
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return null;
+    final local = paragraph.globalToLocal(global);
+    if (!paragraph.size.contains(local)) return null;
+    return page.start + paragraph.getPositionForOffset(local).offset;
   }
 
-  void _handleLongPress(BuildContext context, LongPressStartDetails details) {    if (onLongPressWord == null) return;
-
-    final renderWidth = MediaQuery.sizeOf(context).width - horizontalMargin * 2;
-    final spans = _buildPageText(context, renderWidth);
-
-    final painter = TextPainter(
-      text: TextSpan(style: style, children: spans),
-      textDirection: TextDirection.ltr,
-      maxLines: null,
-    )..layout(maxWidth: renderWidth);
-
-    final adjusted = Offset(
-      details.localPosition.dx - 20,
-      details.localPosition.dy - 28,
-    );
-    final textOffset = painter.getPositionForOffset(adjusted).offset;
-    painter.dispose();
-    final bodyOffset = page.start + textOffset;
-
-    if (bodyOffset < 0 || bodyOffset >= text.length) return;
-
-    int start = bodyOffset;
-    int end = bodyOffset;
-    while (start > 0 && _isWordChar(text[start - 1])) {
-      start--;
-    }
-    while (end < text.length && _isWordChar(text[end])) {
-      end++;
-    }
-
-    if (start == end) return;
-    var word = text.substring(start, end).trim();
-    word = word.replaceAll(RegExp(r"^[^a-zA-Z']+|[^a-zA-Z']+$"), '');
-    if (word.length < 2) return;
-
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final globalPos = box.localToGlobal(
-      Offset(details.localPosition.dx, details.localPosition.dy - 20),
-    );
-
-    onLongPressWord!(word, globalPos, start, end);
+  /// Maps a global point to a flat document offset inside this page, or `null`
+  /// when the body is not mounted.
+  ///
+  /// The paragraph's offset is clamped to `[page.start, page.end)` so a press
+  /// in the padding or past the last line cannot reach a neighbouring page.
+  int? _flatAt(Offset global) {
+    if (page.end <= page.start) return null;
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return null;
+    final local = paragraph.globalToLocal(global);
+    // Reject presses outside the rendered body (chapter-title band, blank
+    // space below a short page) rather than selecting the nearest line's word.
+    if (!paragraph.size.contains(local)) return null;
+    final offset = paragraph.getPositionForOffset(local).offset;
+    final pageOffset = (page.start + offset).clamp(page.start, page.end - 1);
+    return widget.chapterStartFlat + pageOffset;
   }
 
-  static bool _isWordChar(String ch) {
-    return ch.runes.any((r) => r > 127) ||
-        RegExp(r'[a-zA-Z\u00C0-\u024F]').hasMatch(ch);
+  /// The whole-word flat range under [global], bounded to this page.
+  ({int start, int end})? _wordAt(Offset global) {
+    final flat = _flatAt(global);
+    if (flat == null) return null;
+    return wordBoundsAt(
+      flat,
+      widget.text,
+      widget.chapterStartFlat,
+      loFlat: widget.chapterStartFlat + page.start,
+      hiFlat: widget.chapterStartFlat + page.end,
+    );
+  }
+
+  /// The global position of the caret at [global]'s offset. Used to anchor the
+  /// selection toolbar where the finger lifted.
+  Offset _caretGlobalAt(Offset global) {
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return global;
+    final local = paragraph.globalToLocal(global);
+    final position = paragraph.getPositionForOffset(local);
+    // Collapsed selection: the caret rect's top-left is the insertion point.
+    final caret = paragraph.getOffsetForCaret(position, Rect.zero);
+    return paragraph.localToGlobal(caret);
+  }
+
+  /// A draggable selection handle: a small accent dot inside a larger
+  /// transparent hit area. The start handle sits above its caret, the end
+  /// handle below.
+  ///
+  /// The 44px hit box is clamped fully inside [stackSize] so it is always
+  /// hit-testable: `Clip.none` only affects painting, and `RenderBox.hitTest`
+  /// rejects a point outside the box's own size, so a box hanging above the
+  /// first line (or below the last) would silently let taps fall through to
+  /// the page triage. The dot is then translated inside the box to stay at the
+  /// caret, so clamping never moves the visible handle.
+  Widget _buildHandle({
+    required bool isStart,
+    required Offset caret,
+    required Size stackSize,
+  }) {
+    const double hit = 44;
+    const double dot = 12;
+    // Where the box would sit unclamped: start above its caret, end below.
+    final desiredLeft = caret.dx - hit / 2;
+    final desiredTop = isStart ? caret.dy - hit + 4 : caret.dy - 4;
+    final maxLeft = math.max(0.0, stackSize.width - hit);
+    final maxTop = math.max(0.0, stackSize.height - hit);
+    final left = desiredLeft.clamp(0.0, maxLeft);
+    final top = desiredTop.clamp(0.0, maxTop);
+    // Keep the dot ~18px above (start) / below (end) the caret, now expressed
+    // as a translation from the clamped box's centre. Clamp both axes so the
+    // painted dot stays inside its hit box: a first-line start handle's box
+    // clamps to `top = 0`, and an unclamped dot at `caret.dy - 18` would hang
+    // above the box where hit-testing cannot reach it.
+    final dotCenterX = caret.dx.clamp(left + dot / 2, left + hit - dot / 2);
+    final dotCenterY = (isStart ? caret.dy - 18 : caret.dy + 18).clamp(
+      top + dot / 2,
+      top + hit - dot / 2,
+    );
+    return Positioned(
+      left: left,
+      top: top,
+      width: hit,
+      height: hit,
+      child: GestureDetector(
+        key: Key(isStart ? 'selectionHandleStart' : 'selectionHandleEnd'),
+        behavior: HitTestBehavior.opaque,
+        // Swallow the tap so it never reaches the page triage below.
+        onTap: () {},
+        onPanUpdate: (details) => _dragHandle(isStart, details.globalPosition),
+        onPanEnd: (details) => widget.onSelectionSettled?.call(
+          _caretGlobalAt(details.globalPosition),
+        ),
+        child: Center(
+          child: Transform.translate(
+            offset: Offset(
+              dotCenterX - (left + hit / 2),
+              dotCenterY - (top + hit / 2),
+            ),
+            child: Container(
+              width: dot,
+              height: dot,
+              decoration: BoxDecoration(
+                color: widget.theme.accent,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Moves a selection boundary to the word under a handle drag.
+  ///
+  /// A handle may not cross the opposite boundary: the model's clamps would
+  /// otherwise leave a partial word (`end - 1` / `start + 1`). The handle
+  /// stops at the opposite end; dragging onto that end's word is still valid
+  /// because it keeps the whole word.
+  void _dragHandle(bool isStart, Offset global) {
+    final bounds = _wordAt(global);
+    if (bounds == null) return;
+    final start = widget.selectionStart;
+    final end = widget.selectionEnd;
+    if (start != null && end != null) {
+      if (isStart ? bounds.start >= end : bounds.end <= start) return;
+    }
+    widget.onHandleDragged?.call(isStart, bounds.start, bounds.end);
   }
 
   /// Builds the page's TextSpan, merging style runs (emphasis, quotes) with
   /// search-match highlights and inline images.
   List<InlineSpan> _buildPageText(BuildContext context, double renderWidth) {
-    final tappedImages = images.map((img) {
+    final tappedImages = widget.images.map((img) {
       if (img.onTap != null) return img;
       return ImageRun(
         offset: img.offset,
@@ -3134,21 +3464,35 @@ class _PageContent extends StatelessWidget {
       );
     }).toList();
     return buildPageSpans(
-      text: text,
+      text: widget.text,
       start: page.start,
       end: page.end,
-      base: style,
-      theme: theme,
-      settings: settings,
-      runs: runs,
+      base: widget.style,
+      theme: widget.theme,
+      settings: widget.settings,
+      runs: widget.runs,
       images: tappedImages,
-      links: links,
+      links: widget.links,
       renderWidth: renderWidth,
-      maxHeight: pageMaxHeight,
+      maxHeight: widget.pageMaxHeight,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      matches: highlightMatches ?? const [],
-      currentMatch: currentMatch,
-      selectedRange: selectedWordRange,
+      matches: widget.highlightMatches ?? const [],
+      currentMatch: widget.currentMatch,
+      selectedRange: _selectedPageRange(),
+    );
+  }
+
+  /// Clips the live selection to this page for the highlight painter.
+  ({int start, int end})? _selectedPageRange() {
+    final start = widget.selectionStart;
+    final end = widget.selectionEnd;
+    if (start == null || end == null) return null;
+    return pageLocalRange(
+      selectionStart: start,
+      selectionEnd: end,
+      chapterStartFlat: widget.chapterStartFlat,
+      pageStart: page.start,
+      pageEnd: page.end,
     );
   }
 
