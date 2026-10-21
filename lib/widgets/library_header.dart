@@ -11,8 +11,6 @@ class BurrowHeader extends StatelessWidget {
     this.activeFilterCount = 0,
     this.onFilterTap,
     this.onStats,
-    this.onExport,
-    this.onImportBackup,
     this.onRemoveAllMissing,
     this.missingCount = 0,
     this.onSettings,
@@ -24,8 +22,6 @@ class BurrowHeader extends StatelessWidget {
   final int activeFilterCount;
   final VoidCallback? onFilterTap;
   final VoidCallback? onStats;
-  final VoidCallback? onExport;
-  final VoidCallback? onImportBackup;
   final VoidCallback? onRemoveAllMissing;
   final int missingCount;
   final VoidCallback? onSettings;
@@ -59,33 +55,17 @@ class BurrowHeader extends StatelessWidget {
             onPressed: onStats,
             tooltip: 'Reading stats',
           ),
-        if (onExport != null && onImportBackup != null)
+        if (onRemoveAllMissing != null || onSettings != null)
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface),
             tooltip: 'More options',
             onSelected: (key) {
-              if (key == 'export') onExport!();
-              if (key == 'import') onImportBackup!();
               if (key == 'remove-missing' && missingCount > 0) {
                 onRemoveAllMissing?.call();
               }
               if (key == 'settings') onSettings?.call();
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'export',
-                child: ListTile(
-                  leading: Icon(Icons.ios_share_rounded),
-                  title: Text('Export library'),
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'import',
-                child: ListTile(
-                  leading: Icon(Icons.restore_rounded),
-                  title: Text('Restore backup'),
-                ),
-              ),
               PopupMenuItem(
                 value: 'remove-missing',
                 enabled: missingCount > 0,

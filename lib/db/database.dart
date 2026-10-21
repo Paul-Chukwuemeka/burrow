@@ -286,7 +286,7 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .get();
 
-  /// Every bookmark across all books, for library backup/restore.
+  /// Every bookmark across all books (stats/debug views).
   Future<List<Bookmark>> getAllBookmarks() async => (select(
     bookmarks,
   )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
@@ -718,76 +718,6 @@ BooksCompanion positionToUpdate({
   progress: Value(progress),
   lastReadAt: Value(lastReadAt),
 );
-
-// ---------------------------------------------------------------------------
-// Backup serialization (bookmarks + sessions; books use Book.toJson)
-// ---------------------------------------------------------------------------
-
-Map<String, dynamic> bookmarkToJson(Bookmark b) => {
-  'id': b.id,
-  'bookId': b.bookId,
-  'chapter': b.chapter,
-  'offset': b.offset,
-  'snippet': b.snippet,
-  'createdAt': b.createdAt,
-};
-
-BookmarksCompanion bookmarkFromJson(Map<String, dynamic> j) =>
-    BookmarksCompanion.insert(
-      id: j['id'] as String,
-      bookId: j['bookId'] as String,
-      chapter: j['chapter'] as int,
-      offset: j['offset'] as int,
-      snippet: Value((j['snippet'] as String?) ?? ''),
-      createdAt: j['createdAt'] as int? ?? 0,
-    );
-
-Map<String, dynamic> sessionToJson(ReadingSession s) => {
-  'id': s.id,
-  'bookId': s.bookId,
-  'startedAt': s.startedAt,
-  'endedAt': s.endedAt,
-  'pages': s.pages,
-};
-
-ReadingSessionsCompanion sessionFromJson(Map<String, dynamic> j) =>
-    ReadingSessionsCompanion.insert(
-      bookId: j['bookId'] as String,
-      startedAt: j['startedAt'] as int,
-      endedAt: Value(j['endedAt'] as int? ?? 0),
-      pages: Value(j['pages'] as int? ?? 0),
-    );
-
-Map<String, dynamic> collectionToJson(Collection c) => {
-  'id': c.id,
-  'name': c.name,
-  'sortType': c.sortType,
-  'createdAt': c.createdAt,
-};
-
-CollectionsCompanion collectionFromJson(Map<String, dynamic> j) =>
-    CollectionsCompanion.insert(
-      id: j['id'] as String,
-      name: j['name'] as String,
-      sortType: Value(j['sortType'] as int? ?? 0),
-      createdAt: j['createdAt'] as int,
-    );
-
-Map<String, dynamic> collectionBookToJson(CollectionBook cb) => {
-  'id': cb.id,
-  'collectionId': cb.collectionId,
-  'bookId': cb.bookId,
-  'addedAt': cb.addedAt,
-  'sortPosition': cb.sortPosition,
-};
-
-CollectionBooksCompanion collectionBookFromJson(Map<String, dynamic> j) =>
-    CollectionBooksCompanion.insert(
-      collectionId: j['collectionId'] as String,
-      bookId: j['bookId'] as String,
-      addedAt: j['addedAt'] as int,
-      sortPosition: Value(j['sortPosition'] as int? ?? 0),
-    );
 
 // ---------------------------------------------------------------------------
 // Connection
