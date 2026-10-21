@@ -276,7 +276,7 @@ void main() {
       tester,
     ) async {
       final library = _library();
-      await tester.pumpWidget(BurrowApp(library: library));
+      await tester.pumpWidget(BurrowApp(library: library, autoScanOnOpen: false));
       await tester.pumpAndSettle();
 
       expect(find.byType(OnboardingScreen), findsOneWidget);
@@ -287,7 +287,8 @@ void main() {
       tester,
     ) async {
       final library = _library()..onboardingComplete = true;
-      await tester.pumpWidget(BurrowApp(library: library));
+      await tester
+          .pumpWidget(BurrowApp(library: library, autoScanOnOpen: false));
       await tester.pumpAndSettle();
 
       expect(find.byType(OnboardingScreen), findsNothing);

@@ -37,6 +37,20 @@ class ScanService {
     return status.isGranted || status.isLimited;
   }
 
+  /// True when scan permission is already granted, without prompting.
+  /// Used by the on-open auto-scan so a denied permission never pops a
+  /// system dialog at every app launch.
+  static Future<bool> hasScanPermission() async {
+    if (!Platform.isAndroid) return true;
+
+    var status = await Permission.manageExternalStorage.status;
+    if (status.isGranted) return true;
+
+    // Android 10 and below: classic runtime permission instead.
+    status = await Permission.storage.status;
+    return status.isGranted || status.isLimited;
+  }
+
   /// Walks shared storage looking for documents. Returns absolute paths not
   /// already present in [knownPaths].
   /// Throws [TimeoutException] after 2 minutes so callers can distinguish

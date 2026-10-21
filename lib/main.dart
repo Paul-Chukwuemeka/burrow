@@ -37,11 +37,15 @@ Future<void> main() async {
 }
 
 class BurrowApp extends StatefulWidget {
-  const BurrowApp({super.key, this.library});
+  const BurrowApp({super.key, this.library, this.autoScanOnOpen = true});
 
   /// Test seam: when provided, this library is used instead of building and
   /// loading a fresh one, and the heavy plugin initialization is skipped.
   final LibraryService? library;
+
+  /// Test seam as well: disables the on-open auto-scan (real device scan
+  /// functions spawn isolates that a testWidgets zone cannot handle).
+  final bool autoScanOnOpen;
 
   @override
   State<BurrowApp> createState() => _BurrowAppState();
@@ -150,14 +154,22 @@ class _BurrowAppState extends State<BurrowApp> {
       }
 
       if (library.onboardingComplete) {
-        return LibraryScreen(library: library);
+        return LibraryScreen(
+          library: library,
+          autoScanOnOpen: widget.autoScanOnOpen,
+        );
       }
       return OnboardingScreen(
         library: library,
         onDone: (context, {openBook}) {
           library.markOnboardingComplete();
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => LibraryScreen(library: library)),
+            MaterialPageRoute(
+              builder: (_) => LibraryScreen(
+                library: library,
+                autoScanOnOpen: widget.autoScanOnOpen,
+              ),
+            ),
           );
           if (openBook != null) {
             // Pick-file flow: land directly in the chosen book.

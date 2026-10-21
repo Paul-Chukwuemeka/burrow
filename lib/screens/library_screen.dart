@@ -45,6 +45,7 @@ class LibraryScreen extends StatefulWidget {
     this.scanFolders = _defaultScanFolders,
     this.scanDevice = _defaultScanDevice,
     this.requestPermission = ScanService.ensurePermission,
+    this.autoScanOnOpen = false,
   });
 
   final LibraryService library;
@@ -60,6 +61,18 @@ class LibraryScreen extends StatefulWidget {
 
   /// Request storage access; returns whether access was granted.
   final Future<bool> Function() requestPermission;
+
+  /// When true, the scan runs automatically the first time the library is
+  /// opened in a session, so new files show up without a pull-to-refresh.
+  /// Enabled by the app shell (main.dart); tests opt out by default.
+  final bool autoScanOnOpen;
+
+  /// Auto-scan on open runs at most once per app session.
+  static bool _autoScanRan = false;
+
+  /// Tests share process state, so each auto-scan test resets the flag.
+  @visibleForTesting
+  static void resetAutoScanForTest() => _autoScanRan = false;
 
   static Future<String?> _defaultPickScanFolder() =>
       FilePicker.getDirectoryPath();
@@ -135,7 +148,10 @@ class _LibraryScreenState extends State<LibraryScreen>
     super.initState();
     _selection.addListener(_onSelectionChanged);
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _drainSharedFiles());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _drainSharedFiles();
+      _autoScanOnOpen();
+    });
     final saved = widget.library.libraryLayout;
     _layout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
     widget.library.addListener(_onLibraryChanged);
@@ -345,8 +361,9 @@ class _LibraryScreenState extends State<LibraryScreen>
         settings.scanMode == ScanMode.folder && settings.scanFolder.isNotEmpty
         ? '${settings.scanFolder}/'
         : null;
+    final missingCount = widget.library.missingIds.length;
     final key =
-        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}:${settings.scanMode.index}:$folderScope';
+        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}:${settings.scanMode.index}:$folderScope:$missingCount';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
       return _cachedVisibleBooks!;
     }
@@ -356,6 +373,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     final q = _query.trim().toLowerCase();
 
     var books = widget.library.sorted.where((b) {
+      // Deleted files move out of the view; the missing snack lists them.
+      if (widget.library.isMissing(b.id)) return false;
       // Folder scan type scopes the library to the remembered folder.
       if (folderScope != null && !b.path.startsWith(folderScope)) return false;
       if (_formatFilters.isNotEmpty && !_formatFilters.contains(b.format))
@@ -513,6 +532,35 @@ class _LibraryScreenState extends State<LibraryScreen>
     }
   }
 
+  /// Auto-scan on the first open of the session: pick up new files without
+  /// the user having to pull-to-refresh. Never opens dialogs — in folder
+  /// mode it scans only the remembered folder, and a device rescan is
+  /// skipped when permission was denied.
+  Future<void> _autoScanOnOpen() async {
+    if (!widget.autoScanOnOpen) return;
+    if (LibraryScreen._autoScanRan) return;
+    LibraryScreen._autoScanRan = true;
+
+    switch (widget.library.settings.scanMode) {
+      case ScanMode.device:
+        if (widget.library.books.isEmpty) {
+          // Fresh start: prompt for access and populate the library.
+          await _scanDevice();
+        } else {
+          // Quiet rescan; skipped when permission was previously denied.
+          if (!await ScanService.hasScanPermission()) return;
+          await _runScan(widget.scanDevice(knownPaths: _knownPaths()));
+        }
+      case ScanMode.quick:
+        await _quickRefresh();
+      case ScanMode.folder:
+        final folder = widget.library.settings.scanFolder;
+        if (folder.isNotEmpty) {
+          await _runScan(widget.scanFolder(folder, knownPaths: _knownPaths()));
+        }
+    }
+  }
+
   /// Quick refresh: scans only the folders that contain known books.
   /// Much faster than a full device scan because it skips unrelated directories.
   Future<void> _quickRefresh() async {
@@ -566,20 +614,28 @@ class _LibraryScreenState extends State<LibraryScreen>
         },
       );
       if (!mounted) return;
-      final msg = paths.isEmpty
-          ? 'No new books found'
-          : 'Added ${added.length} book${added.length == 1 ? '' : 's'}'
-                '${failed > 0 ? ', $failed unreadable' : ''}';
-      setState(() {
-        _activeStatus = StatusType.completed;
-        _statusResult = msg;
-      });
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) {
+      if (paths.isEmpty) {
+        // Nothing new was found: hide the status banner instead of
+        // showing a "no new books" result.
         setState(() {
           _activeStatus = null;
           _statusResult = null;
         });
+      } else {
+        final msg =
+            'Added ${added.length} book${added.length == 1 ? '' : 's'}'
+            '${failed > 0 ? ', $failed unreadable' : ''}';
+        setState(() {
+          _activeStatus = StatusType.completed;
+          _statusResult = msg;
+        });
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          setState(() {
+            _activeStatus = null;
+            _statusResult = null;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Scan failed: $e');
@@ -1565,6 +1621,8 @@ class _LibraryScreenState extends State<LibraryScreen>
                   if (widget.library.settings.scanMode == ScanMode.folder &&
                       widget.library.settings.scanFolder.isNotEmpty)
                     SliverToBoxAdapter(child: _folderScopeNote(context)),
+                  if (widget.library.missingIds.isNotEmpty)
+                    SliverToBoxAdapter(child: _missingSnack(context)),
                   if (_selection.isSelecting) _selectionBar(),
                   if (hasLibrary && widget.library.isScanning)
                     SliverToBoxAdapter(
@@ -2340,6 +2398,87 @@ class _LibraryScreenState extends State<LibraryScreen>
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Compact pill at the top of the library: "X document(s) missing" with a
+  /// View action that opens the missing sheet.
+  Widget _missingSnack(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final count = widget.library.missingIds.length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+      child: Material(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.85),
+        borderRadius: Burrow.r(Burrow.shapeSm),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.file_present_outlined,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  count == 1
+                      ? '1 document missing'
+                      : '$count documents missing',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _showMissingSheet(context),
+                child: const Text('View'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Bottom sheet listing the books whose files have vanished. Tapping a
+  /// book opens its action sheet (Locate / Remove).
+  void _showMissingSheet(BuildContext context) {
+    final missing = widget.library.books
+        .where((b) => widget.library.isMissing(b.id))
+        .toList();
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          children: [
+            Text(
+              'Missing documents',
+              style: Theme.of(sheetContext).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            for (final book in missing)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  Icons.file_present_outlined,
+                  color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
+                ),
+                title: Text(book.displayTitle),
+                subtitle: Text(book.path, maxLines: 1),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showBookActions(book);
+                },
+              ),
+          ],
         ),
       ),
     );
