@@ -5,6 +5,7 @@ import 'db/database.dart';
 import 'models/reader_settings.dart';
 import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/reader_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/dictionary_service.dart';
 import 'services/epub/rust_status.dart';
@@ -153,11 +154,20 @@ class _BurrowAppState extends State<BurrowApp> {
       }
       return OnboardingScreen(
         library: library,
-        onDone: (context) {
+        onDone: (context, {openBook}) {
           library.markOnboardingComplete();
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => LibraryScreen(library: library)),
           );
+          if (openBook != null) {
+            // Pick-file flow: land directly in the chosen book.
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    ReaderScreen(book: openBook, library: library),
+              ),
+            );
+          }
         },
       );
     } catch (e) {

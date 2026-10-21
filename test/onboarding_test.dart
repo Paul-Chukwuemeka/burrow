@@ -19,15 +19,21 @@ Future<void> _pumpOnboarding(
   ScanFn? scanDevice,
   ScanFn? scanFolder,
   PickFilesFn? pickFile,
-  void Function(BuildContext context)? onDone,
+  Future<(List<Book> added, int failed)> Function(
+    LibraryService library,
+    List<String> paths,
+  )?
+  importPaths,
+  void Function(BuildContext context, {Book? openBook})? onDone,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       home: OnboardingScreen(
         library: library,
-        onDone: onDone ?? (_) {},
+        onDone: onDone ?? (_, {openBook}) {},
         requestPermission: permission ?? () async => true,
         pickFolder: pickFolder,
+        importPaths: importPaths,
         scanDevice: scanDevice ?? () async => <String>[],
         scanFolder: scanFolder ?? () async => <String>[],
         pickFile: pickFile ?? () async => <String>[],
@@ -149,7 +155,7 @@ void main() {
         tester,
         library,
         scanDevice: () async => ['/books/a.epub'],
-        onDone: (_) => done = true,
+        onDone: (_, {openBook}) => done = true,
       );
 
       await tester.tap(find.text('Tuck in'));
@@ -217,6 +223,52 @@ void main() {
       expect(library.settings.scanMode, ScanMode.folder);
       expect(library.settings.scanFolder, '/storage/books');
     });
+
+    testWidgets('picked file imports, opens the book and skips onboarding', (
+      tester,
+    ) async {
+      Book? openedBook;
+      var done = false;
+      final library = _StubLibrary();
+      await _pumpOnboarding(
+        tester,
+        library,
+        pickFile: () async => ['/books/dir.ib'],
+        importPaths: (lib, paths) async => (
+          <Book>[
+            Book(
+              id: 'dir',
+              title: 'Direct',
+              author: '',
+              path: '/books/dir.ib',
+              format: BookFormat.epub,
+              addedAt: 0,
+            ),
+          ],
+          0,
+        ),
+        onDone: (_, {openBook}) {
+          done = true;
+          openedBook = openBook;
+        },
+      );
+
+      // Skip into the import page without scanning anything.
+      await tester.tap(find.text('Tuck in'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Skip for now'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add your first book'));
+      await tester.pumpAndSettle();
+
+      expect(done, isTrue, reason: 'onboarding is skipped right away');
+      expect(openedBook?.id, 'dir');
+      // No import summary page appears.
+      expect(find.text('found 1 books'), findsNothing);
+
+      // No scan of any kind started for the pick-file flow.
+      expect(find.text('Scanning…'), findsNothing);
+    });
   });
 
   group('First-launch gate', () {
@@ -272,32 +324,42 @@ void main() {
       expect(library.settings.scanFolder, '/storage/books');
     });
 
-    test('importing files switches to quick refresh', () async {
+    Book pickImportBook() => Book(
+      id: 'a',
+      title: 'A',
+      author: '',
+      path: '/storage/books/a.epub',
+      format: BookFormat.epub,
+      addedAt: 0,
+    );
+
+    test('importing files opens the first book and never scans', () async {
       final library = LibraryService();
+      final scanned = <String>[];
       final flow = OnboardingFlowController(
         library: library,
         pickFile: () async => ['/storage/books/a.epub'],
-        importPaths: (lib, paths) async => (
-          <Book>[
-            Book(
-              id: 'a',
-              title: 'A',
-              author: '',
-              path: '/storage/books/a.epub',
-              format: BookFormat.epub,
-              addedAt: 0,
-            ),
-          ],
-          0,
-        ),
+        importPaths: (lib, paths) async => ([pickImportBook()], 0),
+        scanDevice: () async {
+          scanned.add('device');
+          return const <String>[];
+        },
+        scanFolder: () async {
+          scanned.add('folder');
+          return const <String>[];
+        },
       );
 
-      await flow.pickAndImport();
+      final opened = await flow.pickAndImport();
 
-      expect(library.settings.scanMode, ScanMode.quick);
+      expect(opened?.id, 'a');
+      // Pick-file changes no scan settings and runs no scan.
+      expect(library.settings.scanMode, ScanMode.device);
+      expect(library.settings.scanFolder, isEmpty);
+      expect(scanned, isEmpty);
     });
 
-    test('failed import leaves the scan type at the default', () async {
+    test('failed import opens nothing and keeps the scan defaults', () async {
       final library = LibraryService();
       final flow = OnboardingFlowController(
         library: library,
@@ -305,8 +367,9 @@ void main() {
         importPaths: (lib, paths) async => (<Book>[], 1),
       );
 
-      await flow.pickAndImport();
+      final opened = await flow.pickAndImport();
 
+      expect(opened, isNull);
       expect(library.settings.scanMode, ScanMode.device);
     });
 

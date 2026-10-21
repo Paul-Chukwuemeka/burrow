@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/book.dart';
+
 import '../services/library_service.dart';
 import '../services/onboarding_analytics.dart';
+import '../services/import_helper.dart';
 import '../services/onboarding_flow_controller.dart';
 import '../widgets/onboarding/import_body.dart';
 import '../widgets/onboarding/onboarding_stage.dart';
@@ -10,7 +13,7 @@ import '../widgets/onboarding/squishy_button.dart';
 import '../widgets/onboarding/theme_picker.dart';
 
 export '../services/onboarding_flow_controller.dart'
-    show PickFilesFn, ScanFn, PermissionFn;
+    show PickFilesFn, ScanFn, PermissionFn, ImportPathsFn;
 
 /// First-run welcome flow. Establishes the app's personality, seeds reader
 /// preferences (theme + typeface) and gets the user to their first book with
@@ -26,10 +29,11 @@ class OnboardingScreen extends StatefulWidget {
     this.scanDevice,
     this.scanFolder,
     this.pickFile,
+    this.importPaths,
   });
 
   final LibraryService library;
-  final void Function(BuildContext context) onDone;
+  final void Function(BuildContext context, {Book? openBook}) onDone;
 
   /// Test/injection overrides for the platform-backed pieces.
   final PermissionFn? requestPermission;
@@ -37,6 +41,7 @@ class OnboardingScreen extends StatefulWidget {
   final ScanFn? scanDevice;
   final ScanFn? scanFolder;
   final PickFilesFn? pickFile;
+  final ImportPathsFn? importPaths;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -59,6 +64,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       scanDevice: widget.scanDevice,
       scanFolder: widget.scanFolder,
       pickFile: widget.pickFile,
+      importPaths: widget.importPaths ?? BookImporter.importPaths,
     );
     _page = PageController();
     _ctrl.addListener(_onControllerUpdate);
@@ -94,23 +100,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   LibraryService get _lib => widget.library;
 
-  void _finish() {
+  void _finish() => _finishOnce();
+
+  void _finishOnce({Book? openBook}) {
+    if (_finished || !mounted) return;
+    _finished = true;
     final elapsed = _flowStartedAt != null
         ? DateTime.now().difference(_flowStartedAt!).inMilliseconds
         : 0;
     _analytics.onboardingCompleted(totalDurationMs: elapsed);
-    widget.onDone(context);
+    widget.onDone(context, openBook: openBook);
+    // Hand over to the reader immediately; never paint the flow again.
+    if (mounted) setState(() => _openedBook = openBook);
   }
+
+  /// Set when pick-file handed the user straight to their book: the flow
+  /// paints nothing so the reader/library takes over with no summary flash.
+  Book? _openedBook;
 
   bool _finished = false;
 
-  /// Finishes onboarding at most once; progress callbacks from the
-  /// background scan keep firing after the screen is gone.
-  void _finishOnce() {
-    if (_finished || !mounted) return;
-    _finished = true;
-    _finish();
-  }
 
   // -------------------------------------------------------------------------
   // Build
@@ -120,6 +129,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
+    if (_openedBook != null) return const SizedBox.shrink();
     return Scaffold(
       backgroundColor: scheme.surface,
       body: SafeArea(
@@ -408,7 +418,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ScanStatus.done ||
         ScanStatus.error => [buildCta(context, 'Open your burrow', _finish)],
         ScanStatus.none => [
-          buildCta(context, 'Add your first book', _ctrl.pickAndImport),
+          buildCta(context, 'Add your first book', () async {
+            // Pick-file is not a scan: import, open the first book and
+            // leave onboarding immediately.
+            final opened = await _ctrl.pickAndImport();
+            if (opened != null) _finishOnce(openBook: opened);
+          }),
           const SizedBox(height: 6),
           buildCta(
             context,
