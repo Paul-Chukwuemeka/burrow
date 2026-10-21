@@ -272,6 +272,44 @@ void main() {
       expect(library.settings.scanFolder, '/storage/books');
     });
 
+    test('importing files switches to quick refresh', () async {
+      final library = LibraryService();
+      final flow = OnboardingFlowController(
+        library: library,
+        pickFile: () async => ['/storage/books/a.epub'],
+        importPaths: (lib, paths) async => (
+          <Book>[
+            Book(
+              id: 'a',
+              title: 'A',
+              author: '',
+              path: '/storage/books/a.epub',
+              format: BookFormat.epub,
+              addedAt: 0,
+            ),
+          ],
+          0,
+        ),
+      );
+
+      await flow.pickAndImport();
+
+      expect(library.settings.scanMode, ScanMode.quick);
+    });
+
+    test('failed import leaves the scan type at the default', () async {
+      final library = LibraryService();
+      final flow = OnboardingFlowController(
+        library: library,
+        pickFile: () async => ['/storage/books/a.epub'],
+        importPaths: (lib, paths) async => (<Book>[], 1),
+      );
+
+      await flow.pickAndImport();
+
+      expect(library.settings.scanMode, ScanMode.device);
+    });
+
     test('cancelling the folder picker keeps the default scan type', () async {
       final library = LibraryService();
       final flow = OnboardingFlowController(

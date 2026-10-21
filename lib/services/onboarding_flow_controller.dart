@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 
+import '../models/book.dart';
 import '../models/reader_settings.dart';
 import 'package:flutter/material.dart';
 
@@ -10,6 +11,13 @@ import '../widgets/onboarding/import_body.dart';
 
 /// Pick a set of files; returns absolute paths (empty when cancelled).
 typedef PickFilesFn = Future<List<String>> Function();
+
+/// Import a list of paths into the library; returns (added, failed).
+typedef ImportPathsFn =
+    Future<(List<Book> added, int failed)> Function(
+      LibraryService library,
+      List<String> paths,
+    );
 
 /// Resolve a list of book paths (scan or folder walk).
 typedef ScanFn = Future<List<String>> Function();
@@ -32,6 +40,7 @@ class OnboardingFlowController extends ChangeNotifier {
     this.scanDevice,
     this.scanFolder,
     this.pickFile,
+    this.importPaths = BookImporter.importPaths,
   });
 
   final LibraryService library;
@@ -42,6 +51,9 @@ class OnboardingFlowController extends ChangeNotifier {
   /// Pick the folder scan scope; seeded by tests.
   final Future<String?> Function()? pickFolder;
   final PickFilesFn? pickFile;
+
+  /// Import chosen files; seeded by tests.
+  final ImportPathsFn importPaths;
 
   int _currentPageIndex = 0;
   static const int _pageCount = 4;
@@ -161,14 +173,18 @@ class OnboardingFlowController extends ChangeNotifier {
               return files.map((f) => f.path).whereType<String>().toList();
             })();
     if (paths.isEmpty) return;
-    final (addedResult, failedResult) = await BookImporter.importPaths(
-      library,
-      paths,
-    );
+    final (addedResult, failedResult) = await importPaths(library, paths);
     scanStatus = ScanStatus.done;
     scanPaths = paths;
     added = addedResult.length;
     failed = failedResult;
+
+    // Hand-imported books live wherever the user keeps them; quick refresh
+    // re-checks those folders without a full device walk.
+    if (addedResult.isNotEmpty) {
+      library.settings.scanMode = ScanMode.quick;
+      await library.saveSettings();
+    }
     notifyListeners();
   }
 
