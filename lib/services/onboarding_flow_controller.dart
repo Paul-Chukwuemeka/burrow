@@ -162,7 +162,10 @@ class OnboardingFlowController extends ChangeNotifier {
     }
   }
 
-  Future<void> pickAndImport() async {
+  /// Imports the chosen files and returns the first added book (opened by
+  /// the caller) — or null when nothing was picked/imported.
+  /// Pick-file never scans: no scan runs and scan settings stay untouched.
+  Future<Book?> pickAndImport() async {
     final paths =
         await (pickFile ??
             () async {
@@ -172,20 +175,14 @@ class OnboardingFlowController extends ChangeNotifier {
               );
               return files.map((f) => f.path).whereType<String>().toList();
             })();
-    if (paths.isEmpty) return;
+    if (paths.isEmpty) return null;
     final (addedResult, failedResult) = await importPaths(library, paths);
     scanStatus = ScanStatus.done;
     scanPaths = paths;
     added = addedResult.length;
     failed = failedResult;
-
-    // Hand-imported books live wherever the user keeps them; quick refresh
-    // re-checks those folders without a full device walk.
-    if (addedResult.isNotEmpty) {
-      library.settings.scanMode = ScanMode.quick;
-      await library.saveSettings();
-    }
     notifyListeners();
+    return addedResult.isEmpty ? null : addedResult.first;
   }
 
   // ---- Internal helpers --------------------------------------------------

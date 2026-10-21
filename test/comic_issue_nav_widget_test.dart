@@ -175,4 +175,59 @@ void main() {
     expect(next.onPressed, isNull);
     expect(prev.onPressed, isNotNull);
   });
+
+  testWidgets('tapping next issue swaps the reader to the following issue',
+      (tester) async {
+    final books = await addSeries();
+    final state = await _pumpComic(tester, library, books.first);
+    expect(state.widget.book.id, 'c1');
+
+    await tester.tap(find.byIcon(Icons.skip_next_rounded));
+    await _waitUntilReaderShows(tester, 'c2');
+
+    expect(find.byType(ReaderScreen), findsOneWidget);
+    expect(_readerState(tester)!.widget.book.id, 'c2');
+  });
+
+  testWidgets('tapping previous issue returns to the earlier issue',
+      (tester) async {
+    final books = await addSeries();
+    final state = await _pumpComic(tester, library, books.last);
+    expect(state.widget.book.id, 'c2');
+
+    await tester.tap(find.byIcon(Icons.skip_previous_rounded));
+    await _waitUntilReaderShows(tester, 'c1');
+
+    expect(find.byType(ReaderScreen), findsOneWidget);
+    expect(_readerState(tester)!.widget.book.id, 'c1');
+  });
+}
+
+/// Pumps until a [ReaderScreen] whose widget shows a [Book] with [bookId] is
+/// in the tree, then pumps through the remaining route transition.
+Future<void> _waitUntilReaderShows(WidgetTester tester, String bookId) async {
+  for (var i = 0; i < 120; i++) {
+    final matches = find
+        .byType(ReaderScreen)
+        .evaluate()
+        .any((e) => (e.widget as ReaderScreen).book.id == bookId);
+    if (matches) {
+      // Finish the route transition so the outgoing reader is disposed.
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  fail('reader never showed $bookId');
+}
+
+/// The ReaderScreen's state, tolerating the outgoing route during the swap
+/// transition (the first match at the top of the stack).
+ReaderScreenState? _readerState(WidgetTester tester) {
+  final readers = find.byType(ReaderScreen).evaluate();
+  if (readers.isEmpty) return null;
+  return tester.state<ReaderScreenState>(
+    find.byElementPredicate((e) => e == readers.last, skipOffstage: false),
+  );
 }

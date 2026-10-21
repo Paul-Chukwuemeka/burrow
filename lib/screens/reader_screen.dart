@@ -204,6 +204,7 @@ class ReaderScreenState extends State<ReaderScreen>
   static const Duration _paginationFrameBudget = Duration(milliseconds: 8);
 
   bool _chromeVisible = false;
+  bool _replacingIssue = false;
   Timer? _saveDebounce;
 
   // Zoom state (PDF + comic).
@@ -2625,7 +2626,18 @@ class ReaderScreenState extends State<ReaderScreen>
   /// Swaps this reader for [target] (the adjacent issue) using
   /// pushReplacement so the back stack still returns to the library.
   void _goToIssue(Book target) {
-    // TODO: navigation lands here (RED-3).
+    if (target.id == _book.id || _replacingIssue) return;
+    // Save this issue's position before the swap, exactly as backing out
+    // would. The outgoing reader also flushes in dispose; this covers the
+    // debounced writes that have not landed yet.
+    _replacingIssue = true;
+    _flushSave();
+    _flushComicPosition();
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => ReaderScreen(book: target, library: widget.library),
+      ),
+    );
   }
 
   Widget _chrome({
