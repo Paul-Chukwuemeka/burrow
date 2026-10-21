@@ -45,6 +45,7 @@ class _AuthorScreenState extends State<AuthorScreen> {
     _layout = widget.library.libraryLayout == 'list'
         ? _LayoutMode.list
         : _LayoutMode.grid;
+    _loadSort();
   }
 
   @override
@@ -52,6 +53,23 @@ class _AuthorScreenState extends State<AuthorScreen> {
     _selection.removeListener(_onSelectionChanged);
     _selection.dispose();
     super.dispose();
+  }
+
+  /// Restores the persisted sort choice (scope 'author').
+  Future<void> _loadSort() async {
+    final sorts = await widget.library.loadGroupSorts();
+    final name = sorts['author'];
+    if (name == null || !mounted) return;
+    setState(() {
+      _sort = _SortMode.values.firstWhere(
+        (e) => e.name == name,
+        orElse: () => _SortMode.title,
+      );
+    });
+  }
+
+  void _saveSort() {
+    widget.library.saveGroupSort('author', _sort.name);
   }
 
   String _sortLabel(_SortMode m) => switch (m) {
@@ -477,6 +495,9 @@ class _AuthorScreenState extends State<AuthorScreen> {
               onTap: () => setState(() {
                 _sort = _SortMode
                     .values[(_sort.index + 1) % _SortMode.values.length];
+                // Persist immediately like _saveFilters in library_screen;
+                // otherwise the sort resets after a restart.
+                _saveSort();
               }),
             ),
             const SizedBox(width: 8),

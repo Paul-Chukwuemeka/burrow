@@ -52,6 +52,7 @@ class LibraryService extends ChangeNotifier {
   static const _legacyLibraryKey = 'burrow.library.v1';
   static const _onboardingKey = 'burrow.onboarding.complete.v1';
   static const _filtersKey = 'burrow.library.filters.v1';
+  static const _groupSortsKey = 'burrow.library.groupSorts.v1';
   static const _comicsOrganizedKey = 'burrow.comics.organized.v1';
   static const _seriesCleanupKey = 'burrow.comics.seriesCleanup.v1';
 
@@ -450,6 +451,26 @@ class LibraryService extends ChangeNotifier {
     final raw = prefs.getString(_filtersKey);
     if (raw == null) return null;
     return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  /// Sort choices of the grouping screens (author/series/genre/smartGroup),
+  /// keyed by screen scope. Each remembers its own default independently.
+  Future<Map<String, String>> loadGroupSorts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_groupSortsKey);
+    if (raw == null) return const {};
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    return {
+      for (final e in data.entries)
+        if (e.value is String) e.key: e.value as String,
+    };
+  }
+
+  Future<void> saveGroupSort(String scope, String sort) async {
+    final sorts = Map.of(await loadGroupSorts());
+    sorts[scope] = sort;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_groupSortsKey, jsonEncode(sorts));
   }
 
   bool containsPath(String path) => _books.any((b) => b.path == path);

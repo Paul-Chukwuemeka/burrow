@@ -45,6 +45,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
     _layout = widget.library.libraryLayout == 'list'
         ? _LayoutMode.list
         : _LayoutMode.grid;
+    _loadSort();
   }
 
   @override
@@ -52,6 +53,23 @@ class _SeriesScreenState extends State<SeriesScreen> {
     _selection.removeListener(_onSelectionChanged);
     _selection.dispose();
     super.dispose();
+  }
+
+  /// Restores the persisted sort choice (scope 'series').
+  Future<void> _loadSort() async {
+    final sorts = await widget.library.loadGroupSorts();
+    final name = sorts['series'];
+    if (name == null || !mounted) return;
+    setState(() {
+      _sort = _SortMode.values.firstWhere(
+        (e) => e.name == name,
+        orElse: () => _SortMode.order,
+      );
+    });
+  }
+
+  void _saveSort() {
+    widget.library.saveGroupSort('series', _sort.name);
   }
 
   String _sortLabel(_SortMode m) => switch (m) {
@@ -487,6 +505,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
               onTap: () => setState(() {
                 _sort = _SortMode
                     .values[(_sort.index + 1) % _SortMode.values.length];
+                // Persist immediately like _saveFilters in library_screen;
+                // otherwise the sort resets after a restart.
+                _saveSort();
               }),
             ),
             const SizedBox(width: 8),
