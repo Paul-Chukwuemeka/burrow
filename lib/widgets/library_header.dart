@@ -164,17 +164,25 @@ class FabMenuItem extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.96),
+          // The label pill is part of the tap target: tapping the visible
+          // label must run the action, not dead-end.
+          Material(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.96),
+            shape: RoundedRectangleBorder(
               borderRadius: Burrow.r(Burrow.shapeSm),
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontWeight: FontWeight.w700,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ),

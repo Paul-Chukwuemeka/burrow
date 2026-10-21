@@ -38,13 +38,62 @@ import 'stats_screen.dart';
 enum _ReadingStatus { all, reading, finished, new_ }
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key, required this.library});
+  const LibraryScreen({
+    super.key,
+    required this.library,
+    this.pickScanFolder = _defaultPickScanFolder,
+    this.scanFolder = _defaultScanFolder,
+    this.scanFolders = _defaultScanFolders,
+    this.scanDevice = _defaultScanDevice,
+    this.requestPermission = ScanService.ensurePermission,
+  });
 
   final LibraryService library;
+
+  /// Seeded by tests; production picks a folder via the system picker.
+  final Future<String?> Function() pickScanFolder;
+
+  /// Folder walk, scoped scan and full device scan; seeded by tests so
+  /// widget tests never spawn isolates.
+  final ScanFolderFn scanFolder;
+  final ScanFoldersFn scanFolders;
+  final ScanDeviceFn scanDevice;
+
+  /// Request storage access; returns whether access was granted.
+  final Future<bool> Function() requestPermission;
+
+  static Future<String?> _defaultPickScanFolder() =>
+      FilePicker.getDirectoryPath();
+
+  static Future<List<String>> _defaultScanFolder(
+    String folder, {
+    Set<String> knownPaths = const {},
+  }) => ScanService.scanFolder(folder, knownPaths: knownPaths);
+
+  static Future<List<String>> _defaultScanFolders(
+    Set<String> folders, {
+    Set<String> knownPaths = const {},
+  }) => ScanService.scanFolders(folders, knownPaths: knownPaths);
+
+  static Future<List<String>> _defaultScanDevice({
+    Set<String> knownPaths = const {},
+  }) => ScanService.scanDevice(knownPaths: knownPaths);
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
+
+/// Scan a single folder for supported documents.
+typedef ScanFolderFn =
+    Future<List<String>> Function(String folder, {Set<String> knownPaths});
+
+/// Scan the folders that already contain books (quick refresh).
+typedef ScanFoldersFn =
+    Future<List<String>> Function(Set<String> folders, {Set<String> knownPaths});
+
+/// Full-device walk for supported documents.
+typedef ScanDeviceFn =
+    Future<List<String>> Function({Set<String> knownPaths});
 
 class _LibraryScreenState extends State<LibraryScreen>
     with WidgetsBindingObserver {
@@ -292,8 +341,13 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   List<Book> get _visibleBooks {
+    final settings = widget.library.settings;
+    final folderScope =
+        settings.scanMode == ScanMode.folder && settings.scanFolder.isNotEmpty
+        ? '${settings.scanFolder}/'
+        : null;
     final key =
-        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}';
+        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}:${settings.scanMode.index}:$folderScope';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
       return _cachedVisibleBooks!;
     }
@@ -303,6 +357,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     final q = _query.trim().toLowerCase();
 
     var books = widget.library.sorted.where((b) {
+      // Folder scan type scopes the library to the remembered folder.
+      if (folderScope != null && !b.path.startsWith(folderScope)) return false;
       if (_formatFilters.isNotEmpty && !_formatFilters.contains(b.format))
         return false;
       switch (_statusFilter) {
@@ -413,19 +469,25 @@ class _LibraryScreenState extends State<LibraryScreen>
     await _importPaths(paths, openFirst: paths.length == 1);
   }
 
-  Future<void> _pickFolderAndScan() async {
-    final dir = await FilePicker.getDirectoryPath();
-    if (dir == null) return;
-    await _runScan(ScanService.scanFolder(dir, knownPaths: _knownPaths()));
+  /// Scans the remembered folder without re-picking. Asks only when no folder
+  /// has been chosen yet (folder scan type without a saved folder).
+  Future<void> _scanSavedFolderOrAsk() async {
+    var folder = widget.library.settings.scanFolder;
+    if (folder.isEmpty) {
+      final picked = await widget.pickScanFolder();
+      if (picked == null || picked.isEmpty) return;
+      folder = picked;
+    }
+    await _runScan(widget.scanFolder(folder, knownPaths: _knownPaths()));
   }
 
   Future<void> _scanDevice() async {
-    final granted = await ScanService.ensurePermission();
+    final granted = await widget.requestPermission();
     if (!granted) {
       _snack('Storage permission is required to scan the device');
       return;
     }
-    await _runScan(ScanService.scanDevice(knownPaths: _knownPaths()));
+    await _runScan(widget.scanDevice(knownPaths: _knownPaths()));
   }
 
   /// Runs the scan type chosen in Settings.
@@ -434,14 +496,22 @@ class _LibraryScreenState extends State<LibraryScreen>
       case ScanMode.device:
         await _scanDevice();
       case ScanMode.folder:
-        await _pickFolderAndScan();
+        await _scanSavedFolderOrAsk();
       case ScanMode.quick:
         await _quickRefresh();
     }
   }
 
-  Future<void> _onRefresh() async {
-    await _quickRefresh();
+  /// Refresh follows the scan type chosen in Settings.
+  Future<void> _onRefresh() {
+    switch (widget.library.settings.scanMode) {
+      case ScanMode.device:
+        return _scanDevice();
+      case ScanMode.folder:
+        return _scanSavedFolderOrAsk();
+      case ScanMode.quick:
+        return _quickRefresh();
+    }
   }
 
   /// Quick refresh: scans only the folders that contain known books.
@@ -455,7 +525,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       return;
     }
 
-    await _runScan(ScanService.scanFolders(folders, knownPaths: _knownPaths()));
+    await _runScan(widget.scanFolders(folders, knownPaths: _knownPaths()));
   }
 
   Set<String> _knownPaths() => widget.library.books.map((b) => b.path).toSet();
@@ -1533,6 +1603,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                       }
                     }),
                   ),
+                  if (widget.library.settings.scanMode == ScanMode.folder &&
+                      widget.library.settings.scanFolder.isNotEmpty)
+                    SliverToBoxAdapter(child: _folderScopeNote(context)),
                   if (_selection.isSelecting) _selectionBar(),
                   if (hasLibrary && widget.library.isScanning)
                     SliverToBoxAdapter(
@@ -2303,6 +2376,44 @@ class _LibraryScreenState extends State<LibraryScreen>
                               );
                             },
                           ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Small tappable note naming the scoped folder; opens Settings.
+  Widget _folderScopeNote(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final name = widget.library.settings.scanFolder.split('/').last;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: () => SettingsScreen.show(context, library: widget.library),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.folder_outlined,
+                  size: 16,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '$name only',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ],
