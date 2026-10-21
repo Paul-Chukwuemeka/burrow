@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../controllers/book_selection.dart';
 import '../db/database.dart' as db;
@@ -533,44 +532,6 @@ class _LibraryScreenState extends State<LibraryScreen>
   /// Extracts unique parent folders from all known book paths.
   Set<String> _knownFolders() =>
       widget.library.books.map((b) => File(b.path).parent.path).toSet();
-
-  Future<void> _exportLibrary() async {
-    try {
-      final path = await widget.library.exportLibrary();
-      if (!mounted) return;
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(path)],
-          subject: 'Burrow library backup',
-          text: 'Burrow library backup',
-        ),
-      );
-    } catch (_) {
-      _snack('Export failed');
-    }
-  }
-
-  Future<void> _importLibrary() async {
-    final files = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-    final path = files.isEmpty ? null : files.first.path;
-    if (path == null) return;
-    try {
-      final count = await widget.library.importLibrary(path);
-      if (!mounted) return;
-      _snack(
-        count > 0
-            ? 'Restored $count book${count == 1 ? '' : 's'} from backup'
-            : 'Backup matches the current library',
-      );
-    } on FormatException catch (e) {
-      _snack(e.message);
-    } catch (_) {
-      _snack('Could not read backup file');
-    }
-  }
 
   Future<void> _runScan(Future<List<String>> scan) async {
     setState(() {
@@ -1589,8 +1550,6 @@ class _LibraryScreenState extends State<LibraryScreen>
                     onFilterTap: () => _showFilterSheet(context),
                     onStats: () =>
                         StatsScreen.show(context, library: widget.library),
-                    onExport: _exportLibrary,
-                    onImportBackup: _importLibrary,
                     onRemoveAllMissing: _removeAllMissing,
                     missingCount: widget.library.missingIds.length,
                     onSettings: () =>
