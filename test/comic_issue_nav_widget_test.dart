@@ -189,6 +189,66 @@ void main() {
     expect(_readerState(tester)!.widget.book.id, 'c2');
   });
 
+  testWidgets('reaching the last page of a non-final issue offers the next one',
+      (tester) async {
+    final books = await addSeries();
+    await _pumpComic(tester, library, books.first);
+
+    // Jump to the last page by dragging the chrome page slider to its far
+    // end (drag, not tap: the Slider in tests responds to drags).
+    final slider = find.byType(Slider).last;
+    final rect = tester.getRect(slider);
+    final gesture = await tester.startGesture(rect.center);
+    await tester.pump();
+    await gesture.moveBy(Offset(rect.width / 2 * 1.9, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The popup names the next issue...
+    expect(find.textContaining('Batman 002'), findsOneWidget);
+    // ...and tapping it swaps the reader to that issue. The banner is still
+    // on screen mid-transition, so resolve by element identity.
+    await tester.tap(find.textContaining('Batman 002'));
+    await _waitUntilReaderShows(tester, 'c2');
+    expect(_readerState(tester)!.widget.book.id, 'c2');
+  });
+
+  testWidgets('the final issue of a series never offers a popup',
+      (tester) async {
+    final books = await addSeries();
+    await _pumpComic(tester, library, books.last);
+
+    final slider = find.byType(Slider).last;
+    final rect = tester.getRect(slider);
+    final gesture = await tester.startGesture(rect.center);
+    await tester.pump();
+    await gesture.moveBy(Offset(rect.width / 2 * 1.9, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(ReaderScreen), findsOneWidget);
+    expect(tester.state<ReaderScreenState>(find.byType(ReaderScreen))
+        .debugComicPage, 19);
+    expect(find.textContaining('Next:'), findsNothing);
+  });
+
+  testWidgets('a reader opened straight onto the last page stays clean',
+      (tester) async {
+    final books = await addSeries();
+    // Resume position: the first issue was left on its final page.
+    books.first.lastChapter = 19;
+    await _pumpComic(tester, library, books.first);
+
+    expect(
+      tester.state<ReaderScreenState>(find.byType(ReaderScreen))
+          .debugComicPage,
+      19,
+    );
+    expect(find.textContaining('Next:'), findsNothing);
+  });
+
   testWidgets('tapping previous issue returns to the earlier issue',
       (tester) async {
     final books = await addSeries();

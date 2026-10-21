@@ -29,6 +29,7 @@ import '../services/epub_css_parser.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/comic_issues.dart';
+import '../utils/book_title.dart';
 import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
 import '../utils/text_selection.dart';
@@ -205,6 +206,7 @@ class ReaderScreenState extends State<ReaderScreen>
 
   bool _chromeVisible = false;
   bool _replacingIssue = false;
+  bool _issuePopupVisible = false;
   Timer? _saveDebounce;
 
   // Zoom state (PDF + comic).
@@ -1904,6 +1906,7 @@ class ReaderScreenState extends State<ReaderScreen>
             itemCount: _comicCtrl.comicPageCount,
             onPageChanged: (i) {
               _comicCtrl.notePageChanged(i);
+              _updateIssuePopup(userDriven: true);
               widget.library.savePosition(
                 id: _book.id,
                 chapter: i,
@@ -1978,6 +1981,7 @@ class ReaderScreenState extends State<ReaderScreen>
             },
           ),
         ),
+        if (_issuePopupVisible) _buildIssuePopupBanner(theme),
       ],
     );
   }
@@ -1996,6 +2000,7 @@ class ReaderScreenState extends State<ReaderScreen>
         );
         if (newIndex != _comicCtrl.comicPage) {
           _comicCtrl.notePageChanged(newIndex);
+          _updateIssuePopup(userDriven: true);
           _saveComicPosition(
             newIndex,
             controller.offset.toInt(),
@@ -2065,6 +2070,7 @@ class ReaderScreenState extends State<ReaderScreen>
             },
           ),
         ),
+        if (_issuePopupVisible) _buildIssuePopupBanner(theme),
       ],
     );
   }
@@ -2621,6 +2627,72 @@ class ReaderScreenState extends State<ReaderScreen>
       BrightnessController.instance.apply(null);
       _onSettingsChanged();
     }
+  }
+
+  /// The next issue in the current comic's series, or null. Computed on
+  /// demand from the live library so metadata edits reflect immediately.
+  Book? _nextIssue() {
+    final series = _book.seriesName;
+    if (!_isComic || series == null) return null;
+    return nextComicIssue(widget.library.booksBySeries(series), _book);
+  }
+
+  /// Shows or hides the end-of-issue popup. Only user-driven arrivals on the
+  /// last page (with a next issue available) trigger it: a reader that opens
+  /// straight onto the last page after resuming stays clean.
+  void _updateIssuePopup({required bool userDriven}) {
+    var show = false;
+    if (userDriven &&
+        _comicCtrl.comicPageCount > 0 &&
+        _comicCtrl.comicPage == _comicCtrl.comicPageCount - 1 &&
+        _nextIssue() != null) {
+      show = true;
+    }
+    if (_issuePopupVisible == show || !mounted) return;
+    setState(() => _issuePopupVisible = show);
+  }
+
+  /// The tappable end-of-issue banner, positioned above the bottom edge of
+  /// the comic body. Offered when the reader has reached the last page of a
+  /// non-final issue in a series.
+  Widget _buildIssuePopupBanner(ReaderTheme theme) {
+    final next = _nextIssue();
+    if (next == null) return const SizedBox.shrink();
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 24,
+      child: Material(
+        color: theme.background.withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(12),
+        elevation: 6,
+        child: InkWell(
+          onTap: () => _goToIssue(next),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Row(
+              children: [
+                Icon(Icons.skip_next_rounded, color: theme.accent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'End of issue — Next: ${next.displayTitle}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: theme.text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Swaps this reader for [target] (the adjacent issue) using
