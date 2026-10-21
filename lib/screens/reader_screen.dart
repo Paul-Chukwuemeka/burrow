@@ -28,6 +28,7 @@ import '../services/epub/epub_engine_factory.dart';
 import '../services/epub_css_parser.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
+import '../utils/comic_issues.dart';
 import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
 import '../utils/text_selection.dart';
@@ -2621,6 +2622,12 @@ class ReaderScreenState extends State<ReaderScreen>
     }
   }
 
+  /// Swaps this reader for [target] (the adjacent issue) using
+  /// pushReplacement so the back stack still returns to the library.
+  void _goToIssue(Book target) {
+    // TODO: navigation lands here (RED-3).
+  }
+
   Widget _chrome({
     required String centerLabel,
     required int sliderMax,
@@ -2629,6 +2636,26 @@ class ReaderScreenState extends State<ReaderScreen>
     required ValueChanged<int> onSliderChanged,
   }) {
     final theme = _settings.colors;
+    // Issue navigation only exists for comics that belong to a series. The
+    // order mirrors the Series screen's default "Order" sort.
+    List<Book> issues = const [];
+    var issuePosition = -1;
+    if (_isComic && _book.seriesName != null) {
+      issues = orderedComicIssues(
+        widget.library.booksBySeries(_book.seriesName!),
+      );
+      issuePosition = issues.indexWhere((b) => b.id == _book.id);
+    }
+    final inSeries = issuePosition >= 0;
+    final prevIssue = inSeries && issuePosition > 0
+        ? issues[issuePosition - 1]
+        : null;
+    final nextIssue = inSeries && issuePosition + 1 < issues.length
+        ? issues[issuePosition + 1]
+        : null;
+    final issuesLabel = inSeries
+        ? ' · Issue ${issuePosition + 1} of ${issues.length}'
+        : '';
     return AnimatedOpacity(
       opacity: _chromeVisible ? 1 : 0,
       duration: const Duration(milliseconds: 180),
@@ -2820,16 +2847,48 @@ class ReaderScreenState extends State<ReaderScreen>
                 ],
                 GestureDetector(
                   onTap: _showGoToPageDialog,
-                  child: Text(
-                    centerLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: theme.text,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '$centerLabel$issuesLabel',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: theme.text,
+                          ),
+                        ),
+                      ),
+                      // Issue navigation lives just above the slider, on the
+                      // right. Disabled at either end of the series.
+                      if (inSeries) ...[
+                        IconButton(
+                          icon: Icon(
+                            Icons.skip_previous_rounded,
+                            color: theme.text,
+                            size: 22,
+                          ),
+                          tooltip: 'Previous issue',
+                          visualDensity: VisualDensity.compact,
+                          onPressed:
+                              prevIssue == null ? null : () => _goToIssue(prevIssue),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.skip_next_rounded,
+                            color: theme.text,
+                            size: 22,
+                          ),
+                          tooltip: 'Next issue',
+                          visualDensity: VisualDensity.compact,
+                          onPressed:
+                              nextIssue == null ? null : () => _goToIssue(nextIssue),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(height: 4),
