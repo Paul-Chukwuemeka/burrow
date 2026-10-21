@@ -27,6 +27,7 @@ void main() {
     List<String?>? pickCalls,
     Future<List<String>> Function(String folder, {Set<String> knownPaths})?
     onScanFolder,
+    bool autoScan = false,
   }) async {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(412, 915);
@@ -35,6 +36,7 @@ void main() {
       MaterialApp(
         home: LibraryScreen(
           library: library,
+          autoScanOnOpen: autoScan,
           pickScanFolder: () async {
             pickCalls?.add('/storage/books');
             return '/storage/books';
@@ -107,10 +109,7 @@ void main() {
     expect(pickCalls, isEmpty, reason: 'no picker for a remembered folder');
     expect(scanned, ['/storage/books'],
         reason: 'refresh scans the remembered folder');
-    expect(find.text('No new books found'), findsWidgets,
-        reason: 'refresh completed with a scan banner');
-    // ...and the banner auto-clears.
-    await tester.pump(const Duration(seconds: 3));
+    // Nothing new was found: no completion banner appears.
     expect(find.text('No new books found'), findsNothing);
   });
 
@@ -139,10 +138,64 @@ void main() {
     expect(pickCalls, isEmpty, reason: 'no picker for a remembered folder');
     expect(scanned, ['/storage/books'],
         reason: 'scan action targets the remembered folder');
-    expect(find.text('No new books found'), findsWidgets,
-        reason: 'scan completed with a banner');
-    // ...and auto-clears.
-    await tester.pump(const Duration(seconds: 3));
+    // Nothing new was found: no completion banner appears.
     expect(find.text('No new books found'), findsNothing);
+  });
+
+  testWidgets('opening the library auto-scans the remembered folder once '
+      'without any user action', (tester) async {
+    LibraryScreen.resetAutoScanForTest();
+    final scanned = <String>[];
+    final service = scopedService();
+    await pumpLibrary(
+      tester,
+      service,
+      onScanFolder: (folder, {knownPaths = const {}}) async {
+        scanned.add(folder);
+        return const [];
+      },
+      autoScan: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(scanned, ['/storage/books'],
+        reason: 'first open scans the remembered folder without prompting');
+    expect(find.text('No new books found'), findsNothing,
+        reason: 'a silent scan shows no banner when nothing was added');
+  });
+
+  testWidgets('auto-scan only runs on the first open of the session',
+      (tester) async {
+    LibraryScreen.resetAutoScanForTest();
+    final scanned = <String>[];
+    final service = scopedService();
+    await pumpLibrary(
+      tester,
+      service,
+      onScanFolder: (folder, {knownPaths = const {}}) async {
+        scanned.add(folder);
+        return const [];
+      },
+      autoScan: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // A second screen mount in the same session does not rescan.
+    final service2 = scopedService();
+    await pumpLibrary(
+      tester,
+      service2,
+      onScanFolder: (folder, {knownPaths = const {}}) async {
+        scanned.add(folder);
+        return const [];
+      },
+      autoScan: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(scanned, hasLength(1),
+        reason: 'static once-per-session flag suppresses the second scan');
   });
 }
