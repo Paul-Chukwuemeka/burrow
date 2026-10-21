@@ -146,8 +146,3 @@ void main() {
     expect(find.text('No new books found'), findsNothing);
   });
 }
-
-class _StubLibrary extends LibraryService {
-  @override
-  Future<Book?> importFile(String path) async => null; // never touches isolates
-}
