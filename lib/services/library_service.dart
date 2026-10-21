@@ -486,6 +486,13 @@ class LibraryService extends ChangeNotifier {
   @visibleForTesting
   bool debugHasPendingImport(String path) => _pendingImports.contains(path);
 
+  /// Registers a collection in-memory without a database (unit tests).
+  @visibleForTesting
+  void debugAddCollection(db.Collection collection) {
+    _collections.add(collection);
+    notifyListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Backup / restore
   // ---------------------------------------------------------------------------
@@ -1643,6 +1650,24 @@ class LibraryService extends ChangeNotifier {
     _collections
       ..clear()
       ..addAll(updated);
+    notifyListeners();
+  }
+
+  /// Persists a collection's sort type. Always updates the in-memory entry;
+  /// the database row is written when a db is attached. The collection
+  /// screen taps this so the choice survives a restart.
+  Future<void> setCollectionSortType(String id, int sortType) async {
+    final i = _collections.indexWhere((c) => c.id == id);
+    if (i < 0) return;
+    _collections[i] = _collections[i].copyWith(sortType: sortType);
+    if (_db != null) {
+      await _db!.updateCollection(
+        db.CollectionsCompanion(id: Value(id), sortType: Value(sortType)),
+      );
+      _collections
+        ..clear()
+        ..addAll(await _db!.getAllCollections());
+    }
     notifyListeners();
   }
 

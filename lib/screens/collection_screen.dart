@@ -390,6 +390,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
               onTap: () => setState(() {
                 _sort = _SortMode
                     .values[(_sort.index + 1) % _SortMode.values.length];
+                // Persist on the collection (enum order matches the db's
+                // 0=manual, 1=title, 2=recent) like the other sort chips,
+                // otherwise the sort resets after a restart.
+                widget.library.setCollectionSortType(
+                  widget.collection.id,
+                  _sort.index,
+                );
                 if (_sort != _SortMode.manual) _reorderMode = false;
               }),
             ),
