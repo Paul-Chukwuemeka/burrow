@@ -1471,6 +1471,9 @@ class LibraryService extends ChangeNotifier {
       ..lastOffset = offset
       ..progress = progress.clamp(0, 1)
       ..lastReadAt = DateTime.now().millisecondsSinceEpoch;
+    // Reading stamps lastReadAt, which drives the Recent sort and the
+    // Continue-reading card, so the cached `sorted` order must be dropped.
+    _invalidateSortCache();
     if (_db != null) {
       await _db!.updateBook(
         db.positionToUpdate(
