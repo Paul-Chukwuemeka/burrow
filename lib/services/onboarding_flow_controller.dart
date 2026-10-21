@@ -1,4 +1,6 @@
 import 'package:file_picker/file_picker.dart';
+
+import '../models/reader_settings.dart';
 import 'package:flutter/material.dart';
 
 import '../services/import_helper.dart';
@@ -26,6 +28,7 @@ class OnboardingFlowController extends ChangeNotifier {
   OnboardingFlowController({
     required this.library,
     this.requestPermission,
+    this.pickFolder,
     this.scanDevice,
     this.scanFolder,
     this.pickFile,
@@ -35,6 +38,9 @@ class OnboardingFlowController extends ChangeNotifier {
   final PermissionFn? requestPermission;
   final ScanFn? scanDevice;
   final ScanFn? scanFolder;
+
+  /// Pick the folder scan scope; seeded by tests.
+  final Future<String?> Function()? pickFolder;
   final PickFilesFn? pickFile;
 
   int _currentPageIndex = 0;
@@ -104,17 +110,22 @@ class OnboardingFlowController extends ChangeNotifier {
   }
 
   Future<void> startFolderScan() async {
+    final dir = await (pickFolder ?? FilePicker.getDirectoryPath)();
+    if (dir == null || dir.isEmpty) return; // user backed out: keep the page
+
+    // The onboarding choice carries into the library: the folder becomes the
+    // remembered scan scope, so refreshes/scan actions follow it afterwards.
+    library.settings
+      ..scanMode = ScanMode.folder
+      ..scanFolder = dir;
+    await library.saveSettings();
+
     scanStatus = ScanStatus.running;
     permissionDenied = false;
     notifyListeners();
     skipToEnd(); // jump to import page
     await _startScan(
-      scanFolder ??
-          () async {
-            final dir = await FilePicker.getDirectoryPath();
-            if (dir == null) return const <String>[];
-            return ScanService.scanFolder(dir, knownPaths: _knownPaths);
-          },
+      scanFolder ?? () => ScanService.scanFolder(dir, knownPaths: _knownPaths),
     );
   }
 

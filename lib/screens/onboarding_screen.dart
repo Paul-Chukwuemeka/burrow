@@ -22,6 +22,7 @@ class OnboardingScreen extends StatefulWidget {
     required this.library,
     required this.onDone,
     this.requestPermission,
+    this.pickFolder,
     this.scanDevice,
     this.scanFolder,
     this.pickFile,
@@ -32,6 +33,7 @@ class OnboardingScreen extends StatefulWidget {
 
   /// Test/injection overrides for the platform-backed pieces.
   final PermissionFn? requestPermission;
+  final Future<String?> Function()? pickFolder;
   final ScanFn? scanDevice;
   final ScanFn? scanFolder;
   final PickFilesFn? pickFile;
@@ -53,6 +55,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _ctrl = OnboardingFlowController(
       library: widget.library,
       requestPermission: widget.requestPermission,
+      pickFolder: widget.pickFolder,
       scanDevice: widget.scanDevice,
       scanFolder: widget.scanFolder,
       pickFile: widget.pickFile,

@@ -4,6 +4,7 @@ import 'package:burrow/models/book.dart';
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/screens/library_screen.dart';
 import 'package:burrow/screens/onboarding_screen.dart';
+import 'package:burrow/services/onboarding_flow_controller.dart';
 import 'package:burrow/services/library_service.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ Future<void> _pumpOnboarding(
   WidgetTester tester,
   LibraryService library, {
   PermissionFn? permission,
+  Future<String?> Function()? pickFolder,
   ScanFn? scanDevice,
   ScanFn? scanFolder,
   PickFilesFn? pickFile,
@@ -25,6 +27,7 @@ Future<void> _pumpOnboarding(
         library: library,
         onDone: onDone ?? (_) {},
         requestPermission: permission ?? () async => true,
+        pickFolder: pickFolder,
         scanDevice: scanDevice ?? () async => <String>[],
         scanFolder: scanFolder ?? () async => <String>[],
         pickFile: pickFile ?? () async => <String>[],
@@ -200,6 +203,7 @@ void main() {
       await _pumpOnboarding(
         tester,
         library,
+        pickFolder: () async => '/storage/books',
         scanFolder: () async => ['/folder/b.epub'],
       );
 
@@ -209,6 +213,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('found 1 books'), findsOneWidget);
+      // Onboarding's choice carries into the library settings.
+      expect(library.settings.scanMode, ScanMode.folder);
+      expect(library.settings.scanFolder, '/storage/books');
     });
   });
 
@@ -247,6 +254,36 @@ void main() {
       final reloaded = LibraryService()..debugAttachDatabase(db);
       await reloaded.load();
       expect(reloaded.onboardingComplete, isTrue);
+    });
+  });
+
+  group('OnboardingFlowController scan choices', () {
+    test('choosing folder scan remembers the folder and scan type', () async {
+      final library = LibraryService();
+      final flow = OnboardingFlowController(
+        library: library,
+        pickFolder: () async => '/storage/books',
+        scanFolder: () async => const <String>[],
+      );
+
+      await flow.startFolderScan();
+
+      expect(library.settings.scanMode, ScanMode.folder);
+      expect(library.settings.scanFolder, '/storage/books');
+    });
+
+    test('cancelling the folder picker keeps the default scan type', () async {
+      final library = LibraryService();
+      final flow = OnboardingFlowController(
+        library: library,
+        pickFolder: () async => null,
+        scanFolder: () async => const <String>[],
+      );
+
+      await flow.startFolderScan();
+
+      expect(library.settings.scanMode, ScanMode.device);
+      expect(library.settings.scanFolder, isEmpty);
     });
   });
 }
