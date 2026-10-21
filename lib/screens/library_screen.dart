@@ -1679,6 +1679,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                   onTap: () => setState(() {
                     _sort = SortMode
                         .values[(_sort.index + 1) % SortMode.values.length];
+                    // Cycle must persist immediately, like the layout chip;
+                    // otherwise the sort resets to Recent after a restart.
+                    _saveFilters();
                   }),
                 ),
                 const SizedBox(width: 8),
