@@ -105,7 +105,7 @@ void main() {
       final search = BookSearch(
         chapters: chapters,
         onResults: (r) {
-          if (!completer.isCompleted) completer.complete(r);
+          if (r.isNotEmpty && !completer.isCompleted) completer.complete(r);
         },
         onDone: () {},
       );
@@ -126,7 +126,7 @@ void main() {
       final search = BookSearch(
         chapters: chapters,
         onResults: (r) {
-          if (!completer.isCompleted) completer.complete(r);
+          if (r.isNotEmpty && !completer.isCompleted) completer.complete(r);
         },
         onDone: () {},
       );
@@ -157,7 +157,7 @@ void main() {
       final search = BookSearch(
         chapters: chapters,
         onResults: (r) {
-          if (!completer.isCompleted) completer.complete(r);
+          if (r.isNotEmpty && !completer.isCompleted) completer.complete(r);
         },
         onDone: () {},
       );
@@ -195,6 +195,106 @@ void main() {
       // The final result should be for "hello".
       expect(allResults.last.length, 1);
       expect(allResults.last[0].offset, 0);
+
+      search.dispose();
+    });
+
+    test('clearing a query during a scan emits no matches afterwards', () async {
+      final chapters = makeChapters([
+        for (var i = 0; i < 40; i++) 'hello ' * 200,
+      ]);
+      final batches = <List<SearchResult>>[];
+      final search = BookSearch(
+        chapters: chapters,
+        onResults: (r) => batches.add(r),
+        onDone: () {},
+      );
+
+      search.searchImmediate('hello');
+      await Future<void>.delayed(Duration.zero);
+      search.search('');
+      final afterClear = batches.length;
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      final lateBatches = batches.skip(afterClear);
+      expect(lateBatches.every((b) => b.isEmpty), isTrue);
+      expect(
+        lateBatches.expand((b) => b).where((r) => r.length == 0),
+        isEmpty,
+      );
+
+      search.dispose();
+    });
+
+    test('cancel clears results and stops an in-flight scan', () async {
+      final chapters = makeChapters([
+        for (var i = 0; i < 40; i++) 'hello ' * 200,
+      ]);
+      final batches = <List<SearchResult>>[];
+      final search = BookSearch(
+        chapters: chapters,
+        onResults: (r) => batches.add(r),
+        onDone: () {},
+      );
+
+      search.searchImmediate('hello');
+      await Future<void>.delayed(Duration.zero);
+      search.cancel();
+      final afterCancel = batches.length;
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(search.allResults, isEmpty);
+      expect(batches.last, isEmpty);
+      expect(batches.skip(afterCancel).every((b) => b.isEmpty), isTrue);
+      expect(search.isTruncated, isFalse);
+
+      search.dispose();
+    });
+
+    test('reports truncation when the result cap is reached', () async {
+      final chapters = makeChapters(['x ' * 600]);
+      final done = Completer<void>();
+      final search = BookSearch(
+        chapters: chapters,
+        onResults: (_) {},
+        onDone: () {
+          if (!done.isCompleted) done.complete();
+        },
+      );
+
+      search.searchImmediate('x');
+      await done.future;
+
+      expect(search.allResults.length, BookSearch.maxResults);
+      expect(search.isTruncated, isTrue);
+
+      search.dispose();
+    });
+
+    test('snippets do not split surrogate pairs', () async {
+      final chapters = makeChapters([
+        '${'a'}${'😀' * 20}x${'😀' * 20}',
+      ]);
+      final completer = Completer<List<SearchResult>>();
+      final search = BookSearch(
+        chapters: chapters,
+        onResults: (r) {
+          if (r.isNotEmpty && !completer.isCompleted) completer.complete(r);
+        },
+        onDone: () {},
+      );
+
+      search.searchImmediate('x');
+      final snippet = (await completer.future).single.snippet;
+
+      final starts = snippet.startsWith('…') ? snippet.substring(1) : snippet;
+      final ends = starts.endsWith('…')
+          ? starts.substring(0, starts.length - 1)
+          : starts;
+      expect(starts.runes.first, greaterThan(0xFFFF));
+      expect(ends.runes.last, greaterThan(0xFFFF));
 
       search.dispose();
     });

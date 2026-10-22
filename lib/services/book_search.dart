@@ -42,6 +42,10 @@ class SearchResult {
 ///
 /// Scans chapter body text for [query] matches, yielding results in batches
 /// to keep the UI responsive on large books.
+///
+/// Each query change starts a new epoch. Batches from an older epoch are
+/// discarded, so a slow scan can never overwrite the results of a newer
+/// query or repopulate a field the reader has already cleared.
 class BookSearch {
   BookSearch({
     required this.chapters,
@@ -63,85 +67,124 @@ class BookSearch {
 
   Timer? _debounce;
   String _query = '';
-  String _lastQuery = '';
+  int _epoch = 0;
   bool _running = false;
+  bool _pendingStart = false;
   bool _disposed = false;
+  bool _truncated = false;
   List<SearchResult> _allResults = [];
+
+  /// Lower-cased chapter bodies, computed once per chapter for the lifetime
+  /// of this search and reused by later queries.
+  final Map<int, String> _lowerCache = {};
 
   /// All results from the last completed search.
   List<SearchResult> get allResults => _allResults;
 
+  /// True when the scan stopped at [maxResults] and may have skipped matches.
+  bool get isTruncated => _truncated;
+
   /// Start a debounced search. Rapid keystrokes cancel prior scans.
   void search(String query) {
     if (_disposed) return;
-    _query = query.trim();
+    final q = query.trim();
     _debounce?.cancel();
-    if (_query.isEmpty) {
-      _allResults = [];
-      onResults([]);
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 300), _startScan);
+    _pendingStart = false;
+    _query = q;
+    _epoch++;
+    _truncated = false;
+    _allResults = [];
+    onResults(const []);
+    if (q.isEmpty) return;
+    _debounce = Timer(const Duration(milliseconds: 300), _requestScan);
   }
 
   /// Run a full search immediately (used for submit/enter).
   void searchImmediate(String query) {
     if (_disposed) return;
-    _query = query.trim();
+    final q = query.trim();
     _debounce?.cancel();
-    if (_query.isEmpty) {
-      _allResults = [];
-      onResults([]);
+    _pendingStart = false;
+    _query = q;
+    _epoch++;
+    _truncated = false;
+    _allResults = [];
+    onResults(const []);
+    if (q.isEmpty) return;
+    _requestScan();
+  }
+
+  /// Stop any in-flight scan and clear all results.
+  ///
+  /// The scan's callbacks are invalidated by the epoch bump, so nothing from
+  /// the cancelled query can arrive after this returns.
+  void cancel() {
+    if (_disposed) return;
+    _debounce?.cancel();
+    _pendingStart = false;
+    _query = '';
+    _epoch++;
+    _truncated = false;
+    _allResults = [];
+    onResults(const []);
+  }
+
+  void _requestScan() {
+    if (_disposed || _query.isEmpty) return;
+    if (_running) {
+      // The current scan will notice the epoch change and finish. Start this
+      // query as soon as it has released the scanner.
+      _pendingStart = true;
       return;
     }
-    _startScan();
-  }
-
-  void _startScan() {
-    if (_disposed || _running) return;
     _running = true;
-    _lastQuery = _query;
-    _allResults = [];
-    unawaited(_scanIncrementally(0));
+    _pendingStart = false;
+    unawaited(_scanIncrementally(0, _epoch));
   }
 
-  Future<void> _scanIncrementally(int chapterIndex) async {
-    if (_disposed) {
-      _running = false;
+  Future<void> _scanIncrementally(int chapterIndex, int epoch) async {
+    if (_disposed || epoch != _epoch) {
+      _finish(epoch);
       return;
     }
     if (_allResults.length >= maxResults) {
-      _running = false;
-      if (_lastQuery == _query) onDone();
+      _truncated = true;
+      _finish(epoch);
       return;
     }
-    if (chapterIndex >= chapters.length || _lastQuery != _query) {
-      _running = false;
-      if (_disposed) return;
-      if (_lastQuery == _query) {
-        onDone();
-      } else {
-        _startScan();
-      }
+    if (chapterIndex >= chapters.length) {
+      _finish(epoch);
       return;
     }
 
     final body = chapters[chapterIndex].body;
-    final lower = body.toLowerCase();
-    final queryLower = _lastQuery.toLowerCase();
+    final queryLower = _query.toLowerCase();
+    final lower = _lowerCache.putIfAbsent(
+      chapterIndex,
+      () => body.toLowerCase(),
+    );
     final batch = <SearchResult>[];
     var start = 0;
     var sinceYield = 0;
 
     while (start <= body.length - queryLower.length) {
-      if (_disposed || _lastQuery != _query) break;
+      if (_disposed || epoch != _epoch) break;
       if (_allResults.length + batch.length >= maxResults) break;
       final idx = lower.indexOf(queryLower, start);
       if (idx == -1) break;
 
-      // Extract snippet: ~30 chars before + match + ~30 chars after.
-      final snippetStart = (idx - 30).clamp(0, body.length);
-      final snippetEnd = (idx + queryLower.length + 30).clamp(0, body.length);
+      // Extract snippet: ~30 chars before + match + ~30 chars after, without
+      // splitting a surrogate pair at either edge.
+      final snippetStart = _clampStart(
+        body,
+        (idx - 30).clamp(0, body.length),
+        idx,
+      );
+      final snippetEnd = _clampEnd(
+        body,
+        (idx + queryLower.length + 30).clamp(0, body.length),
+        idx + queryLower.length,
+      );
       final raw = body.substring(snippetStart, snippetEnd);
       final snippet =
           '${snippetStart > 0 ? '…' : ''}$raw${snippetEnd < body.length ? '…' : ''}';
@@ -162,13 +205,8 @@ class BookSearch {
       }
     }
 
-    if (_disposed) {
-      _running = false;
-      return;
-    }
-    if (_lastQuery != _query) {
-      _running = false;
-      _startScan();
+    if (_disposed || epoch != _epoch) {
+      _finish(epoch);
       return;
     }
 
@@ -177,19 +215,32 @@ class BookSearch {
     onResults(List.of(_allResults));
 
     if (_allResults.length >= maxResults) {
-      _running = false;
-      onDone();
+      _truncated = true;
+      _finish(epoch);
       return;
     }
 
     // Yield to the event loop, then scan next chapter.
     await Future<void>.delayed(Duration.zero);
-    if (_disposed || _lastQuery != _query) {
-      _running = false;
-      if (!_disposed && _lastQuery != _query) _startScan();
+    if (_disposed || epoch != _epoch) {
+      _finish(epoch);
       return;
     }
-    await _scanIncrementally(chapterIndex + 1);
+    await _scanIncrementally(chapterIndex + 1, epoch);
+  }
+
+  void _finish(int epoch) {
+    if (!_running) return;
+    _running = false;
+    if (_disposed) return;
+    if (epoch == _epoch) {
+      if (_query.isNotEmpty) onDone();
+      return;
+    }
+    if (_pendingStart) {
+      _pendingStart = false;
+      _requestScan();
+    }
   }
 
   /// Finds which result index contains the given chapter + offset, or -1.
@@ -214,5 +265,34 @@ class BookSearch {
     _disposed = true;
     _debounce?.cancel();
     _running = false;
+    _pendingStart = false;
+    _lowerCache.clear();
   }
+}
+
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
+
+/// Moves a snippet start forward when it lands on the low half of a pair.
+int _clampStart(String text, int index, int matchStart) {
+  var result = index;
+  if (result > 0 &&
+      result < text.length &&
+      _isLowSurrogate(text.codeUnitAt(result)) &&
+      _isHighSurrogate(text.codeUnitAt(result - 1))) {
+    result++;
+  }
+  return result > matchStart ? matchStart : result;
+}
+
+/// Moves a snippet end back when it would split a surrogate pair.
+int _clampEnd(String text, int index, int matchEnd) {
+  var result = index;
+  if (result > 0 &&
+      result < text.length &&
+      _isHighSurrogate(text.codeUnitAt(result - 1))) {
+    result--;
+  }
+  return result < matchEnd ? matchEnd : result;
 }
