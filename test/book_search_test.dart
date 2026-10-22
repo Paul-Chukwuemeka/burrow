@@ -199,33 +199,36 @@ void main() {
       search.dispose();
     });
 
-    test('clearing a query during a scan emits no matches afterwards', () async {
-      final chapters = makeChapters([
-        for (var i = 0; i < 40; i++) 'hello ' * 200,
-      ]);
-      final batches = <List<SearchResult>>[];
-      final search = BookSearch(
-        chapters: chapters,
-        onResults: (r) => batches.add(r),
-        onDone: () {},
-      );
+    test(
+      'clearing a query during a scan emits no matches afterwards',
+      () async {
+        final chapters = makeChapters([
+          for (var i = 0; i < 40; i++) 'hello ' * 200,
+        ]);
+        final batches = <List<SearchResult>>[];
+        final search = BookSearch(
+          chapters: chapters,
+          onResults: (r) => batches.add(r),
+          onDone: () {},
+        );
 
-      search.searchImmediate('hello');
-      await Future<void>.delayed(Duration.zero);
-      search.search('');
-      final afterClear = batches.length;
+        search.searchImmediate('hello');
+        await Future<void>.delayed(Duration.zero);
+        search.search('');
+        final afterClear = batches.length;
 
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
 
-      final lateBatches = batches.skip(afterClear);
-      expect(lateBatches.every((b) => b.isEmpty), isTrue);
-      expect(
-        lateBatches.expand((b) => b).where((r) => r.length == 0),
-        isEmpty,
-      );
+        final lateBatches = batches.skip(afterClear);
+        expect(lateBatches.every((b) => b.isEmpty), isTrue);
+        expect(
+          lateBatches.expand((b) => b).where((r) => r.length == 0),
+          isEmpty,
+        );
 
-      search.dispose();
-    });
+        search.dispose();
+      },
+    );
 
     test('cancel clears results and stops an in-flight scan', () async {
       final chapters = makeChapters([
@@ -274,9 +277,7 @@ void main() {
     });
 
     test('snippets do not split surrogate pairs', () async {
-      final chapters = makeChapters([
-        '${'a'}${'😀' * 20}x${'😀' * 20}',
-      ]);
+      final chapters = makeChapters(['${'a'}${'😀' * 20}x${'😀' * 20}']);
       final completer = Completer<List<SearchResult>>();
       final search = BookSearch(
         chapters: chapters,
