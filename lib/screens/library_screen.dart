@@ -614,6 +614,9 @@ class _LibraryScreenState extends State<LibraryScreen>
         },
       );
       if (!mounted) return;
+      // Deletions since the last scan move books out of view.
+      await widget.library.reconcileMissingFiles();
+      if (!mounted) return;
       if (paths.isEmpty) {
         // Nothing new was found: hide the status banner instead of
         // showing a "no new books" result.
