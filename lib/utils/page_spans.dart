@@ -152,7 +152,11 @@ List<InlineSpan> buildPageSpans({
             padding: const EdgeInsets.symmetric(
               vertical: ImageRun.verticalPadding,
             ),
-            child: Center(child: imageWidget),
+            // Shrink-wrap to the image's measured width. A plain Center
+            // expands to the paragraph's full width inside a WidgetSpan,
+            // so rendering would no longer match the placeholder size the
+            // paginator measured and the page would re-wrap and overflow.
+            child: Center(widthFactor: 1, child: imageWidget),
           ),
         ),
       );

@@ -540,6 +540,80 @@ void main() {
       expect(find.byType(Image), findsNothing);
       expect(spans.whereType<WidgetSpan>(), isNotEmpty);
     });
+
+    testWidgets('inline image renders at its measured placeholder width', (
+      tester,
+    ) async {
+      // Regression: the image was wrapped in a bare Center, which expands to
+      // the paragraph's full width inside a WidgetSpan. Pagination measured the
+      // image at its renderedSize width (here 40px), so at render time the
+      // wider span re-wrapped the line, pushed text onto extra lines, and the
+      // page overflowed its budget.
+      final img = ImageRun(
+        offset: 1,
+        bytes: Uint8List(0),
+        intrinsicWidth: 40,
+        intrinsicHeight: 40,
+      );
+      final text = 'A\uFFFCB C D E F G H I J K L M N O P Q R S T U V W X Y Z';
+      final spans = buildPageSpans(
+        text: text,
+        start: 0,
+        end: text.length,
+        base: style,
+        theme: theme,
+        settings: ReaderSettings(),
+        images: [img],
+        renderWidth: 370,
+        maxHeight: 860,
+      );
+
+      final size = img.renderedSize(370, maxHeight: 860);
+      final tp = TextPainter(
+        text: wrapSpans(spans),
+        textDirection: TextDirection.ltr,
+      );
+      tp.setPlaceholderDimensions([
+        PlaceholderDimensions(
+          size: Size(
+            size.width,
+            size.height + 2 * ImageRun.verticalPadding,
+          ),
+          alignment: PlaceholderAlignment.middle,
+        ),
+      ]);
+      tp.layout(maxWidth: 370);
+      final measuredHeight = tp.height;
+      tp.dispose();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 370,
+              child: RichText(text: wrapSpans(spans)),
+            ),
+          ),
+        ),
+      );
+
+      final imageCenter = tester.renderObject<RenderBox>(
+        find.descendant(
+          of: find.byType(RichText),
+          matching: find.byType(Center),
+        ).first,
+      );
+      expect(
+        imageCenter.size.width,
+        closeTo(size.width, 0.5),
+        reason: 'image span width must match the measured placeholder width',
+      );
+      expect(
+        tester.renderObject<RenderBox>(find.byType(RichText)).size.height,
+        closeTo(measuredHeight, 0.5),
+        reason: 'rendered page height must match its paginated height',
+      );
+    });
   });
 
   test('overlapping style runs tile the slice exactly once', () {
