@@ -1315,7 +1315,8 @@ class ReaderScreenState extends State<ReaderScreen>
       return;
     }
     if (_doc == null) return;
-    _searchCtrl.setChapters(_doc!.chapters);
+    final currentChapter = _refAt(_flatPage)?.$1 ?? 0;
+    _searchCtrl.setChapters(_doc!.chapters, startChapter: currentChapter);
   }
 
   void _submitSearch() => _searchCtrl.submitSearch();

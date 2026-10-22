@@ -230,6 +230,26 @@ void main() {
       },
     );
 
+    test('scans the requested start chapter first', () async {
+      final chapters = makeChapters(['zero hello', 'one hello', 'two hello']);
+      final done = Completer<void>();
+      final search = BookSearch(
+        chapters: chapters,
+        startChapter: 2,
+        onResults: (_) {},
+        onDone: () {
+          if (!done.isCompleted) done.complete();
+        },
+      );
+
+      search.searchImmediate('hello');
+      await done.future;
+
+      expect(search.allResults.map((r) => r.chapter).toList(), [2, 0, 1]);
+
+      search.dispose();
+    });
+
     test('cancel clears results and stops an in-flight scan', () async {
       final chapters = makeChapters([
         for (var i = 0; i < 40; i++) 'hello ' * 200,
