@@ -193,7 +193,6 @@ class ReaderScreenState extends State<ReaderScreen>
   List<bool> _reflowReady = const [];
   int _reflowNext = 0;
   int _reflowGeneration = 0;
-
   /// Chapters in the order the background pass should lay them out (outward
   /// from the anchor), indexed by [_reflowNext].
   List<int> _reflowOrder = const [];
@@ -616,7 +615,8 @@ class ReaderScreenState extends State<ReaderScreen>
     if (!_isComic) return;
     final count = _comicCtrl.comicPageCount;
     if (count == 0) return;
-    final vertical = _settings.comicReadingMode == ComicReadingMode.vertical;
+    final vertical =
+        _settings.comicReadingMode == ComicReadingMode.vertical;
     final scroll = _comicCtrl.comicVerticalScrollController;
     final offset = vertical && scroll != null && scroll.hasClients
         ? scroll.offset.toInt()
@@ -814,54 +814,54 @@ class ReaderScreenState extends State<ReaderScreen>
   /// in atomically once done.  The reader opens fully laid out — no
   /// placeholders, no `…` page counts, no re-anchor jumps.
   void _startInitialFullPass(
-    Size viewport,
-    TextStyle style,
-    TextScaler scaler,
-    (int, int) anchor,
-    String signature,
-  ) {
-    final n = _doc!.chapters.length;
-    _disposeDrivers();
-    _cancelReflow();
+  Size viewport,
+  TextStyle style,
+  TextScaler scaler,
+  (int, int) anchor,
+  String signature,
+) {
+  final n = _doc!.chapters.length;
+  _disposeDrivers();
+  _cancelReflow();
 
-    _chapterStyles = List.filled(n, style);
-    _paginators
-      ..clear()
-      ..addAll(List.generate(n, (_) => _emptyPaginator()));
-    _paginationReady = List.filled(n, false);
-    _layoutSignature = signature;
-    _anchorChapter = anchor.$1.clamp(0, n - 1);
-    _anchorOffset = anchor.$2;
-    _recomputeFlatIndexes();
+  _chapterStyles = List.filled(n, style);
+  _paginators
+    ..clear()
+    ..addAll(List.generate(n, (_) => _emptyPaginator()));
+  _paginationReady = List.filled(n, false);
+  _layoutSignature = signature;
+  _anchorChapter = anchor.$1.clamp(0, n - 1);
+  _anchorOffset = anchor.$2;
+  _recomputeFlatIndexes();
 
-    final old = _pageController;
-    _pageController = null;
-    if (old != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
-    }
-
-    // Delay the first paint until the WHOLE book is paginated (deliberate
-    // product choice). The controller is left null so the "Laying out pages…"
-    // view stays up while the full pass below runs; when it completes,
-    // _applyReflow swaps the complete layout in atomically and only then is the
-    // controller created. There is no anchor-chapter early paint.
-    OpenTrace.dump();
-    _paginationRunning = true;
-
-    // Build every chapter into the reflow buffer and swap when done. The buffer
-    // starts entirely empty (no anchor pre-layout) so nothing paints until the
-    // whole book is ready.
-    _reflowPages = List.of(_paginators);
-    _reflowStyles = List.of(_chapterStyles);
-    _reflowReady = List.filled(n, false);
-    _reflowNext = 0;
-    _reflowOrder = fillOrderFor(n, _anchorChapter);
-    _reflowSignature = signature;
-    _reflowGeneration++;
-    final generation = _reflowGeneration;
-    if (mounted) setState(() {});
-    _reflowNextBatch(viewport, style, scaler, generation);
+  final old = _pageController;
+  _pageController = null;
+  if (old != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
   }
+
+  // Delay the first paint until the WHOLE book is paginated (deliberate
+  // product choice). The controller is left null so the "Laying out pages…"
+  // view stays up while the full pass below runs; when it completes,
+  // _applyReflow swaps the complete layout in atomically and only then is the
+  // controller created. There is no anchor-chapter early paint.
+  OpenTrace.dump();
+  _paginationRunning = true;
+
+  // Build every chapter into the reflow buffer and swap when done. The buffer
+  // starts entirely empty (no anchor pre-layout) so nothing paints until the
+  // whole book is ready.
+  _reflowPages = List.of(_paginators);
+  _reflowStyles = List.of(_chapterStyles);
+  _reflowReady = List.filled(n, false);
+  _reflowNext = 0;
+  _reflowOrder = fillOrderFor(n, _anchorChapter);
+  _reflowSignature = signature;
+  _reflowGeneration++;
+  final generation = _reflowGeneration;
+  if (mounted) setState(() {});
+  _reflowNextBatch(viewport, style, scaler, generation);
+}
 
   /// Adopt a fully-built layout (cache hit or completed pass) and land on
   /// [anchor] without further work.
@@ -1941,7 +1941,7 @@ class ReaderScreenState extends State<ReaderScreen>
                     ? 0
                     : (i + 1) / _comicCtrl.comicPageCount,
               );
-              if (_comicCtrl.isLazy) _prefetchComicPages(i);
+                      if (_comicCtrl.isLazy) _prefetchComicPages(i);
               _comicDecodeAhead?.advance(i);
               if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(i);
             },
@@ -1953,7 +1953,10 @@ class ReaderScreenState extends State<ReaderScreen>
                       fit: _comicCtrl.boxFit,
                       viewport: MediaQuery.sizeOf(context),
                       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-                      intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
+                      intrinsic: (
+                        meta.intrinsicWidth,
+                        meta.intrinsicHeight,
+                      ),
                     );
               final page = _comicCtrl.isLazy
                   ? _LazyComicPageWidget(
@@ -2114,34 +2117,36 @@ class ReaderScreenState extends State<ReaderScreen>
   /// later frames, so reading [context]/[MediaQuery] here is safe even
   /// though this is built during [initState].
   ComicDecodeAhead _createComicDecodeAhead() => ComicDecodeAhead(
-    loadBytes: (index) async {
-      final ctrl = _comicCtrl;
-      if (index < 0 || index >= ctrl.comicPageCount) return null;
-      final provider = ctrl.comicPageProvider;
-      if (provider != null) return provider.loadPage(index);
-      return index < ctrl.comicPages.length ? ctrl.comicPages[index] : null;
-    },
-    resolveBounds: (index) {
-      final meta = _comicCtrl.pageMetaAt(index);
-      if (meta == null) return null;
-      return comicPageDecodeBounds(
-        fit: _comicCtrl.boxFit,
-        viewport: MediaQuery.sizeOf(context),
-        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-        intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
+        loadBytes: (index) async {
+          final ctrl = _comicCtrl;
+          if (index < 0 || index >= ctrl.comicPageCount) return null;
+          final provider = ctrl.comicPageProvider;
+          if (provider != null) return provider.loadPage(index);
+          return index < ctrl.comicPages.length
+              ? ctrl.comicPages[index]
+              : null;
+        },
+        resolveBounds: (index) {
+          final meta = _comicCtrl.pageMetaAt(index);
+          if (meta == null) return null;
+          return comicPageDecodeBounds(
+            fit: _comicCtrl.boxFit,
+            viewport: MediaQuery.sizeOf(context),
+            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+            intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
+          );
+        },
+        warmup: (provider) {
+          if (!mounted) return;
+          unawaited(
+            precacheImage(provider, context).catchError((Object e) {
+              debugPrint('comic decode-ahead dropped a page: $e');
+            }),
+          );
+        },
+        onSkip: (index, reason) =>
+            debugPrint('comic decode-ahead skipped page $index: $reason'),
       );
-    },
-    warmup: (provider) {
-      if (!mounted) return;
-      unawaited(
-        precacheImage(provider, context).catchError((Object e) {
-          debugPrint('comic decode-ahead dropped a page: $e');
-        }),
-      );
-    },
-    onSkip: (index, reason) =>
-        debugPrint('comic decode-ahead skipped page $index: $reason'),
-  );
 
   void _scrollToPreviewPage(int page) => _comicCtrl.scrollToPreviewPage(page);
 
@@ -2349,8 +2354,9 @@ class ReaderScreenState extends State<ReaderScreen>
                       _selection.dragToWord(start, end),
                   onSelectionMissed: _clearSelection,
                   onSelectionSettled: _showSelectionToolbarAt,
-                  onHandleDragged: (isStart, s, e) =>
-                      isStart ? _selection.setStart(s) : _selection.setEnd(e),
+                  onHandleDragged: (isStart, s, e) => isStart
+                      ? _selection.setStart(s)
+                      : _selection.setEnd(e),
                   showStartHandle: showStart,
                   showEndHandle: showEnd,
                   onTapLink: (target) {
@@ -2633,7 +2639,9 @@ class ReaderScreenState extends State<ReaderScreen>
         if (!mounted || gen != _brightnessSeedGen) return;
         // Clamp the raw plugin seed: values below the slider minimum (or
         // non-finite) would trip the Slider assertion on the next build.
-        final lv = v.isFinite ? v.clamp(kMinBrightness, 1.0).toDouble() : 1.0;
+        final lv = v.isFinite
+            ? v.clamp(kMinBrightness, 1.0).toDouble()
+            : 1.0;
         setState(() => _settings.brightness = lv);
         BrightnessController.instance.apply(lv);
         _onSettingsChanged();
@@ -2888,9 +2896,7 @@ class ReaderScreenState extends State<ReaderScreen>
                           data: SliderThemeData(
                             activeTrackColor: theme.accent,
                             thumbColor: theme.accent,
-                            inactiveTrackColor: theme.muted.withValues(
-                              alpha: 0.3,
-                            ),
+                            inactiveTrackColor: theme.muted.withValues(alpha: 0.3),
                           ),
                           child: Slider(
                             value: (_settings.brightness ?? 1.0).clamp(
@@ -2919,7 +2925,10 @@ class ReaderScreenState extends State<ReaderScreen>
                             _settings.brightness == null
                                 ? 'Auto'
                                 : '${((_settings.brightness ?? 1.0) * 100).round()}%',
-                            style: TextStyle(fontSize: 12, color: theme.muted),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.muted,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -2974,9 +2983,8 @@ class ReaderScreenState extends State<ReaderScreen>
                           ),
                           tooltip: 'Previous issue',
                           visualDensity: VisualDensity.compact,
-                          onPressed: prevIssue == null
-                              ? null
-                              : () => _goToIssue(prevIssue),
+                          onPressed:
+                              prevIssue == null ? null : () => _goToIssue(prevIssue),
                         ),
                         IconButton(
                           icon: Icon(
@@ -2986,9 +2994,8 @@ class ReaderScreenState extends State<ReaderScreen>
                           ),
                           tooltip: 'Next issue',
                           visualDensity: VisualDensity.compact,
-                          onPressed: nextIssue == null
-                              ? null
-                              : () => _goToIssue(nextIssue),
+                          onPressed:
+                              nextIssue == null ? null : () => _goToIssue(nextIssue),
                         ),
                       ],
                     ],
