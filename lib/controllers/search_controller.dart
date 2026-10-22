@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
@@ -16,15 +18,26 @@ class ReaderSearchController extends ChangeNotifier {
   bool _searchOpen = false;
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
-  List<SearchResult> _searchResults = [];
+  List<SearchResult> _searchResults = const [];
+  UnmodifiableListView<SearchResult> _resultsView = UnmodifiableListView(
+    const <SearchResult>[],
+  );
   int _currentResultIndex = -1;
   bool _searchDone = false;
 
   bool get isPdf => book.format == BookFormat.pdf;
   bool get searchOpen => _searchOpen;
-  List<SearchResult> get searchResults => List.unmodifiable(_searchResults);
+  List<SearchResult> get searchResults => _resultsView;
   int get currentResultIndex => _currentResultIndex;
   bool get searchDone => _searchDone;
+
+  /// True when the underlying EPUB scan stopped at the result cap.
+  bool get isTruncated => _search?.isTruncated ?? false;
+
+  void _replaceResults(List<SearchResult> results) {
+    _searchResults = results;
+    _resultsView = UnmodifiableListView(results);
+  }
 
   void initPdfSearch(PdfViewerController pdfController) {
     if (!isPdf) return;
@@ -43,9 +56,11 @@ class ReaderSearchController extends ChangeNotifier {
     _search = BookSearch(
       chapters: chapters,
       onResults: (results) {
-        _searchResults = results;
-        if (_currentResultIndex == -1 && results.isNotEmpty) {
-          _currentResultIndex = 0;
+        _replaceResults(results);
+        if (results.isEmpty) {
+          _currentResultIndex = -1;
+        } else if (_currentResultIndex >= results.length) {
+          _currentResultIndex = results.length - 1;
         }
         notifyListeners();
       },
@@ -59,10 +74,10 @@ class ReaderSearchController extends ChangeNotifier {
   void onPdfSearchChanged() {
     if (_pdfSearcher == null) return;
     final matches = _pdfSearcher!.matches;
-    _searchResults = [
+    _replaceResults([
       for (final m in matches)
         SearchResult(chapter: m.pageNumber, offset: 0, length: 0, snippet: ''),
-    ];
+    ]);
     _currentResultIndex = _pdfSearcher!.currentIndex ?? -1;
     if (!_pdfSearcher!.isSearching) {
       _searchDone = true;
@@ -73,20 +88,22 @@ class ReaderSearchController extends ChangeNotifier {
   void onSearchTextChanged() {
     final q = searchController.text.trim();
     if (q.isEmpty) {
+      _search?.cancel();
       _pdfSearcher?.resetTextSearch();
-      _searchResults = [];
+      _replaceResults(const []);
       _currentResultIndex = -1;
       _searchDone = false;
       notifyListeners();
       return;
     }
     _searchDone = false;
+    _replaceResults(const []);
+    _currentResultIndex = -1;
     if (isPdf) {
       _pdfSearcher?.startTextSearch(q);
     } else {
       _search?.search(q);
     }
-    _currentResultIndex = -1;
     notifyListeners();
   }
 
@@ -94,12 +111,13 @@ class ReaderSearchController extends ChangeNotifier {
     final q = searchController.text.trim();
     if (q.isEmpty) return;
     _searchDone = false;
+    _replaceResults(const []);
+    _currentResultIndex = -1;
     if (isPdf) {
       _pdfSearcher?.startTextSearch(q, searchImmediately: true);
     } else {
       _search?.searchImmediate(q);
     }
-    _currentResultIndex = -1;
     notifyListeners();
   }
 
@@ -109,7 +127,7 @@ class ReaderSearchController extends ChangeNotifier {
       searchFocusNode.requestFocus();
     } else {
       searchController.clear();
-      _searchResults = [];
+      _replaceResults(const []);
       _currentResultIndex = -1;
       _searchDone = false;
       // Safe: `?.` short-circuits without evaluating the argument when the
