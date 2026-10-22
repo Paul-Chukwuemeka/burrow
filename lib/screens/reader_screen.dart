@@ -1379,7 +1379,9 @@ class ReaderScreenState extends State<ReaderScreen>
         : count == 0
         ? 'No matches found'
         : truncated
-        ? '$count+ matches'
+        ? current >= 0 && current < count
+              ? '${current + 1} of $count+ matches'
+              : '$count+ matches'
         : current >= 0 && current < count
         ? '${current + 1} of $count match${count == 1 ? '' : 'es'}'
         : '$count match${count == 1 ? '' : 'es'}';
