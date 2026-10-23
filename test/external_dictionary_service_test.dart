@@ -71,8 +71,8 @@ void main() {
     expect(await ExternalDictionaryService.launch('a', 'x'), isFalse);
   });
 
-  test('sends exact argument map with trimmed word', () async {
-    await ExternalDictionaryService.launch('net.guten.cpp', '  example  ');
+  test('sends exact argument map with lowercased trimmed word', () async {
+    await ExternalDictionaryService.launch('net.guten.cpp', '  Example  ');
 
     expect(
       defineArgs,

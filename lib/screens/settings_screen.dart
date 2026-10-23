@@ -5,7 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/reader_settings.dart';
+import '../services/dictionary_router.dart';
 import '../services/dictionary_service.dart';
+import '../services/external_dictionary_service.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
 
@@ -50,15 +52,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _version = '1.0.0';
   ReaderSettings get _s => widget.library.settings;
 
+  String get _defaultDictionarySubtitle {
+    final raw = _s.defaultDictionary;
+    if (raw == null) return 'Ask every time';
+    if (raw == ExternalDictionaryService.burrowChoice) {
+      return 'Built-in (always)';
+    }
+    final label = _extAppLabels[raw];
+    return '${label ?? raw} (always)';
+  }
+
   bool _dictDownloading = false;
   double _dictProgress = 0;
   String? _dictError;
   bool _dictReady = false;
   String _dictStatus = '';
 
+  /// External dictionary app labels found when the screen opened; a package
+  /// not in the map shows its raw package name in the subtitle.
+  final _extAppLabels = <String, String>{};
+
   @override
   void initState() {
     super.initState();
+    ExternalDictionaryService.listApps().then((apps) {
+      for (final app in apps) {
+        _extAppLabels[app.packageName] = app.label;
+      }
+      if (mounted) setState(() {});
+    });
     _dictReady = DictionaryService.instance.isDownloaded;
     if (widget.autoDownloadDictionary && !_dictReady) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _startDictDownload());
@@ -282,6 +304,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
           _sectionHeader('Dictionary'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.translate, color: scheme.onSurfaceVariant),
+            title: const Text('Dictionary'),
+            subtitle: Text(
+              _defaultDictionarySubtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await DictionaryRouter.resolve(
+                context,
+                library: widget.library,
+                theme: widget.library.settings.colors,
+              );
+              setState(() {});
+            },
+          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.book_outlined, color: scheme.onSurfaceVariant),
