@@ -133,4 +133,25 @@ void main() {
       expect(r.scanFolder, '/storage/books');
     });
   });
+
+  test('defaultDictionary round-trips through JSON', () {
+    final ask = ReaderSettings();
+    expect(ask.defaultDictionary, isNull);
+    final burrow = ReaderSettings(defaultDictionary: burrowDefaultDictionary);
+    final app = ReaderSettings(defaultDictionary: 'net.guten.cpp');
+
+    final askJson = ReaderSettings.fromJson(
+      Map<String, dynamic>.from(ask.toJson()),
+    );
+    final burrowJson = ReaderSettings.fromJson(
+      Map<String, dynamic>.of(burrow.toJson()),
+    );
+    final appJson = ReaderSettings.fromJson(
+      Map<String, dynamic>.of(app.toJson()),
+    );
+
+    expect(askJson.defaultDictionary, isNull);
+    expect(burrowJson.defaultDictionary, 'burrow');
+    expect(appJson.defaultDictionary, 'net.guten.cpp');
+  });
 }

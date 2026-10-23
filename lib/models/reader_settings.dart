@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 /// devices where the hardware minimum backlight is very dim.
 const kMinBrightness = 0.05;
 
+/// Marker for `ReaderSettings.defaultDictionary` meaning "define with the
+/// built-in offline dictionary". Any other non-null value is an Android
+/// package name of an external dictionary app.
+const String burrowDefaultDictionary = 'burrow';
+
 /// App-wide theme mode — controls the library, settings and chrome.
 enum AppThemeMode { light, dark, oled }
 
@@ -202,6 +207,7 @@ class ReaderSettings {
     this.overrideCssMargin = false,
     this.scanMode = ScanMode.device,
     this.scanFolder = '',
+    this.defaultDictionary,
   });
 
   double fontSize;
@@ -247,6 +253,13 @@ class ReaderSettings {
   /// Remembered folder for [ScanMode.folder]; empty until the user picks one.
   String scanFolder;
 
+  /// Default dictionary used for word lookups.
+  ///
+  /// Null means ask every time (show the picker); [burrowDefaultDictionary]
+  /// means the built-in offline dictionary; any other value is the Android
+  /// package name of an external dictionary app.
+  String? defaultDictionary;
+
   ReaderTheme get colors => ReaderTheme.byMode(readerTheme);
 
   TextStyle textStyle(BuildContext context) {
@@ -285,6 +298,7 @@ class ReaderSettings {
     'overrideCssMargin': overrideCssMargin,
     'scanMode': scanMode.name,
     'scanFolder': scanFolder,
+    'defaultDictionary': defaultDictionary,
   };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
@@ -369,6 +383,7 @@ class ReaderSettings {
       orElse: () => ScanMode.device,
     ),
     scanFolder: json['scanFolder'] as String? ?? '',
+    defaultDictionary: json['defaultDictionary'] as String?,
   );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.
