@@ -117,7 +117,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(lib.settings.defaultDictionary, 'net.a');
-    expect(defineCalls, isEmpty);
+    expect(
+      defineCalls.single,
+      {'packageName': 'net.a', 'word': 'sample'},
+    );
   });
 
   testWidgets('default external, launch succeeds → sheet skipped', (

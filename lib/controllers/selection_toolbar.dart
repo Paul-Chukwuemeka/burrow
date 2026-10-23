@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/reader_settings.dart';
-import '../screens/settings_screen.dart';
 import '../services/dictionary_router.dart';
 import '../services/library_service.dart';
 import '../widgets/selection_toolbar.dart';

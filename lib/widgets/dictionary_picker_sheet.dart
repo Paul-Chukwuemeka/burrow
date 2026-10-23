@@ -15,6 +15,7 @@ abstract final class DictionaryPickerSheet {
   static Future<void> show(
     BuildContext context, {
     String? word,
+    required ReaderTheme theme,
     required List<ExternalDictionaryApp> apps,
     required void Function(String? defaultDictionary) onSetDefault,
     required void Function(ExternalDictionaryApp app, bool isBurrow) onUse,
@@ -25,6 +26,7 @@ abstract final class DictionaryPickerSheet {
       isScrollControlled: true,
       builder: (_) => _PickerContent(
         word: word,
+        theme: theme,
         apps: apps,
         onSetDefault: onSetDefault,
         onUse: onUse,
@@ -39,12 +41,14 @@ class _PickerContent extends StatelessWidget {
   const _PickerContent({
     required this.word,
     required this.apps,
+    required this.theme,
     required this.onSetDefault,
     required this.onUse,
   });
 
   final String? word;
   final List<ExternalDictionaryApp> apps;
+  final ReaderTheme theme;
   final void Function(String?) onSetDefault;
   final void Function(ExternalDictionaryApp app, bool isBurrow) onUse;
 
@@ -53,32 +57,34 @@ class _PickerContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final outer = Theme.of(context);
-    final scheme = outer.colorScheme;
     return Material(
-      color: scheme.surface,
+      color: theme.background,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 24,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: scheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 24,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: theme.muted,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _managementMode ? 'Default dictionary' : 'Define with',
-                style: outer.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+                Text(
+                  _managementMode ? 'Default dictionary' : 'Define with',
+                  style: outer.textTheme.titleMedium?.apply(
+                    color: theme.text,
+                  ),
+                ),
+                const SizedBox(height: 8),
               if (_managementMode)
                 _row(
                   context,
@@ -97,7 +103,7 @@ class _PickerContent extends StatelessWidget {
                 choice: ExternalDictionaryService.burrowChoice,
                 primaryAction: _managementMode
                     ? onSetDefault
-                    : (c) => _useBurrow(),
+                    : (c) => _act(context, c),
                 pin: _managementMode ? null : onSetDefault,
               ),
               for (final app in apps)
@@ -112,7 +118,8 @@ class _PickerContent extends StatelessWidget {
                       : (c) => onUse(app, false),
                   pin: _managementMode ? null : onSetDefault,
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -128,22 +135,22 @@ class _PickerContent extends StatelessWidget {
     required void Function(String?) primaryAction,
     void Function(String?)? pin,
   }) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = this.theme;
     final isBurrow =
         choice == ExternalDictionaryService.burrowChoice && choice != null;
     return ListTile(
       leading: Icon(
         icon,
-        color: isBurrow ? scheme.primary : scheme.onSurfaceVariant,
+        color: isBurrow ? theme.accent : theme.muted,
       ),
-      title: Text(title),
+      title: Text(title, style: TextStyle(color: theme.text)),
       subtitle: subtitle == null
           ? null
           : Text(
               subtitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+              style: TextStyle(color: theme.muted, fontSize: 12),
             ),
       onTap: () {
         Navigator.of(context).pop();
@@ -157,18 +164,31 @@ class _PickerContent extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).pop();
                 pin(choice);
+                if (!_managementMode) _act(context, choice);
               },
             ),
     );
   }
 
-  void _useBurrow() {
-    onUse(
-      const ExternalDictionaryApp(
-        packageName: ExternalDictionaryService.burrowChoice,
-        label: 'Burrow',
-      ),
-      true,
-    );
+  /// Performs the row's lookup action (lookup mode): the built-in dictionary
+  /// for Burrow, a launch for an external app. Android-chooser semantics:
+  /// "Always" remembers and acts in the same tap.
+  void _act(BuildContext context, String? choice) {
+    if (choice == null) return;
+    if (choice == ExternalDictionaryService.burrowChoice) {
+      onUse(
+        const ExternalDictionaryApp(
+          packageName: ExternalDictionaryService.burrowChoice,
+          label: 'Burrow',
+        ),
+        true,
+      );
+    } else {
+      final app = apps.firstWhere(
+        (a) => a.packageName == choice,
+        orElse: () => ExternalDictionaryApp(packageName: choice, label: choice),
+      );
+      onUse(app, false);
+    }
   }
 }

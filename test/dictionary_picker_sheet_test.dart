@@ -11,6 +11,7 @@ Future<void> _pump(
   required void Function(String?) onSetDefault,
   required void Function(ExternalDictionaryApp, bool) onUse,
 }) async {
+  final theme = ReaderTheme.byMode(ReaderThemeMode.sepia);
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -19,6 +20,7 @@ Future<void> _pump(
             onPressed: () => DictionaryPickerSheet.show(
               context,
               word: word,
+              theme: theme,
               apps: apps,
               onSetDefault: onSetDefault,
               onUse: onUse,
@@ -80,7 +82,7 @@ void main() {
     expect(setDefaults, isEmpty);
   });
 
-  testWidgets('lookup: pin on app row sets default, never launches', (
+  testWidgets('lookup: pin on app row sets default AND uses it', (
     tester,
   ) async {
     final setDefaults = <String?>[];
@@ -97,10 +99,10 @@ void main() {
     await _tapPin(tester, 'Guten Dict');
 
     expect(setDefaults, ['net.guten.cpp']);
-    expect(used, isEmpty);
+    expect(used, [equals((app, false))]);
   });
 
-  testWidgets('lookup: Burrow row uses built-in, pin sets burrow default', (
+  testWidgets('lookup: Burrow row uses built-in, pin sets burrow default and uses it', (
     tester,
   ) async {
     final setDefaults = <String?>[];
@@ -140,8 +142,46 @@ void main() {
     );
     expect(used, hasLength(1));
     await _tapPin(tester, 'Define with Burrow');
-    expect(used, hasLength(1));
+    expect(used, hasLength(2), reason: 'pin in lookup mode also defines');
+    expect(used.last.$2, isTrue);
     expect(setDefaults, [burrowDefaultDictionary]);
+  });
+
+  testWidgets('many apps overflow into a scrollable sheet, not clipped', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412, 480);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final apps = [
+      for (var i = 0; i < 6; i++)
+        ExternalDictionaryApp(
+          packageName: 'net.app$i',
+          label: 'App $i',
+        ),
+    ];
+    await _pump(
+      tester,
+      word: 'example',
+      apps: apps,
+      onSetDefault: (_) {},
+      onUse: (_, __) {},
+    );
+
+    expect(find.text('Define with Burrow'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // The last row exists below the fold but is reachable by scrolling.
+    expect(find.text('App 5'), findsOneWidget);
+    final scrollable = find.byType(Scrollable).last;
+    await tester.scrollUntilVisible(
+      find.text('App 5'),
+      100,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('App 5'), findsOneWidget);
   });
 
   testWidgets('management mode: ask row, taps set defaults, no pins', (

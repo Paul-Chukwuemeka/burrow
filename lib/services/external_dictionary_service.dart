@@ -60,6 +60,10 @@ abstract final class ExternalDictionaryService {
 
   /// Launches the external dictionary app [packageName] on [word].
   ///
+  /// The word is trimmed and lowercased: lookups are definition queries, the
+  /// output of the same normalization the built-in sheet applies, so
+  /// sentence-initial words still resolve in case-sensitive dictionaries.
+  ///
   /// Returns true only when the launch was handed to the OS; false when the
   /// package no longer resolves, the launch throws, or the bridge is
   /// missing.
@@ -67,7 +71,7 @@ abstract final class ExternalDictionaryService {
     try {
       final sent = await _channel.invokeMethod<bool>('defineWith', {
         'packageName': packageName,
-        'word': word.trim(),
+        'word': word.trim().toLowerCase(),
       });
       return sent ?? false;
     } on PlatformException catch (e) {

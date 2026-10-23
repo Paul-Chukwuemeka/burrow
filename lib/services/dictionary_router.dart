@@ -49,6 +49,7 @@ abstract final class DictionaryRouter {
     await DictionaryPickerSheet.show(
       context,
       word: word,
+      theme: theme,
       apps: apps,
       onSetDefault: (v) {
         library.settings.defaultDictionary = v;
