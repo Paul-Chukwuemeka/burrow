@@ -44,23 +44,23 @@ abstract final class DictionaryRouter {
       return;
     }
 
-    unawaited(
-      DictionaryPickerSheet.show(
-        context,
-        word: word,
-        apps: apps,
-        onSetDefault: (v) {
-          library.settings.defaultDictionary = v;
-          unawaited(library.saveSettings());
-        },
-        onUse: (app, isBurrow) {
-          if (isBurrow) {
-            openLocal(context, library: library, theme: theme, word: word!);
-          } else {
-            unawaited(ExternalDictionaryService.launch(app.packageName, word!));
-          }
-        },
-      ),
+    // Awaited so callers (Settings) can refresh after the user closes the
+    // sheet; the toolbar calls resolve() unawaited.
+    await DictionaryPickerSheet.show(
+      context,
+      word: word,
+      apps: apps,
+      onSetDefault: (v) {
+        library.settings.defaultDictionary = v;
+        unawaited(library.saveSettings());
+      },
+      onUse: (app, isBurrow) {
+        if (isBurrow) {
+          openLocal(context, library: library, theme: theme, word: word!);
+        } else {
+          unawaited(ExternalDictionaryService.launch(app.packageName, word!));
+        }
+      },
     );
   }
 
