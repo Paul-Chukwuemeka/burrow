@@ -30,6 +30,24 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "burrow/dictionary_out",
+        ).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "listDefineApps" -> result.success(listDefineApps())
+                    "defineWith" ->
+                        result.success(
+                            launchDefine(
+                                call.argument<String>("packageName")!!,
+                                call.argument<String>("word")!!,
+                            ),
+                        )
+                    else -> result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -99,8 +117,46 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun queryDisplayName(uri: Uri): String? {
-        if (uri.scheme != "content") return null
+    /// Dictionary apps registered for ACTION_DEFINE (literal action string:
+    /// the SDK constant only exists on API 34+). Our own package excluded.
+    private fun listDefineApps(): List<HashMap<String, String>> = try {
+        packageManager
+            .queryIntentActivities(Intent("android.intent.action.DEFINE"), 0)
+            .filter { it.activityInfo.packageName != packageName }
+            .distinctBy { it.activityInfo.packageName }
+            .map {
+                hashMapOf<String, String>(
+                    "packageName" to it.activityInfo.packageName,
+                    "label" to it.loadLabel(packageManager).toString(),
+                )
+            }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /// Hands [word] to the dictionary app [pkg]. Literal ACTION_DEFINE (see
+    /// above) with the word extra; false when the app no longer resolves.
+    /// FLAG_ACTIVITY_NEW_TASK: we are not the target activity's task owner.
+    private fun launchDefine(pkg: String, word: String): Boolean = try {
+        val i = Intent("android.intent.action.DEFINE")
+            .putExtra("android.intent.extra.WORD", word)
+            .setPackage(pkg)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (i.resolveActivity(packageManager) == null) {
+            false
+        } else {
+            try {
+                startActivity(i)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {        if (uri.scheme != "content") return null
         return try {
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
