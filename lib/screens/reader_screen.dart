@@ -1385,176 +1385,169 @@ class ReaderScreenState extends State<ReaderScreen>
         : current >= 0 && current < count
         ? '${current + 1} of $count match${count == 1 ? '' : 'es'}'
         : '$count match${count == 1 ? '' : 'es'}';
-    return Positioned(
-      top: MediaQuery.paddingOf(context).top + 56,
-      left: 8,
-      right: 8,
+    return Positioned.fill(
       child: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(12),
+        key: const Key('reader-search-overlay'),
         color: theme.background,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Search input row.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl.searchController,
-                      focusNode: _searchCtrl.searchFocusNode,
-                      style: TextStyle(color: theme.text, fontSize: 15),
-                      decoration: InputDecoration(
-                        hintText: 'Search book…',
-                        hintStyle: TextStyle(color: theme.muted),
-                        border: InputBorder.none,
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: theme.muted,
-                          size: 20,
-                        ),
-                        suffixIcon: _searchCtrl.searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: Icon(
-                                  Icons.clear,
-                                  color: theme.muted,
-                                  size: 20,
-                                ),
-                                onPressed: _searchCtrl.searchController.clear,
-                              )
-                            : null,
-                      ),
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _submitSearch(),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close, color: theme.muted, size: 20),
-                    onPressed: _toggleSearch,
-                  ),
-                ],
-              ),
-            ),
-            // Result count + prev/next. The row stays visible for every
-            // non-empty query so an in-progress or empty search is never
-            // mistaken for a broken one.
-            if (query.isNotEmpty)
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Search input row.
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+                padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
                 child: Row(
                   children: [
-                    if (!isDone) ...[
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: theme.muted,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
                     Expanded(
-                      child: Text(
-                        status,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: theme.muted, fontSize: 12),
+                      child: TextField(
+                        controller: _searchCtrl.searchController,
+                        focusNode: _searchCtrl.searchFocusNode,
+                        style: TextStyle(color: theme.text, fontSize: 15),
+                        decoration: InputDecoration(
+                          hintText: 'Search book…',
+                          hintStyle: TextStyle(color: theme.muted),
+                          border: InputBorder.none,
+                          prefixIcon: Icon(
+                            Icons.search,
+                            color: theme.muted,
+                            size: 20,
+                          ),
+                          suffixIcon: _searchCtrl.searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(
+                                    Icons.clear,
+                                    color: theme.muted,
+                                    size: 20,
+                                  ),
+                                  onPressed: _searchCtrl.searchController.clear,
+                                )
+                              : null,
+                        ),
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _submitSearch(),
                       ),
                     ),
-                    if (count > 0) ...[
-                      IconButton(
-                        icon: Icon(
-                          Icons.keyboard_arrow_up,
-                          color: theme.text,
-                          size: 22,
-                        ),
-                        onPressed: _prevResult,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.keyboard_arrow_down,
-                          color: theme.text,
-                          size: 22,
-                        ),
-                        onPressed: _nextResult,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      ),
-                    ],
+                    IconButton(
+                      icon: Icon(Icons.close, color: theme.muted, size: 20),
+                      onPressed: _toggleSearch,
+                    ),
                   ],
                 ),
               ),
-            if (count > 0)
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.3,
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: count,
-                  itemBuilder: (context, i) {
-                    final r = _searchCtrl.searchResults[i];
-                    final isCurrent = i == _searchCtrl.currentResultIndex;
-                    final chapterTitle =
-                        !_isPdf &&
-                            r.chapter >= 0 &&
-                            r.chapter < (_doc?.chapters.length ?? 0)
-                        ? _doc!.chapters[r.chapter].title
-                        : '';
-                    final label = _isPdf
-                        ? 'Page ${r.chapter}'
-                        : chapterTitle.isEmpty
-                        ? 'Chapter ${r.chapter + 1}'
-                        : chapterTitle;
-                    return InkWell(
-                      onTap: () => _jumpToResult(i),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
+              // Result count + prev/next. The row stays visible for every
+              // non-empty query so an in-progress or empty search is never
+              // mistaken for a broken one.
+              if (query.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+                  child: Row(
+                    children: [
+                      if (!isDone) ...[
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.muted,
+                          ),
                         ),
-                        color: isCurrent
-                            ? theme.accent.withValues(alpha: 0.15)
-                            : null,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: theme.muted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              r.snippet,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: theme.text, fontSize: 13),
-                            ),
-                          ],
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(
+                          status,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: theme.muted, fontSize: 12),
                         ),
                       ),
-                    );
-                  },
+                      if (count > 0) ...[
+                        IconButton(
+                          icon: Icon(
+                            Icons.keyboard_arrow_up,
+                            color: theme.text,
+                            size: 22,
+                          ),
+                          onPressed: _prevResult,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.keyboard_arrow_down,
+                            color: theme.text,
+                            size: 22,
+                          ),
+                          onPressed: _nextResult,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-          ],
+              if (count > 0)
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: count,
+                    itemBuilder: (context, i) {
+                      final r = _searchCtrl.searchResults[i];
+                      final isCurrent = i == _searchCtrl.currentResultIndex;
+                      final chapterTitle =
+                          !_isPdf &&
+                              r.chapter >= 0 &&
+                              r.chapter < (_doc?.chapters.length ?? 0)
+                          ? _doc!.chapters[r.chapter].title
+                          : '';
+                      final label = _isPdf
+                          ? 'Page ${r.chapter}'
+                          : chapterTitle.isEmpty
+                          ? 'Chapter ${r.chapter + 1}'
+                          : chapterTitle;
+                      return InkWell(
+                        onTap: () => _jumpToResult(i),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          color: isCurrent
+                              ? theme.accent.withValues(alpha: 0.15)
+                              : null,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: theme.muted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                r.snippet,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: theme.text, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
