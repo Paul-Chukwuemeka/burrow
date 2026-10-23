@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,9 +7,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/reader_settings.dart';
 import '../screens/settings_screen.dart';
-import '../services/dictionary_service.dart';
+import '../services/dictionary_router.dart';
 import '../services/library_service.dart';
-import '../widgets/dictionary_sheet.dart';
 import '../widgets/selection_toolbar.dart';
 
 /// Floating toolbar shown for a word or text selection.
@@ -140,45 +140,13 @@ class SelectionToolbarOverlay {
 
   void openDictionarySheet(String word) {
     if (!_context.mounted) return;
-    if (DictionaryService.instance.isDownloaded) {
-      DictionarySheet.show(_context, word: word.toLowerCase(), theme: theme);
-    } else {
-      showDownloadDialog(word);
-    }
+    unawaited(
+      DictionaryRouter.resolve(_context, library: library, theme: theme, word: word),
+    );
   }
 
   void showDownloadDialog(String word) {
     if (!_context.mounted) return;
-    showDialog(
-      context: _context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: theme.background,
-        title: Text(
-          'Download dictionary?',
-          style: TextStyle(color: theme.text),
-        ),
-        content: Text(
-          'The offline dictionary (~40 MB) is needed to look up word definitions.\n\nDownload now?',
-          style: TextStyle(color: theme.muted, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: theme.muted)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              SettingsScreen.show(
-                _context,
-                library: library,
-                autoDownloadDictionary: true,
-              );
-            },
-            child: Text('Download', style: TextStyle(color: theme.accent)),
-          ),
-        ],
-      ),
-    );
+    DictionaryRouter.openLocal(_context, library: library, theme: theme, word: word);
   }
 }
