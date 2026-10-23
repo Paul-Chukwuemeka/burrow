@@ -165,8 +165,8 @@ void main() {
       tester,
       word: 'example',
       apps: apps,
-      onSetDefault: (_, __) {},
-      onUse: (_, ___) {},
+      onSetDefault: (_) {},
+      onUse: (_app, _isBurrow) {},
     );
 
     expect(find.text('Define with Burrow'), findsOneWidget);
