@@ -51,6 +51,7 @@ class BookSearch {
     required this.chapters,
     required this.onResults,
     required this.onDone,
+    this.startChapter = 0,
   });
 
   /// Maximum results kept per search. A one-letter query on a large book
@@ -65,6 +66,10 @@ class BookSearch {
   final ValueChanged<List<SearchResult>> onResults;
   final VoidCallback onDone;
 
+  /// Chapter scanned first, so a reader deep in a long book sees nearby
+  /// results before the scan reaches chapter 0.
+  final int startChapter;
+
   Timer? _debounce;
   String _query = '';
   int _epoch = 0;
@@ -77,6 +82,20 @@ class BookSearch {
   /// Lower-cased chapter bodies, computed once per chapter for the lifetime
   /// of this search and reused by later queries.
   final Map<int, String> _lowerCache = {};
+
+  /// Chapter indexes in scan order: [startChapter] through the end, then the
+  /// chapters before it.
+  late final List<int> _scanOrder = _buildScanOrder();
+
+  List<int> _buildScanOrder() {
+    final count = chapters.length;
+    if (count == 0) return const [];
+    final start = startChapter.clamp(0, count - 1);
+    return [
+      for (var i = start; i < count; i++) i,
+      for (var i = 0; i < start; i++) i,
+    ];
+  }
 
   /// All results from the last completed search.
   List<SearchResult> get allResults => _allResults;
@@ -142,7 +161,7 @@ class BookSearch {
     unawaited(_scanIncrementally(0, _epoch));
   }
 
-  Future<void> _scanIncrementally(int chapterIndex, int epoch) async {
+  Future<void> _scanIncrementally(int scanIndex, int epoch) async {
     if (_disposed || epoch != _epoch) {
       _finish(epoch);
       return;
@@ -152,10 +171,11 @@ class BookSearch {
       _finish(epoch);
       return;
     }
-    if (chapterIndex >= chapters.length) {
+    if (scanIndex >= _scanOrder.length) {
       _finish(epoch);
       return;
     }
+    final chapterIndex = _scanOrder[scanIndex];
 
     final body = chapters[chapterIndex].body;
     final queryLower = _query.toLowerCase();
@@ -226,7 +246,7 @@ class BookSearch {
       _finish(epoch);
       return;
     }
-    await _scanIncrementally(chapterIndex + 1, epoch);
+    await _scanIncrementally(scanIndex + 1, epoch);
   }
 
   void _finish(int epoch) {

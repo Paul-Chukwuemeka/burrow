@@ -51,10 +51,11 @@ class ReaderSearchController extends ChangeNotifier {
 
   BookSearch? get bookSearch => _search;
 
-  void setChapters(List<Chapter> chapters) {
+  void setChapters(List<Chapter> chapters, {int startChapter = 0}) {
     if (isPdf || _search != null) return;
     _search = BookSearch(
       chapters: chapters,
+      startChapter: startChapter,
       onResults: (results) {
         _replaceResults(results);
         if (results.isEmpty) {
