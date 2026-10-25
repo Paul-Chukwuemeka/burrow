@@ -4,9 +4,9 @@ import 'package:flutter/foundation.dart';
 
 /// One in-progress text selection in an open book.
 ///
-/// Offsets are flat document offsets (task 1's word helpers produce them) and
-/// are kept ordered: [start] is always strictly less than [end]. Word snapping
-/// is the caller's job; this model only guarantees a non-empty range.
+/// Offsets are flat document offsets: long-press starts on a whole word, while
+/// drags follow exact characters. The model keeps the range ordered ([start] is
+/// always strictly less than [end]).
 ///
 /// The anchor is the word the press started on. Dragging past it extends the
 /// selection forward from that word; dragging before it extends backward.
@@ -31,23 +31,23 @@ class ReaderSelection extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Extends the selection to the word `[wordStart, wordEnd)`.
+  /// Extends the selection to the exact character offset [offset].
   ///
-  /// Forward drags (the word starts at or after the anchor start) keep the
-  /// anchor word as the start; backward drags keep it as the end.
-  void dragToWord(int wordStart, int wordEnd) {
+  /// Forward drags keep the anchor word as the start and move the end; backward
+  /// drags keep it as the end and move the start. A drag inside the anchor word
+  /// leaves the whole word selected: the finger extends, handle drags shrink.
+  void dragToOffset(int offset) {
     final anchorStart = _anchorStart;
     final anchorEnd = _anchorEnd;
-    if (anchorStart == null || anchorEnd == null) {
-      beginWord(wordStart, wordEnd);
-      return;
-    }
-    if (wordStart >= anchorStart) {
-      _start = anchorStart;
-      _end = max(anchorEnd, wordEnd);
-    } else {
+    if (anchorStart == null || anchorEnd == null) return;
+    if (offset <= anchorStart) {
+      _start = min(anchorStart, offset);
       _end = anchorEnd;
-      _start = min(anchorStart, wordStart);
+    } else if (offset >= anchorEnd) {
+      _start = anchorStart;
+      _end = max(anchorEnd, offset);
+    } else {
+      return;
     }
     notifyListeners();
   }

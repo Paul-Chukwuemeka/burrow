@@ -195,16 +195,16 @@ int _runeStartBefore(String text, int offset) {
 
 /// Whether the selection's end handle should render on the current page.
 ///
-/// Handles render only on the reader's current flat page. When the selection's
-/// end lies on the previous page — including the whitespace the paginator drops
-/// between pages and trailing punctuation the word scan excludes — the end
-/// handle waits at the top of the current (next) page.
+/// Handles render only on the reader's current flat page. An end on the
+/// previous page is bridged to the top of the current (next) page only when it
+/// covers that page's final character (`selectionEnd == previousPageFlatEnd`):
+/// a selection that stops short of the page edge has no continuation to offer.
 bool showsSelectionEndHandle({
   required bool isCurrentPage,
   required int? selectionEnd,
   required int pageFlatStart,
   required int pageFlatEnd,
-  required int? previousPageFlatStart,
+  required int? previousPageFlatEnd,
   required bool isLastPage,
 }) {
   if (!isCurrentPage || selectionEnd == null) return false;
@@ -212,7 +212,7 @@ bool showsSelectionEndHandle({
     return selectionEnd < pageFlatEnd ||
         (selectionEnd == pageFlatEnd && isLastPage);
   }
-  return previousPageFlatStart != null && selectionEnd >= previousPageFlatStart;
+  return previousPageFlatEnd != null && selectionEnd >= previousPageFlatEnd;
 }
 
 /// The plain-text of the flat range `[start, end)`, joining chapters with `\n`.

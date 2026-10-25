@@ -2,7 +2,8 @@
 //
 // A long press must snap to the word under the finger using the rendered
 // paragraph's own metrics (not a reconstructed TextPainter), dragging extends
-// the selection word by word, and lifting shows the selection toolbar.
+// the selection character by character, and lifting shows the selection
+// toolbar.
 import 'dart:io';
 
 import 'package:burrow/db/database.dart' as db;
@@ -192,17 +193,36 @@ void main() {
     },
   );
 
-  testWidgets('drag extends the selection and drops Define', (tester) async {
+  testWidgets('drag extends the selection by characters, not words', (
+    tester,
+  ) async {
     final state = await mountReader(tester);
     final g = await tester.startGesture(globalForWord(tester, 'first'));
     await tester.pump(const Duration(milliseconds: 600));
+    // The pointing device lands on the middle of "chapter"; the selection must
+    // follow the caret to that exact character (word snapping would give
+    // "first chapter").
     await g.moveTo(globalForWord(tester, 'chapter'));
     await tester.pump();
     await g.up();
     await tester.pumpAndSettle();
-    expect(state.debugSelectionText, 'first chapter');
+    expect(state.debugSelectionText, 'first cha');
     expect(find.text('Define'), findsNothing);
     expect(find.text('Copy'), findsOneWidget);
+  });
+
+  testWidgets('dragging before the anchor extends to the exact character', (
+    tester,
+  ) async {
+    final state = await mountReader(tester);
+    final g = await tester.startGesture(globalForWord(tester, 'chapter'));
+    await tester.pump(const Duration(milliseconds: 600));
+    await g.moveTo(globalForWord(tester, 'first'));
+    await tester.pump();
+    await g.up();
+    await tester.pumpAndSettle();
+    // "first" starts at 4; the pointer's caret is mid-word at 6.
+    expect(state.debugSelectionText, 'rst chapter');
   });
 
   testWidgets('long-press on punctuation selects nothing', (tester) async {
@@ -351,49 +371,73 @@ void main() {
       expect(state.debugSelection.start, greaterThan(startBefore));
     });
 
-    testWidgets('dragging the start handle past the end keeps whole words', (
-      tester,
-    ) async {
-      final state = await mountReaderFor(tester, multi);
-      final body = bodyParagraph(tester, 'w0');
-      final tokens = body.text.toPlainText().trim().split(RegExp(r'\s+'));
-
-      // Extend a few lines down: the toolbar anchors at the lift caret (the
-      // end), so the start handle on line 1 stays clear of it and is the
-      // widget that receives the drag below.
-      final g = await tester.startGesture(globalForWord(tester, tokens.first));
+    testWidgets('end handle drag trims single characters', (tester) async {
+      final state = await mountReader(tester);
+      // Select "first chapter" exactly: long-press "first", drag to the period's
+      // caret (just past the word).
+      final g = await tester.startGesture(globalForWord(tester, 'first'));
       await tester.pump(const Duration(milliseconds: 600));
-      await g.moveTo(globalForWord(tester, tokens[20]));
+      await g.moveTo(globalForWord(tester, '.'));
       await tester.pump();
       await g.up();
       await tester.pumpAndSettle();
-      final before = state.debugSelectionText ?? '';
-      expect(before, isNotEmpty);
-      expect(before.split(' ').length, greaterThan(1));
+      expect(state.debugSelectionText, 'first chapter');
+      final endBefore = state.debugSelection.end!;
 
-      final startHandle = find.byKey(const Key('selectionHandleStart'));
-      expect(startHandle, findsOneWidget);
-
-      // Cross the start handle over the end. Word snapping must refuse the
-      // crossed position instead of clamping to `end - 1` (half a word), so
-      // the start can advance to a word boundary but never leave a partial
-      // word behind.
+      // A short left drag lands inside the last characters: the end moves by a
+      // character or two, where word snapping would jump a whole word.
       await tester.drag(
-        startHandle,
-        globalForWord(tester, tokens[21]) - tester.getCenter(startHandle),
+        find.byKey(const Key('selectionHandleEnd')),
+        const Offset(-40, 0),
       );
       await tester.pumpAndSettle();
-      final after = state.debugSelectionText!;
-      expect(before.endsWith(after), isTrue);
-      expect(
-        after.split(' ').every((word) => RegExp(r'^w\d+$').hasMatch(word)),
-        isTrue,
-        reason: 'crossing must not leave a partial word: $after',
-      );
+      final endAfter = state.debugSelection.end!;
+      expect(endAfter, lessThan(endBefore));
+      expect(endBefore - endAfter, inInclusiveRange(1, 5));
+      expect(state.debugSelectionText, startsWith('first cha'));
     });
+
+    testWidgets(
+      'dragging the start handle past the end collapses to a character',
+      (tester) async {
+        final state = await mountReaderFor(tester, multi);
+        final body = bodyParagraph(tester, 'w0');
+        final tokens = body.text.toPlainText().trim().split(RegExp(r'\s+'));
+
+        // Extend a few lines down: the toolbar anchors at the lift caret (the
+        // end), so the start handle on line 1 stays clear of it and is the
+        // widget that receives the drag below.
+        final g = await tester.startGesture(
+          globalForWord(tester, tokens.first),
+        );
+        await tester.pump(const Duration(milliseconds: 600));
+        await g.moveTo(globalForWord(tester, tokens[20]));
+        await tester.pump();
+        await g.up();
+        await tester.pumpAndSettle();
+        final before = state.debugSelectionText ?? '';
+        expect(before, isNotEmpty);
+        expect(before.split(' ').length, greaterThan(1));
+
+        final startHandle = find.byKey(const Key('selectionHandleStart'));
+        expect(startHandle, findsOneWidget);
+
+        // Character precision: crossing the start past the end clamps to
+        // `end - 1`, leaving a one-character selection at the far end instead
+        // of inverting the range.
+        await tester.drag(
+          startHandle,
+          globalForWord(tester, tokens[21]) - tester.getCenter(startHandle),
+        );
+        await tester.pumpAndSettle();
+        final after = state.debugSelectionText!;
+        expect(after.length, 1);
+        expect(before.endsWith(after), isTrue);
+      },
+    );
   });
 
-  group('page ending in punctuation keeps the cross-page end handle', () {
+  group('end handle bridged only when the page edge is selected', () {
     late Book punct;
 
     setUp(() async {
@@ -403,10 +447,38 @@ void main() {
       );
     });
 
-    testWidgets('drag to the last word then flip still shows the end handle', (
+    testWidgets('covers the final character then flips to the end handle', (
       tester,
     ) async {
       final state = await mountReaderFor(tester, punct);
+      final body = bodyParagraph(tester, 'w0');
+      final pageText = body.text.toPlainText().trim();
+
+      final g = await tester.startGesture(globalForWord(tester, 'w0'));
+      await tester.pump(const Duration(milliseconds: 600));
+      // The far bottom-right caret is the page's exclusive end, so the final
+      // period is inside the selection.
+      await g.moveTo(
+        body.localToGlobal(Offset(body.size.width - 2, body.size.height - 2)),
+      );
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+
+      final selected = state.debugSelectionText!;
+      expect(selected, pageText);
+      expect(selected.endsWith('.'), isTrue);
+
+      final size = tester.getSize(find.byType(ReaderScreen));
+      await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('selectionHandleEnd')), findsOneWidget);
+    });
+
+    testWidgets('stops short of the page edge and flips to no end handle', (
+      tester,
+    ) async {
+      await mountReaderFor(tester, punct);
       final body = bodyParagraph(tester, 'w0');
       final pageText = body.text.toPlainText().trim();
       final lastToken = pageText.split(RegExp(r'\s+')).last;
@@ -414,23 +486,21 @@ void main() {
 
       final g = await tester.startGesture(globalForWord(tester, 'w0'));
       await tester.pump(const Duration(milliseconds: 600));
+      // Mid-word: the caret never reaches the final period, so the page's
+      // last character is not covered.
       await g.moveTo(globalForWord(tester, lastWord));
       await tester.pump();
       await g.up();
       await tester.pumpAndSettle();
 
-      // The word scan stops before the page's final period, so the selection
-      // ends before `page.end` — the case the old equality bridge missed.
-      final selected = state.debugSelectionText!;
-      expect(pageText.startsWith(selected), isTrue);
-      expect(selected.endsWith('.'), isFalse);
-      // On this page the handle sits at the selection end, before the period.
+      // The handle belongs on this page at the selection end...
       expect(find.byKey(const Key('selectionHandleEnd')), findsOneWidget);
 
+      // ...but the selection offers no continuation on the next page.
       final size = tester.getSize(find.byType(ReaderScreen));
       await tester.tapAt(Offset(size.width * 0.85, size.height * 0.5));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('selectionHandleEnd')), findsOneWidget);
+      expect(find.byKey(const Key('selectionHandleEnd')), findsNothing);
     });
   });
 

@@ -50,45 +50,62 @@ void main() {
     expect(wordBoundsAt(4, body, 0, loFlat: 4, hiFlat: 7), (start: 4, end: 7));
   });
 
-  test('showsSelectionEndHandle bridges a page ending in punctuation', () {
-    // Synthetic boundaries: the page runs flat 541..1080 and the word scan
-    // stops at 539, before the final period, so the end is on the previous
-    // page and the handle belongs at the top of this one.
+  test(
+    'showsSelectionEndHandle bridges when the page’s last char is covered',
+    () {
+      // The previous page runs flat 0..1080 (end exclusive), so the selection end
+      // at 1080 includes the character at 1079: the handle waits at the top of
+      // this page.
+      expect(
+        showsSelectionEndHandle(
+          isCurrentPage: true,
+          selectionEnd: 1080,
+          pageFlatStart: 1081,
+          pageFlatEnd: 1620,
+          previousPageFlatEnd: 1080,
+          isLastPage: false,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test('showsSelectionEndHandle refuses an end short of the page edge', () {
+    // A word-snapped end before trailing punctuation stops at 1079 and does
+    // not cover the page's final character: nothing waits on the next page.
     expect(
       showsSelectionEndHandle(
         isCurrentPage: true,
-        selectionEnd: 539,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 0,
+        selectionEnd: 1079,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: false,
       ),
-      isTrue,
+      isFalse,
     );
-  });
-
-  test('showsSelectionEndHandle rejects an end before the previous page', () {
+    // Likewise a selection that ends in the middle of the previous page.
     expect(
       showsSelectionEndHandle(
         isCurrentPage: true,
-        selectionEnd: 539,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 540,
+        selectionEnd: 700,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: false,
       ),
       isFalse,
     );
   });
 
-  test('showsSelectionEndHandle accepts a mid-page end', () {
+  test('showsSelectionEndHandle accepts an end on the current page', () {
     expect(
       showsSelectionEndHandle(
         isCurrentPage: true,
-        selectionEnd: 700,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 0,
+        selectionEnd: 1200,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: false,
       ),
       isTrue,
@@ -99,10 +116,10 @@ void main() {
     expect(
       showsSelectionEndHandle(
         isCurrentPage: true,
-        selectionEnd: 1080,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 0,
+        selectionEnd: 1620,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: true,
       ),
       isTrue,
@@ -111,10 +128,10 @@ void main() {
     expect(
       showsSelectionEndHandle(
         isCurrentPage: true,
-        selectionEnd: 1080,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 0,
+        selectionEnd: 1620,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: false,
       ),
       isFalse,
@@ -125,10 +142,10 @@ void main() {
     expect(
       showsSelectionEndHandle(
         isCurrentPage: false,
-        selectionEnd: 700,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 0,
+        selectionEnd: 1200,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: false,
       ),
       isFalse,
@@ -137,9 +154,9 @@ void main() {
       showsSelectionEndHandle(
         isCurrentPage: true,
         selectionEnd: null,
-        pageFlatStart: 541,
-        pageFlatEnd: 1080,
-        previousPageFlatStart: 0,
+        pageFlatStart: 1081,
+        pageFlatEnd: 1620,
+        previousPageFlatEnd: 1080,
         isLastPage: false,
       ),
       isFalse,

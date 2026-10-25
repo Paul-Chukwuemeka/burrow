@@ -2,18 +2,31 @@ import 'package:burrow/controllers/reader_selection.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('beginWord then dragToWord forward keeps the anchor word', () {
+  test('dragToOffset extends forward to the exact character', () {
     final s = ReaderSelection()..beginWord(4, 9);
-    s.dragToWord(10, 17);
+    s.dragToOffset(12); // three characters into the next word
     expect(s.start, 4);
+    expect(s.end, 12);
+  });
+
+  test('dragToOffset before the anchor moves the start to the character', () {
+    final s = ReaderSelection()..beginWord(10, 17);
+    s.dragToOffset(5);
+    expect(s.start, 5);
     expect(s.end, 17);
   });
 
-  test('dragToWord before the anchor moves the start', () {
-    final s = ReaderSelection()..beginWord(10, 17);
-    s.dragToWord(0, 3);
-    expect(s.start, 0);
-    expect(s.end, 17);
+  test('dragToOffset inside the anchor word keeps the whole word', () {
+    final s = ReaderSelection()..beginWord(4, 9);
+    s.dragToOffset(7);
+    expect(s.start, 4);
+    expect(s.end, 9);
+  });
+
+  test('dragToOffset without an anchor does nothing', () {
+    final s = ReaderSelection();
+    s.dragToOffset(5);
+    expect(s.isActive, isFalse);
   });
 
   test('setStart/setEnd keep start < end', () {
