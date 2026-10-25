@@ -235,9 +235,7 @@ List<InlineSpan> buildPageSpans({
       final rs = selectedRange.start.clamp(start, end);
       final re = selectedRange.end.clamp(start, end);
       if (segStart >= rs && segEnd <= re) {
-        segStyle = segStyle.copyWith(
-          backgroundColor: theme.accent.withValues(alpha: 0.25),
-        );
+        segStyle = segStyle.copyWith(backgroundColor: theme.selection);
       }
     }
     // Links carry a guaranteed look, even where the source styles nothing:
