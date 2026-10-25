@@ -14,7 +14,6 @@ import 'dart:io';
 
 import 'package:burrow/models/document.dart';
 import 'package:burrow/models/reader_settings.dart';
-import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/epub/epub_engine_factory.dart';
 import 'package:burrow/services/paginator.dart';
 import 'package:burrow/src/rust/frb_generated.dart';
@@ -59,6 +58,28 @@ void main() {
     expect(chapter, isNotNull, reason: 'needle chapter must parse');
 
     final needleChapter = chapter!;
+    // Dump the runs the parser actually emitted around the needle paragraph,
+    // so the measured-vs-rendered style analysis works on parsed data.
+    final needleOffset = needleChapter.body.indexOf(needle);
+    // ignore: avoid_print
+    print(
+      'PROBE runs=${needleChapter.runs.length} '
+      'images=${needleChapter.images.length}',
+    );
+    for (final r in needleChapter.runs) {
+      if (r.end >= needleOffset - 400 && r.start <= needleOffset + 400) {
+        final css = r.css;
+        final cssText = css == null
+            ? 'null'
+            : 'fontSize=${css.fontSize} lineHeight=${css.lineHeight} '
+                  'fontFamily=${css.fontFamily}';
+        // ignore: avoid_print
+        print(
+          'PROBE run [${r.start},${r.end}) bold=${r.bold} '
+          'italic=${r.italic} css=$cssText',
+        );
+      }
+    }
     final settings = ReaderSettings();
     const theme = ReaderTheme.light;
     // Exact reader geometry: _contentViewport = screen − 2×horizontalMargin
