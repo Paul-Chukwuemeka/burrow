@@ -124,7 +124,7 @@ void main() {
           MaterialApp(home: ReaderScreen(book: book, library: library)),
         );
         var parsed = false;
-        for (var i = 0; i < 200; i++) {
+        for (var i = 0; i < 1000; i++) {
           if (_readerState(tester).debugHasDocument) {
             parsed = true;
             break;
@@ -138,8 +138,13 @@ void main() {
         await tester.pump();
         await tester.pump();
 
-        // Wait for pagination to settle.
-        for (var i = 0; i < 4000; i++) {
+        // Wait for pagination to settle. A whole series paginates to tens of
+        // thousands of pages, so settle by wall-clock budget like the freeze
+        // probe does, not by frame count.
+        final settleWatch = Stopwatch()..start();
+        const settleBudget = Duration(minutes: 6);
+        var frame = 0;
+        while (settleWatch.elapsed < settleBudget) {
           final state = _readerState(tester);
           if (!state.debugPaginationRunning &&
               !state.debugLazyRunning &&
@@ -147,7 +152,29 @@ void main() {
             break;
           }
           await tester.pump();
+          frame++;
+          if (frame == 50000) {
+            // ignore: avoid_print
+            print('PROBE-ALIVE still paginating at frame $frame');
+          }
         }
+        {
+          final state = _readerState(tester);
+          // ignore: avoid_print
+          print(
+            'PROBE-SETTLE frames=$frame '
+            'running=${state.debugPaginationRunning} '
+            'lazy=${state.debugLazyRunning} '
+            'controller=${state.debugHasController} '
+            'chapters=${state.debugChapterCount} '
+            'ready=${state.debugReadyCount} '
+            'flatPages=${state.debugFlatPageCount}',
+          );
+        }
+        // Let the frame that mounts the PageView run (the settle condition
+        // flips true while the PageView is still being swapped in).
+        await tester.pump();
+        await tester.pump();
         expect(_progressView, findsNothing, reason: 'pagination should settle');
         expect(find.byType(PageView), findsOneWidget);
 
