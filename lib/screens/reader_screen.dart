@@ -3282,6 +3282,11 @@ class _PageContentState extends State<_PageContent> {
   ({Offset caret, double lineHeight})? _startHandleMetrics;
   ({Offset caret, double lineHeight})? _endHandleMetrics;
 
+  /// Pointer-to-caret offset captured when a handle drag starts. The handles
+  /// sit below their line, so a drag has to be mapped back up to the caret
+  /// before hit-testing or it would select text on the line below.
+  Offset _handleDragOffset = Offset.zero;
+
   @override
   void initState() {
     super.initState();
@@ -3317,8 +3322,16 @@ class _PageContentState extends State<_PageContent> {
     required bool isStart,
   }) {
     final show = isStart ? widget.showStartHandle : widget.showEndHandle;
-    final selection = isStart ? widget.selectionStart : widget.selectionEnd;
-    if (!show || selection == null) return null;
+    if (!show) return null;
+    return _metricsForOffset(
+      isStart ? widget.selectionStart : widget.selectionEnd,
+    );
+  }
+
+  /// The caret point and line height for [selection] in the body [Stack]'s
+  /// space, or `null` when the selection or paragraph is unavailable.
+  ({Offset caret, double lineHeight})? _metricsForOffset(int? selection) {
+    if (selection == null) return null;
     final paragraph = _bodyKey.currentContext?.findRenderObject();
     if (paragraph is! RenderParagraph) return null;
     // The selection boundary is a flat chapter offset; clamp it to this page
@@ -3383,7 +3396,9 @@ class _PageContentState extends State<_PageContent> {
         widget.onSelectionDragged?.call(offset);
       },
       onLongPressEnd: (details) {
-        widget.onSelectionSettled?.call(_caretGlobalAt(details.globalPosition));
+        widget.onSelectionSettled?.call(
+          _selectionToolbarAnchor(_caretGlobalAt(details.globalPosition)),
+        );
       },
       // Reading text is independent of the app-wide "Text size" scale: the
       // paginator measures at no scaling, so the page content must render at
@@ -3507,14 +3522,40 @@ class _PageContentState extends State<_PageContent> {
     return paragraph.localToGlobal(caret);
   }
 
+  /// Picks where to anchor the selection toolbar.
+  ///
+  /// A single-line selection keeps the toolbar above the finger's caret. For a
+  /// selection spanning several lines, the toolbar moves above the *first*
+  /// line: anchored above the last line it can cover the handles hanging below
+  /// the earlier lines, making the start handle impossible to grab.
+  Offset _selectionToolbarAnchor(Offset fallback) {
+    final selectionStart = widget.selectionStart;
+    final selectionEnd = widget.selectionEnd;
+    if (selectionStart == null || selectionEnd == null) return fallback;
+    final chapterStart = selectionStart - widget.chapterStartFlat;
+    final chapterEnd = selectionEnd - widget.chapterStartFlat;
+    final startOnPage = chapterStart >= page.start && chapterStart <= page.end;
+    final endOnPage = chapterEnd >= page.start && chapterEnd <= page.end;
+    if (!startOnPage) return fallback;
+    final start = _metricsForOffset(selectionStart);
+    if (start == null) return fallback;
+    final end = endOnPage ? _metricsForOffset(selectionEnd) : null;
+    final spansLines =
+        end == null || (start.caret.dy - end.caret.dy).abs() > 0.5;
+    if (!spansLines) return fallback;
+    final paragraph = _bodyKey.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph) return fallback;
+    return paragraph.localToGlobal(start.caret);
+  }
+
   /// A draggable selection handle: a small accent teardrop inside a larger
-  /// transparent hit area. Both handles hang above their caret and point
-  /// downward at the selected text.
+  /// transparent hit area. Both handles hang below their line and point
+  /// downward.
   ///
   /// The 44px hit box is clamped fully inside [stackSize] so it is always
   /// hit-testable: `Clip.none` only affects painting, and `RenderBox.hitTest`
-  /// rejects a point outside the box's own size, so a box hanging above the
-  /// first line (or below the last) would silently let taps fall through to
+  /// rejects a point outside the box's own size, so a box hanging below the
+  /// last line (or above the first) would silently let taps fall through to
   /// the page triage. The teardrop is then translated inside the box to stay
   /// near the caret, so clamping never moves the visible handle.
   Widget _buildHandle({
@@ -3526,35 +3567,27 @@ class _PageContentState extends State<_PageContent> {
     const double hit = 44;
     const double handleWidth = 14;
     const double handleHeight = 18;
-    // The hit box sits mostly above the caret, leaving the teardrop's tip just
-    // above the line.
+    // The teardrop's top sits 2px below the line, with its tip pointing down.
+    // Centre the hit box on the glyph so the 44px target wraps it evenly.
+    final desiredHandleCenterY =
+        caret.dy + metrics.lineHeight + handleHeight / 2 + 2;
     final desiredLeft = caret.dx - hit / 2;
-    final desiredTop = caret.dy - hit + 4;
+    final desiredTop = desiredHandleCenterY - hit / 2;
     final maxLeft = math.max(0.0, stackSize.width - hit);
     final maxTop = math.max(0.0, stackSize.height - hit);
     final left = desiredLeft.clamp(0.0, maxLeft);
     final top = desiredTop.clamp(0.0, maxTop);
-    // Keep the teardrop's tip ~4px above the caret, expressed as a translation
-    // from the clamped box's centre. Clamp both axes so the painted shape
-    // stays inside its hit box: a first-line handle's box clamps to `top = 0`,
-    // and an unclamped shape would hang above the box where hit-testing
-    // cannot reach it.
+    // Clamp both axes so the painted shape stays inside its hit box: a
+    // last-line handle's box clamps to the bottom of the Stack, and an
+    // unclamped shape would hang outside the box where hit-testing cannot
+    // reach it.
     final handleCenterX = caret.dx.clamp(
       left + handleWidth / 2,
       left + hit - handleWidth / 2,
     );
-    final handleCenterY = (caret.dy - handleHeight / 2 - 4).clamp(
+    final handleCenterY = desiredHandleCenterY.clamp(
       top + handleHeight / 2,
       top + hit - handleHeight / 2,
-    );
-    // The handle is drawn above the caret, so map the pointer back onto the
-    // middle of the caret's line before hit-testing: otherwise a horizontal
-    // drag would select the line above the one the handle belongs to. The
-    // offset is the same in local and global space (the page is not
-    // transformed).
-    final dragOffset = Offset(
-      caret.dx - handleCenterX,
-      caret.dy + metrics.lineHeight / 2 - handleCenterY,
     );
     return Positioned(
       left: left,
@@ -3566,10 +3599,22 @@ class _PageContentState extends State<_PageContent> {
         behavior: HitTestBehavior.opaque,
         // Swallow the tap so it never reaches the page triage below.
         onTap: () {},
+        // The handle sits below its line, so remember where the finger landed
+        // relative to the caret and keep that offset for the whole drag. This
+        // maps the pointer back onto the caret's line instead of selecting the
+        // line below it.
+        onPanDown: (details) {
+          _handleDragOffset = Offset(
+            caret.dx - left - details.localPosition.dx,
+            caret.dy + metrics.lineHeight / 2 - top - details.localPosition.dy,
+          );
+        },
         onPanUpdate: (details) =>
-            _dragHandle(isStart, details.globalPosition + dragOffset),
+            _dragHandle(isStart, details.globalPosition + _handleDragOffset),
         onPanEnd: (details) => widget.onSelectionSettled?.call(
-          _caretGlobalAt(details.globalPosition + dragOffset),
+          _selectionToolbarAnchor(
+            _caretGlobalAt(details.globalPosition + _handleDragOffset),
+          ),
         ),
         child: Center(
           child: Transform.translate(
@@ -3673,7 +3718,7 @@ class _PageContentState extends State<_PageContent> {
 /// The teardrop glyph painted inside a selection handle's hit box.
 ///
 /// The bulb sits at the top and the tip at the bottom, so both the start and
-/// end handles point down at the text they belong to.
+/// end handles point downward below the line they belong to.
 class _SelectionHandlePainter extends CustomPainter {
   const _SelectionHandlePainter({required this.color});
 
