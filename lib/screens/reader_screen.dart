@@ -721,30 +721,6 @@ class ReaderScreenState extends State<ReaderScreen>
   Size _contentViewport(Size screen) =>
       Size(screen.width - _settings.horizontalMargin * 2, screen.height - 56);
 
-  /// Height of the chapter-title heading rendered on a chapter's first page
-  /// (title + spacing), which pagination must reserve there.
-  double _titleInset(
-    int chapter,
-    Size viewport,
-    TextStyle style,
-    TextScaler scaler,
-  ) {
-    final title = _doc!.chapters[chapter].title;
-    if (title.isEmpty) return 0;
-    final titleStyle = style.copyWith(
-      fontSize: (style.fontSize ?? 18) + 4,
-      fontWeight: FontWeight.w700,
-    );
-    final tp = TextPainter(
-      text: TextSpan(text: title, style: titleStyle),
-      textDirection: TextDirection.ltr,
-      textScaler: scaler,
-    )..layout(maxWidth: viewport.width);
-    final inset = tp.height + 16;
-    tp.dispose();
-    return inset;
-  }
-
   // ---------------------------------------------------------------------------
   // Repagination (settings change or rotation), keeping position stable
   // ---------------------------------------------------------------------------
@@ -1048,7 +1024,6 @@ class ReaderScreenState extends State<ReaderScreen>
       maxWidth: viewport.width,
       maxHeight: viewport.height,
       direction: TextDirection.ltr,
-      firstPageInset: _titleInset(chapter, viewport, style, scaler),
       textScaler: scaler,
       runs: _doc!.chapters[chapter].runs,
       images: _doc!.chapters[chapter].images,
@@ -1100,7 +1075,6 @@ class ReaderScreenState extends State<ReaderScreen>
       maxWidth: viewport.width,
       maxHeight: viewport.height,
       direction: TextDirection.ltr,
-      firstPageInset: _titleInset(chapter, viewport, style, scaler),
       textScaler: scaler,
       runs: _doc!.chapters[chapter].runs,
       images: _doc!.chapters[chapter].images,
@@ -2317,19 +2291,16 @@ class ReaderScreenState extends State<ReaderScreen>
                     selStart != null &&
                     selStart >= pageFlatStart &&
                     selStart < pageFlatEnd;
-                // The paginator drops the whitespace between pages (it belongs
-                // to no page) and word snapping stops before trailing
-                // punctuation, so a selection ending on the previous page can
-                // sit several offsets before this page's start. Anchor the
-                // bridge at that page's start so any such end still gets a
-                // handle at the top of this page.
-                int? previousPageFlatStart;
+                // Only a selection that covers the previous page's final
+                // character can continue across the boundary; it waits at the
+                // top of this page. A selection ending mid-page is complete.
+                int? previousPageFlatEnd;
                 if (i > 0) {
                   final prev = _refAt(i - 1);
                   if (prev != null) {
-                    previousPageFlatStart =
+                    previousPageFlatEnd =
                         _charsBefore[prev.$1] +
-                        _paginators[prev.$1].pages[prev.$2].start;
+                        _paginators[prev.$1].pages[prev.$2].end;
                   }
                 }
                 final showEnd = showsSelectionEndHandle(
@@ -2337,11 +2308,10 @@ class ReaderScreenState extends State<ReaderScreen>
                   selectionEnd: selEnd,
                   pageFlatStart: pageFlatStart,
                   pageFlatEnd: pageFlatEnd,
-                  previousPageFlatStart: previousPageFlatStart,
+                  previousPageFlatEnd: previousPageFlatEnd,
                   isLastPage: i == itemCount - 1,
                 );
                 return _PageContent(
-                  chapterTitle: _doc!.chapters[chapter].title,
                   text: _doc!.chapters[chapter].body,
                   runs: _doc!.chapters[chapter].runs,
                   images: _doc!.chapters[chapter].images,
@@ -2351,13 +2321,12 @@ class ReaderScreenState extends State<ReaderScreen>
                   selectionEnd: _selection.end,
                   onWordSelected: (start, end) =>
                       _selection.beginWord(start, end),
-                  onWordDragged: (start, end) =>
-                      _selection.dragToWord(start, end),
+                  onSelectionDragged: _selection.dragToOffset,
                   onSelectionMissed: _clearSelection,
                   onSelectionSettled: _showSelectionToolbarAt,
-                  onHandleDragged: (isStart, s, e) => isStart
-                      ? _selection.setStart(s)
-                      : _selection.setEnd(e),
+                  onHandleDragged: (isStart, offset) => isStart
+                      ? _selection.setStart(offset)
+                      : _selection.setEnd(offset),
                   showStartHandle: showStart,
                   showEndHandle: showEnd,
                   onTapLink: (target) {
@@ -3232,7 +3201,6 @@ class _ComicPageError extends StatelessWidget {
 /// One rendered page of a reflowable document with tap zones.
 class _PageContent extends StatefulWidget {
   const _PageContent({
-    required this.chapterTitle,
     required this.text,
     required this.page,
     required this.style,
@@ -3252,7 +3220,7 @@ class _PageContent extends StatefulWidget {
     this.selectionStart,
     this.selectionEnd,
     this.onWordSelected,
-    this.onWordDragged,
+    this.onSelectionDragged,
     this.onSelectionMissed,
     this.onHandleDragged,
     this.onSelectionSettled,
@@ -3262,7 +3230,6 @@ class _PageContent extends StatefulWidget {
     this.horizontalMargin = 20,
   });
 
-  final String chapterTitle;
   final String text;
   final TextPage page;
   final TextStyle style;
@@ -3283,13 +3250,15 @@ class _PageContent extends StatefulWidget {
   final SearchResult? currentMatch;
   final double pageMaxHeight;
   final void Function(int wordStart, int wordEnd)? onWordSelected;
-  final void Function(int wordStart, int wordEnd)? onWordDragged;
+
+  /// Called with the exact character offset under a drag to extend the
+  /// selection. Long-press picks a word; dragging then follows characters.
+  final void Function(int offset)? onSelectionDragged;
 
   /// Called when a long press lands on no word (punctuation, whitespace, an
   /// image), so a new press that selects nothing clears the old selection.
   final VoidCallback? onSelectionMissed;
-  final void Function(bool isStart, int wordStart, int wordEnd)?
-  onHandleDragged;
+  final void Function(bool isStart, int offset)? onHandleDragged;
   final void Function(Offset globalPos)? onSelectionSettled;
   final bool showStartHandle;
   final bool showEndHandle;
@@ -3406,9 +3375,9 @@ class _PageContentState extends State<_PageContent> {
         widget.onWordSelected?.call(bounds.start, bounds.end);
       },
       onLongPressMoveUpdate: (details) {
-        final bounds = _wordAt(details.globalPosition);
-        if (bounds == null) return;
-        widget.onWordDragged?.call(bounds.start, bounds.end);
+        final offset = _caretFlatAt(details.globalPosition);
+        if (offset == null) return;
+        widget.onSelectionDragged?.call(offset);
       },
       onLongPressEnd: (details) {
         widget.onSelectionSettled?.call(_caretGlobalAt(details.globalPosition));
@@ -3426,16 +3395,6 @@ class _PageContentState extends State<_PageContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (page.start == 0 && widget.chapterTitle.trim().isNotEmpty) ...[
-                Text(
-                  widget.chapterTitle,
-                  style: widget.style.copyWith(
-                    fontSize: (widget.style.fontSize ?? 18) + 4,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
               Expanded(
                 // The handle boxes are kept entirely inside the body box (see
                 // `_buildHandle`): `Clip.none` only affects painting, and a
@@ -3490,12 +3449,14 @@ class _PageContentState extends State<_PageContent> {
     return page.start + paragraph.getPositionForOffset(local).offset;
   }
 
-  /// Maps a global point to a flat document offset inside this page, or `null`
-  /// when the body is not mounted.
+  /// Maps a global point to the caret's flat document offset inside this page
+  /// (an insertion point between characters, so the page-end offset is
+  /// reachable), or `null` when the body is not mounted or the point misses the
+  /// rendered text.
   ///
-  /// The paragraph's offset is clamped to `[page.start, page.end)` so a press
-  /// in the padding or past the last line cannot reach a neighbouring page.
-  int? _flatAt(Offset global) {
+  /// The offset is clamped to `[page.start, page.end]` so a press in the padding
+  /// or past the last line cannot reach a neighbouring page.
+  int? _caretFlatAt(Offset global) {
     if (page.end <= page.start) return null;
     final paragraph = _bodyKey.currentContext?.findRenderObject();
     if (paragraph is! RenderParagraph) return null;
@@ -3504,8 +3465,17 @@ class _PageContentState extends State<_PageContent> {
     // space below a short page) rather than selecting the nearest line's word.
     if (!paragraph.size.contains(local)) return null;
     final offset = paragraph.getPositionForOffset(local).offset;
-    final pageOffset = (page.start + offset).clamp(page.start, page.end - 1);
+    final pageOffset = (page.start + offset).clamp(page.start, page.end);
     return widget.chapterStartFlat + pageOffset;
+  }
+
+  /// Maps a global point to the flat offset of the character under it, clamped
+  /// to the page's last character (for whole-word lookup).
+  int? _flatAt(Offset global) {
+    final caret = _caretFlatAt(global);
+    if (caret == null) return null;
+    final lastChar = widget.chapterStartFlat + page.end - 1;
+    return math.min(caret, lastChar);
   }
 
   /// The whole-word flat range under [global], bounded to this page.
@@ -3601,21 +3571,15 @@ class _PageContentState extends State<_PageContent> {
     );
   }
 
-  /// Moves a selection boundary to the word under a handle drag.
+  /// Moves a selection boundary to the exact character under a handle drag.
   ///
-  /// A handle may not cross the opposite boundary: the model's clamps would
-  /// otherwise leave a partial word (`end - 1` / `start + 1`). The handle
-  /// stops at the opposite end; dragging onto that end's word is still valid
-  /// because it keeps the whole word.
+  /// The model clamps a crossing to a one-character selection (`end - 1` /
+  /// `start + 1`) instead of inverting the range, so character precision makes
+  /// handles collapse naturally at the opposite end.
   void _dragHandle(bool isStart, Offset global) {
-    final bounds = _wordAt(global);
-    if (bounds == null) return;
-    final start = widget.selectionStart;
-    final end = widget.selectionEnd;
-    if (start != null && end != null) {
-      if (isStart ? bounds.start >= end : bounds.end <= start) return;
-    }
-    widget.onHandleDragged?.call(isStart, bounds.start, bounds.end);
+    final offset = _caretFlatAt(global);
+    if (offset == null) return;
+    widget.onHandleDragged?.call(isStart, offset);
   }
 
   /// Builds the page's TextSpan, merging style runs (emphasis, quotes) with
