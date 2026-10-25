@@ -1,29 +1,37 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 
 import 'package:lexicor/lexicor.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Offline dictionary service backed by the Open English WordNet.
+import 'package:burrow/services/dictionary_files.dart';
+
+/// Offline dictionary service backed by Wiktionary data (via kaikki.org).
 ///
-/// On first use the database (~40 MB) is downloaded from a hosted URL and
-/// stored in the app documents directory. Subsequent lookups are instant and
-/// fully offline.
+/// On first use the compressed database (~60 MB container) is downloaded from
+/// a hosted URL, integrity-checked and decompressed into the app documents
+/// directory. Subsequent lookups are instant and fully offline.
 class DictionaryService {
   DictionaryService._();
 
   static final DictionaryService instance = DictionaryService._();
 
   static const _dbUrl =
-      'https://github.com/Paul-Chukwuemeka/burrow/releases/download/Dictionary/dictionary_full.sqlite';
+      'https://github.com/Paul-Chukwuemeka/burrow/releases/download/Dictionary/dictionary_wikt.sqlite.xz';
 
-  static const _dbFileName = 'dictionary_full.sqlite';
+  /// Compressed container kept on disk after decompression, so updating the
+  /// database later does not re-download it unnecessarily.
+  static const _containerFileName = 'dictionary.sqlite.xz';
 
-  /// SHA-256 hash of the known-good dictionary database.
+  /// Final decompressed SQLite database the engine opens.
+  static const _dbFileName = 'dictionary.sqlite';
+
+  /// SHA-256 hash of the known-good downloadable container.
   /// Updated when a new version is published. Empty string skips verification.
-  static const _expectedDbHash = '';
+  static const _expectedXzSha256 = '';
 
   Lexicor? _lexicor;
   bool _initializing = false;
@@ -32,7 +40,7 @@ class DictionaryService {
   /// Cached path to the database file.
   String? _dbPath;
 
-  /// Whether the database file exists on disk.
+  /// Whether the decompressed database file exists on disk.
   bool get isDownloaded => _isDownloaded ?? false;
   bool? _isDownloaded;
 
@@ -41,12 +49,13 @@ class DictionaryService {
     final file = await _dbFile;
     _dbPath = file.path;
     _isDownloaded = file.existsSync();
-    await _cleanupStaleTempFiles();
+    await _cleanupObsoleteArtifacts(file);
   }
 
   /// Ensures the Lexicor engine is initialised. Downloads the DB on first use.
   ///
-  /// [onProgress] is called with a value between 0.0 and 1.0 during download.
+  /// [onProgress] is called with a value between 0.0 and 1.0 during download,
+  /// or with −1 progress ticks when the server offers no content length.
   /// [onStatus] is called with human-readable status messages.
   Future<void> ensureReady({
     Function(double progress)? onProgress,
@@ -123,17 +132,24 @@ class DictionaryService {
     return file;
   }
 
-  /// Removes any leftover `.tmp` files from a previous interrupted download.
-  Future<void> _cleanupStaleTempFiles() async {
+  /// Deletes obsolescent artifacts (legacy Open English WordNet DBs and any
+  /// interrupted-download temp files) from the app documents directory.
+  ///
+  /// Existing users of the previous dictionary build are detected here: the
+  /// legacy file's presence is reported instead of trusted, so [isDownloaded]
+  /// stays false and the new Wiktionary DB downloads on the next ensureReady.
+  Future<void> _cleanupObsoleteArtifacts(File currentDb) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final tmpFile = File('${dir.path}/$_dbFileName.tmp');
-      if (await tmpFile.exists()) {
-        await tmpFile.delete();
-      }
+      final dir = currentDb.parent;
+      await cleanupDictionaryArtifacts(dir);
     } catch (_) {
       // Best-effort cleanup; ignore errors.
     }
+  }
+
+  Future<File> get _containerFile async {
+    final dir = (await _dbFile).parent;
+    return File('${dir.path}/$_containerFileName');
   }
 
   Future<void> _downloadDatabase(
@@ -159,9 +175,17 @@ class DictionaryService {
         throw HttpException('Download failed: HTTP ${response.statusCode}');
       }
 
+      // GitHub release downloads redirect; HttpClient follows them, so this
+      // is the final response. contentLength can still be −1 (chunked).
       final contentLength = response.contentLength;
-      final tempFile = File('${targetFile.path}.tmp');
-      final sink = tempFile.openWrite();
+      final container = await _containerFile;
+      final tempContainer = File('${container.path}.tmp');
+      final sink = tempContainer.openWrite();
+
+      // sha256 accumulates in flight — no second read pass needed for
+      // download-integrity checking.
+      final digestCollector = _DigestCollector();
+      final hashSink = sha256.startChunkedConversion(digestCollector);
 
       int received = 0;
 
@@ -170,29 +194,57 @@ class DictionaryService {
           const Duration(minutes: 2),
         )) {
           sink.add(chunk);
+          hashSink.add(chunk);
           received += chunk.length;
           if (contentLength > 0) {
             onProgress?.call(received / contentLength);
+          } else {
+            onProgress?.call(-1);
           }
         }
       } finally {
         await sink.flush();
         await sink.close();
+        hashSink.close();
       }
 
-      await tempFile.rename(targetFile.path);
-
-      // Verify download integrity if a hash is configured.
-      if (_expectedDbHash.isNotEmpty) {
-        final bytes = await targetFile.readAsBytes();
-        final digest = sha256.convert(bytes);
-        if (digest.toString() != _expectedDbHash) {
-          await targetFile.delete();
-          throw StateError('Dictionary download integrity check failed');
-        }
+      if (_expectedXzSha256.isNotEmpty &&
+          digestCollector.digest.toString() != _expectedXzSha256) {
+        // Corrupt or truncated container: delete and surface per spec.
+        await tempContainer.delete();
+        throw StateError('Dictionary download integrity check failed');
       }
+
+      await tempContainer.rename(container.path);
+
+      onStatus?.call('Preparing dictionary…');
+      // Decompress + integrity-verify off the UI thread (archive's XZDecoder
+      // is pure Dart, so it is isolate-friendly).
+      await Isolate.run(() {
+        return decompressAndVerify(
+          xz: container,
+          out: targetFile,
+          expectedSha256: _expectedXzSha256,
+        );
+      });
+
+      // The container is kept on disk: re-attempts or engine re-inits don't
+      // re-download an already-fetched container.
     } finally {
       client.close();
     }
   }
+}
+
+/// Holds the final sha256 [Digest] fed by [sha256.startChunkedConversion].
+class _DigestCollector implements Sink<Digest> {
+  Digest? _digest;
+
+  Digest get digest => _digest!;
+
+  @override
+  void add(Digest data) => _digest = data;
+
+  @override
+  void close() {}
 }

@@ -359,9 +359,17 @@ class ChapterPaginationDriver {
         _maxWidth,
         maxHeight: _maxHeight - 2 * ImageRun.verticalPadding,
       );
+      // A marker alone on its line gets a full-column placeholder cell so
+      // the rendered image centers in the column. The line's height is
+      // unchanged, and the marker's line holds nothing else, so wrapping
+      // (and therefore pagination) is identical to a shrink-wrapped box.
+      // Must mirror buildPageSpans below.
+      final width = ImageRun.standaloneIn(_text, img.offset)
+          ? _maxWidth
+          : size.width;
       dims.add(
         PlaceholderDimensions(
-          size: Size(size.width, size.height + 2 * ImageRun.verticalPadding),
+          size: Size(width, size.height + 2 * ImageRun.verticalPadding),
           alignment: PlaceholderAlignment.middle,
         ),
       );
