@@ -170,7 +170,7 @@ class _DictionaryContentState extends State<_DictionaryContent> {
                           _DefinitionTile(
                             index: i + 1,
                             definition: entry.value[i].definition,
-                            category: entry.value[i].category.label,
+                            category: entry.value[i].tags.join(', '),
                             muted: muted,
                             text: text,
                           ),
