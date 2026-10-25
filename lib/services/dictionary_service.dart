@@ -11,6 +11,9 @@ import 'package:burrow/services/dictionary_files.dart';
 
 /// Offline dictionary service backed by Wiktionary data (via kaikki.org).
 ///
+/// Source dump: https://kaikki.org/dictionary/English/ (postprocessed English
+/// Wiktionary JSONL; converted on-device from cached dumps at release time).
+///
 /// On first use the compressed database (~60 MB container) is downloaded from
 /// a hosted URL, integrity-checked and decompressed into the app documents
 /// directory. Subsequent lookups are instant and fully offline.

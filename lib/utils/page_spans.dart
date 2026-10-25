@@ -111,11 +111,21 @@ List<InlineSpan> buildPageSpans({
         renderWidth,
         maxHeight: maxHeight - 2 * ImageRun.verticalPadding,
       );
+      // A marker alone on its line fills the whole column: the paginator's
+      // placeholder measured `renderWidth`, so the child must too, with the
+      // image centered inside. Height and wrapping are unchanged from the
+      // shrink-wrapped box, so pagination stays identical. Inline markers
+      // keep the shrink-wrapped `Center(widthFactor: 1)`: expanding one of
+      // several markers sharing a line would change wrapping and page
+      // heights. Must mirror `_placeholdersIn` in the paginator.
+      final standalone = ImageRun.standaloneIn(text, segStart);
       Widget imageWidget;
       if (img.bytes.isEmpty) {
         // Deferred (not yet hydrated) or unreadable image: reserve the exact
         // space without asking the engine to decode empty bytes.
-        imageWidget = SizedBox(width: size.width, height: size.height);
+        imageWidget = standalone
+            ? SizedBox(width: renderWidth, height: size.height)
+            : SizedBox(width: size.width, height: size.height);
       } else {
         imageWidget = Image.memory(
           img.bytes,
@@ -159,11 +169,19 @@ List<InlineSpan> buildPageSpans({
             padding: const EdgeInsets.symmetric(
               vertical: ImageRun.verticalPadding,
             ),
-            // Shrink-wrap to the image's measured width. A plain Center
-            // expands to the paragraph's full width inside a WidgetSpan,
-            // so rendering would no longer match the placeholder size the
-            // paginator measured and the page would re-wrap and overflow.
-            child: Center(widthFactor: 1, child: imageWidget),
+            // Standalone markers fill the measured full-column cell with the
+            // image centered inside. A plain Center expands to the paragraph's
+            // full width inside a WidgetSpan, so rendering would no longer
+            // match the placeholder size the paginator measured and the page
+            // would re-wrap and overflow — hence shrink-wrap for inline
+            // markers, and an explicit full-width box for standalone ones.
+            child: standalone
+                ? SizedBox(
+                    width: renderWidth,
+                    height: size.height,
+                    child: Center(child: imageWidget),
+                  )
+                : Center(widthFactor: 1, child: imageWidget),
           ),
         ),
       );

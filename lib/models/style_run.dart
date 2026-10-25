@@ -155,6 +155,44 @@ class ImageRun {
   /// Pagination measurement must add this too so page heights stay in sync.
   static const double verticalPadding = 8;
 
+  /// Whether the `\uFFFC` at [offset] sits alone on its own line — only
+  /// newlines / horizontal whitespace on either side — so the page renderer
+  /// may center it in the column.
+  ///
+  /// Mirrors the Rust engine's standalone check (`is_standalone` in
+  /// `epub/project.rs`), tightened with one extra guard: the marker must also
+  /// be the only placeholder on its line. Widening one of several markers
+  /// sharing a line (a side-by-side figure paragraph) would change wrapping
+  /// and page heights, so such lines stay inline.
+  ///
+  /// Both pagination measurement (`_placeholdersIn`) and rendering
+  /// (`buildPageSpans`) call this so their placeholder boxes agree exactly.
+  static bool standaloneIn(String text, int offset) {
+    String? significant(bool forward) {
+      bool horizontalWs(String ch) => ch == ' ' || ch == '\t' || ch == '\r';
+      if (forward) {
+        for (var i = offset + 1; i < text.length; i++) {
+          final ch = text[i];
+          if (horizontalWs(ch)) continue;
+          return ch;
+        }
+        return null; // end of text: no significant char follows
+      }
+      for (var i = offset - 1; i >= 0; i--) {
+        final ch = text[i];
+        if (horizontalWs(ch)) continue;
+        return ch;
+      }
+      return null; // start of text
+    }
+
+    final before = significant(false);
+    if (before != null && before != '\n') return false;
+    final after = significant(true);
+    if (after != null && after != '\n') return false;
+    return true;
+  }
+
   /// Fallback height for an image whose dimensions cannot be determined.
   static const double _unknownImageHeight = 160;
 

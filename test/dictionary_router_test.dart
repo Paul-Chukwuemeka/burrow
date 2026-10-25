@@ -138,6 +138,24 @@ void main() {
     });
   });
 
+  testWidgets('download dialog copy states the container size', (tester) async {
+    final lib = LibraryService();
+    lib.settings.defaultDictionary = burrowDefaultDictionary;
+
+    await pumpRouter(tester, word: 'sample', lib: lib);
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Text &&
+            widget.data != null &&
+            widget.data!.contains('~60 MB'),
+      ),
+      findsOneWidget,
+      reason: 'dialog copy must carry the ~60 MB container size',
+    );
+  });
+
   testWidgets('default external, app gone → picker and revert', (
     tester,
   ) async {

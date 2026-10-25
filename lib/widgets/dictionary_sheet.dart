@@ -170,7 +170,7 @@ class _DictionaryContentState extends State<_DictionaryContent> {
                           _DefinitionTile(
                             index: i + 1,
                             definition: entry.value[i].definition,
-                            category: entry.value[i].tags.join(', '),
+                            tags: entry.value[i].tags,
                             muted: muted,
                             text: text,
                           ),
@@ -281,19 +281,23 @@ class _DefinitionTile extends StatelessWidget {
   const _DefinitionTile({
     required this.index,
     required this.definition,
-    required this.category,
+    required this.tags,
     required this.muted,
     required this.text,
   });
 
   final int index;
   final String? definition;
-  final String category;
+
+  /// Usage/register tags of the sense, e.g. `["archaic", "dated"]`.
+  /// The first two render as a lowercase comment line under the gloss.
+  final List<String> tags;
   final Color muted;
   final Color text;
 
   @override
   Widget build(BuildContext context) {
+    final tagComment = tags.take(2).map((t) => t.toLowerCase()).join(' · ');
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -324,11 +328,11 @@ class _DefinitionTile extends StatelessWidget {
                     color: muted,
                   ),
                 ),
-              if (category.isNotEmpty)
+              if (tagComment.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
-                    category,
+                    tagComment,
                     style: TextStyle(
                       fontSize: 11,
                       color: muted.withValues(alpha: 0.7),

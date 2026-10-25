@@ -8,7 +8,7 @@ A minimal, fast e-book reader for Android. Supports EPUB, PDF, TXT, CBZ, and CBR
 - **Reader** — EPUB reflow with adjustable font/size/theme, PDF native rendering, TXT with pagination
 - **Library** — Grid/list view, sort by title/recent/added, filter by format/reading status/genre/series
 - **Collections & Smart Groups** — Organize books manually or by rules (unread, finished, etc.)
-- **Dictionary** — Offline word lookup via Open English WordNet (downloaded on first use)
+- **Dictionary** — Offline word lookup via Wiktionary (~60 MB downloaded once)
 - **Stats** — Reading activity, genre breakdown, heatmap
 
 ## Tech Stack

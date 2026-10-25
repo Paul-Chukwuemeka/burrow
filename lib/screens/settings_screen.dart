@@ -350,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   )
                 : Text(
-                    'Tap to download (~40 MB)',
+                    'Tap to download (~60 MB)',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
@@ -422,9 +422,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               applicationName: 'Burrow',
               applicationVersion: _version,
               applicationLegalese:
-                  'Dictionary data © Open English WordNet 2024 (CC BY 4.0)\n'
-                  'Licensed under the Creative Commons Attribution 4.0 International License.\n'
-                  'https://creativecommons.org/licenses/by/4.0/',
+                  'Dictionary data © Wiktionary contributors '
+                  '(CC BY-SA 4.0 / GNU FDL)\n'
+                  'Extracted with wiktextract — kaikki.org',
             ),
           ),
         ],
