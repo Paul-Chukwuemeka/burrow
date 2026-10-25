@@ -350,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   )
                 : Text(
-                    'Tap to download (~60 MB)',
+                    'Tap to download (~50 MB)',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
