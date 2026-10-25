@@ -134,6 +134,30 @@ void main() {
     });
   });
 
+  group('ReaderTheme selection contrast', () {
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance();
+      final lb = b.computeLuminance();
+      final hi = la > lb ? la : lb;
+      final lo = la > lb ? lb : la;
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    for (final mode in ReaderThemeMode.values) {
+      test('${mode.name} selection reads clearly without hurting text', () {
+        final theme = ReaderTheme.byMode(mode);
+        expect(
+          contrast(theme.selection, theme.background),
+          greaterThanOrEqualTo(2.0),
+        );
+        expect(
+          contrast(theme.text, theme.selection),
+          greaterThanOrEqualTo(5.0),
+        );
+      });
+    }
+  });
+
   test('defaultDictionary round-trips through JSON', () {
     final ask = ReaderSettings();
     expect(ask.defaultDictionary, isNull);

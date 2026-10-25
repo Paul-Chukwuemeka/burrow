@@ -56,6 +56,7 @@ class ReaderTheme {
     required this.text,
     required this.muted,
     required this.accent,
+    required this.selection,
     required this.brightness,
   });
 
@@ -63,6 +64,15 @@ class ReaderTheme {
   final Color text;
   final Color muted;
   final Color accent;
+
+  /// Background tint behind selected text.
+  ///
+  /// Each theme gets an opaque, pre-tuned tint rather than a translucent
+  /// accent: at 25% the accent was almost invisible on sepia and dark pages.
+  /// Every value keeps at least 2:1 against [background] and 5:1 for [text]
+  /// on top of it, so the selection reads clearly without hurting legibility.
+  final Color selection;
+
   final Brightness brightness;
 
   static const ReaderTheme light = ReaderTheme(
@@ -70,6 +80,7 @@ class ReaderTheme {
     text: Color(0xFF1A1A1A),
     muted: Color(0xFF8A8A85),
     accent: Color(0xFF2E6E4E),
+    selection: Color(0xFF9AB8A7),
     brightness: Brightness.light,
   );
 
@@ -78,6 +89,7 @@ class ReaderTheme {
     text: Color(0xFF3B2F20),
     muted: Color(0xFF96825F),
     accent: Color(0xFF9C5B2B),
+    selection: Color(0xFFC49C76),
     brightness: Brightness.light,
   );
 
@@ -86,6 +98,7 @@ class ReaderTheme {
     text: Color(0xFFCFCFC8),
     muted: Color(0xFF6E6E68),
     accent: Color(0xFF7FB894),
+    selection: Color(0xFF3E5446),
     brightness: Brightness.dark,
   );
 
@@ -94,6 +107,7 @@ class ReaderTheme {
     text: Color(0xFFE6E6E1),
     muted: Color(0xFF6E6E6A),
     accent: Color(0xFF7FB894),
+    selection: Color(0xFF334A3B),
     brightness: Brightness.dark,
   );
 
@@ -102,6 +116,7 @@ class ReaderTheme {
     text: Color(0xFFC8C8D4),
     muted: Color(0xFF6E6E80),
     accent: Color(0xFF7FB894),
+    selection: Color(0xFF3A524E),
     brightness: Brightness.dark,
   );
 
