@@ -103,7 +103,14 @@ List<InlineSpan> buildPageSpans({
     // Check if this segment is an image placeholder.
     if (segEnd == segStart + 1 && imageMap.containsKey(segStart)) {
       final img = imageMap[segStart]!;
-      final size = img.renderedSize(renderWidth, maxHeight: maxHeight);
+      // Cap the image so the placeholder line (height + 2 * verticalPadding)
+      // fits the page box: sizing against the raw page height makes
+      // full-page images render taller than the page and clip. Must mirror
+      // the paginator's measurement in `_placeholdersIn`.
+      final size = img.renderedSize(
+        renderWidth,
+        maxHeight: maxHeight - 2 * ImageRun.verticalPadding,
+      );
       Widget imageWidget;
       if (img.bytes.isEmpty) {
         // Deferred (not yet hydrated) or unreadable image: reserve the exact

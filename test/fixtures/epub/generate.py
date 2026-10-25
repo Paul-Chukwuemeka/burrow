@@ -1437,6 +1437,64 @@ def build_mini_cbz() -> None:
     )
 
 
+def build_tall_image() -> None:
+    # Reproduction fixture for "pages with images overflow / clip": a big
+    # standalone image (intrinsic 800x2000) alone in its paragraph. The engine
+    # promotes it to full width (`largest >= 400 && is_standalone`), so its
+    # rendered height is governed by the page-height cap in
+    # `ImageRun.renderedSize` — which ignores `ImageRun.verticalPadding` (2x8)
+    # and the page's slack. If the placeholder line comes out taller than the
+    # text budget, pagination force-includes it on a page whose render box
+    # cannot hold it: the body overflows and clips.
+    paragraphs = [
+        "Tall image chapter. " + "Filler sentence with several words. " * 12,
+        '<p><img src="Images/tall.png" alt="tall"/></p>',
+        "After the image. " + "More filler prose fills the rest of the page. " * 12,
+    ]
+    chapter = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<!DOCTYPE html>\n"
+        '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+        "<head><title>Tall Image</title></head>\n"
+        "<body>\n"
+        "<h1>Tall Image</h1>\n"
+        + "\n".join(paragraphs)
+        + "\n</body>\n"
+        "</html>\n"
+    ).encode("utf-8")
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+        'unique-identifier="BookId">\n'
+        "  <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>\n"
+        "    <dc:title>Tall Image</dc:title>\n"
+        "    <dc:creator>T. Author</dc:creator>\n"
+        "    <dc:language>en</dc:language>\n"
+        '    <dc:identifier id="BookId">urn:uuid:tall-image</dc:identifier>\n'
+        "  </metadata>\n"
+        "  <manifest>\n"
+        '    <item id="img1" href="Images/tall.png" media-type="image/png"/>\n'
+        '    <item id="ch1" href="ch1.xhtml" '
+        'media-type="application/xhtml+xml"/>\n'
+        "  </manifest>\n"
+        "  <spine>\n"
+        '    <itemref idref="ch1"/>\n'
+        "  </spine>\n"
+        "</package>\n"
+    ).encode("utf-8")
+
+    _write_epub(
+        HERE / "tall-image.epub",
+        [
+            ("mimetype", b"application/epub+zip", False),
+            ("META-INF/container.xml", _container("OEBPS/content.opf"), True),
+            ("OEBPS/content.opf", opf, True),
+            ("OEBPS/ch1.xhtml", chapter, True),
+            ("OEBPS/Images/tall.png", _png(800, 2000, (30, 60, 180)), True),
+        ],
+    )
+
+
 def main() -> None:
     build_minimal()
     build_percent_path()
@@ -1460,6 +1518,7 @@ def main() -> None:
     build_svg_image()
     build_rich_meta()
     build_cover_inline()
+    build_tall_image()
     build_annotated_meta()
     build_multipage()
     build_multipage_punct()

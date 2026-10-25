@@ -1188,6 +1188,14 @@ class ReaderScreenState extends State<ReaderScreen>
   @visibleForTesting
   int get debugReadyCount => _paginationReady.where((r) => r).length;
 
+  /// Per-page measured line heights of [chapter]'s live paginator (parallel to
+  /// its pages). Test-only diagnostic for image-measurement mismatches.
+  @visibleForTesting
+  List<List<double>> debugPageHeights(int chapter) =>
+      chapter >= 0 && chapter < _paginators.length
+          ? _paginators[chapter].pageLineHeights
+          : const [];
+
   /// Test-only: the live word selection model.
   @visibleForTesting
   ReaderSelection get debugSelection => _selection;
@@ -3615,15 +3623,11 @@ class _PageContentState extends State<_PageContent> {
   List<InlineSpan> _buildPageText(BuildContext context, double renderWidth) {
     final tappedImages = widget.images.map((img) {
       if (img.onTap != null) return img;
-      return ImageRun(
-        offset: img.offset,
-        bytes: img.bytes,
-        intrinsicWidth: img.intrinsicWidth,
-        intrinsicHeight: img.intrinsicHeight,
-        alt: img.alt,
-        fullWidth: img.fullWidth,
-        onTap: () => _showImagePopup(context, img.bytes),
-      );
+      // Must copy, not rebuild: a field-by-field ImageRun(...) drops its
+      // css/html sizing rules, so the placeholder the paginator measured
+      // (say, a css-capped 8x4) renders as an uncapped full-width image and
+      // the page overflows. copyWith preserves every sizing field.
+      return img.copyWith(onTap: () => _showImagePopup(context, img.bytes));
     }).toList();
     return buildPageSpans(
       text: widget.text,

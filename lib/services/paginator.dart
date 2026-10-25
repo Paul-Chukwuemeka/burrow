@@ -109,6 +109,13 @@ class ChapterPaginationDriver {
   /// Test-only: how many style runs were examined across all paragraphs.
   @visibleForTesting
   int debugRunVisits = 0;
+
+  /// Test-only: heights of the lines selected for each built page. Appended by
+  /// [ChapterPaginationDriver._buildNextPage], so a test can compare what
+  /// pagination counted per page with what the page actually renders.
+  @visibleForTesting
+  final List<List<double>> debugPageLineHeights = [];
+
   bool _exhausted = false;
   bool _isFirst = true;
   bool _done = false;
@@ -183,6 +190,9 @@ class ChapterPaginationDriver {
 
       final start = _pending.first.start;
       var end = _pending[last].end;
+      debugPageLineHeights.add(
+        [for (var j = 0; j <= last; j++) _pending[j].height],
+      );
       _pending.removeRange(0, last + 1);
 
       // Trailing whitespace belongs to no page; leaving it out avoids a
@@ -341,7 +351,14 @@ class ChapterPaginationDriver {
     for (final img in _images) {
       if (img.offset < start) continue;
       if (img.offset >= end) break;
-      final size = img.renderedSize(_maxWidth, maxHeight: _maxHeight);
+      // Cap the image so the placeholder line (height + 2 * verticalPadding)
+      // still fits the page box: sizing against the raw page height made
+      // full-page images measure/render one image larger than the page and
+      // clip. Must mirror buildPageSpans below.
+      final size = img.renderedSize(
+        _maxWidth,
+        maxHeight: _maxHeight - 2 * ImageRun.verticalPadding,
+      );
       dims.add(
         PlaceholderDimensions(
           size: Size(size.width, size.height + 2 * ImageRun.verticalPadding),
@@ -378,7 +395,10 @@ class ChapterPaginationDriver {
     return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
   }
 
-  Paginator toPaginator() => Paginator._(List.unmodifiable(_pages));
+  Paginator toPaginator() => Paginator._(
+        List.unmodifiable(_pages),
+        List.unmodifiable(debugPageLineHeights),
+      );
 
   void dispose() => _tp.dispose();
 }
@@ -398,9 +418,13 @@ class ChapterPaginationDriver {
 /// the measurement. Consecutive pages therefore tile the text with gaps that
 /// are whitespace only.
 class Paginator {
-  Paginator._(this.pages);
-
   final List<TextPage> pages;
+
+  /// Per-page measured line heights (parallel to [pages]); test-only
+  /// diagnostic for comparing what pagination counted with what renders.
+  final List<List<double>> pageLineHeights;
+
+  Paginator._(this.pages, [this.pageLineHeights = const []]);
 
   static Paginator paginate({
     required String text,
