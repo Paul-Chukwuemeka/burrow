@@ -120,9 +120,18 @@ class ChapterPaginationDriver {
   bool _isFirst = true;
   bool _done = false;
 
-  /// Height of a blank line, measured once from the base style. Used for the
-  /// synthetic empty line that a paragraph break (`\n\n`) contributes.
+  /// Height of a blank line, measured once from the base style. Used as the
+  /// fallback for a paragraph break (`\n\n`) that no style run covers.
   late final double _baseLineHeight = _measureBaseLineHeight();
+
+  /// Cached line heights of resolved spans, keyed by their [TextStyle] (value
+  /// equality): a chapter's paragraph breaks almost always share one style.
+  final Map<TextStyle, double> _lineHeightCache = {};
+
+  /// Index into [_runs] of the first run not ending before the last scanned
+  /// paragraph break, so warming the blank-line styles stays linear in the
+  /// run count across a chapter.
+  int _blankRunStart = 0;
 
   List<TextPage> get pages => _pages;
   bool get isDone => _done || _text.isEmpty;
@@ -239,8 +248,13 @@ class ChapterPaginationDriver {
       _pending.addAll(_layoutText(_cursor, segEnd));
     } else if (hasBreak) {
       // Empty paragraph between two newlines — one blank line. Attribute it to
-      // the newline so it participates in whitespace trimming.
-      _pending.add(_Line(newline, newline, _baseLineHeight));
+      // the newline so it participates in whitespace trimming, and size it
+      // with the style run covering that newline: the rendered empty line is
+      // as tall as the run's style (typically the book's CSS), not the
+      // reader's settings base style. Sizing it from the base style reserved
+      // ~10px per paragraph the renderer never used and ended every page
+      // short of the bottom.
+      _pending.add(_Line(newline, newline, _blankLineHeightAt(newline)));
     }
 
     _cursor = hasBreak ? newline + 1 : _text.length;
@@ -377,18 +391,65 @@ class ChapterPaginationDriver {
     return dims;
   }
 
-  double _measureBaseLineHeight() {
+  /// Height of the blank line a paragraph break contributes at [newline].
+  ///
+  /// The break's newline character is covered by the same style runs as the
+  /// body text, and the rendered empty line is as tall as the tallest span on
+  /// it. Resolving those runs through [styleForRun] (exactly what
+  /// `buildPageSpans` does when rendering) keeps measurement and rendering in
+  /// agreement. Books without runs covering the break keep the base-style
+  /// height.
+  double _blankLineHeightAt(int newline) {
+    while (_blankRunStart < _runs.length &&
+        _runs[_blankRunStart].end <= newline) {
+      _blankRunStart++;
+    }
+    // A run that began before the break can still cover its newline.
+    var i = _blankRunStart;
+    for (var j = _blankRunStart - 1; j >= 0 && _runs[j].end > newline; j--) {
+      i = j;
+    }
+    var height = 0.0;
+    for (; i < _runs.length && _runs[i].start <= newline; i++) {
+      final run = _runs[i];
+      if (run.end <= newline) continue;
+      // Mirror `buildStyledSpans`: without settings, CSS is ignored and only
+      // emphasis applies, so measurement matches the rendered spans.
+      final style = _settings == null
+          ? _style.copyWith(
+              fontWeight: run.bold ? FontWeight.w700 : null,
+              fontStyle: run.italic || run.quote ? FontStyle.italic : null,
+            )
+          : styleForRun(
+              _style,
+              run,
+              settings: _settings,
+              quoteColor: _theme?.muted,
+            );
+      height = math.max(height, _lineHeightFor(style));
+    }
+    return height > 0 ? height : _baseLineHeight;
+  }
+
+  /// Height one text line occupies under [style], measured the same way
+  /// [_layoutText] measures paragraph lines.
+  double _lineHeightFor(TextStyle style) {
+    final cached = _lineHeightCache[style];
+    if (cached != null) return cached;
     final probe = TextPainter(
-      text: TextSpan(text: 'X', style: _style),
+      text: TextSpan(text: 'X', style: style),
       textDirection: TextDirection.ltr,
     )..layout();
     final metrics = probe.computeLineMetrics();
     final height = metrics.isNotEmpty
         ? metrics.first.height
-        : (_style.fontSize ?? 16) * (_style.height ?? 1.2);
+        : (style.fontSize ?? 16) * (style.height ?? 1.2);
     probe.dispose();
+    _lineHeightCache[style] = height;
     return height;
   }
+
+  double _measureBaseLineHeight() => _lineHeightFor(_style);
 
   bool _isBlankLine(_Line line) {
     if (line.start == line.end) return true;
