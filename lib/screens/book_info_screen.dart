@@ -11,6 +11,8 @@ import '../utils/book_title.dart';
 import '../utils/date_format.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/progress_bar.dart';
+import 'author_screen.dart';
+import 'collection_screen.dart';
 import 'edit_book_screen.dart';
 import 'genre_screen.dart';
 import 'metadata_fetch_screen.dart';
@@ -197,10 +199,15 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                         ),
                         if (book.author.isNotEmpty) ...[
                           const SizedBox(height: 6),
-                          Text(
-                            book.author,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
+                          _AuthorLink(
+                            author: book.author,
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => AuthorScreen(
+                                  author: book.author,
+                                  library: widget.library,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -452,17 +459,28 @@ class _BookInfoScreenState extends State<BookInfoScreen> {
                             runSpacing: 8,
                             children: [
                               for (final c in _collections)
-                                Chip(
-                                  label: Text(c.name),
-                                  backgroundColor: scheme.secondaryContainer,
-                                  labelStyle: TextStyle(
-                                    color: scheme.onSecondaryContainer,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                InkWell(
+                                  onTap: () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => CollectionScreen(
+                                        collection: c,
+                                        library: widget.library,
+                                      ),
+                                    ),
                                   ),
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  visualDensity: VisualDensity.compact,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Chip(
+                                    label: Text(c.name),
+                                    backgroundColor: scheme.secondaryContainer,
+                                    labelStyle: TextStyle(
+                                      color: scheme.onSecondaryContainer,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
                                 ),
                             ],
                           ),
@@ -629,6 +647,36 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AuthorLink extends StatelessWidget {
+  const _AuthorLink({required this.author, required this.onTap});
+
+  final String author;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: Burrow.r(Burrow.shapeXs),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Text(
+          author,
+          semanticsLabel: 'Books by $author',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: scheme.primary,
+            fontWeight: FontWeight.w600,
+            decoration: TextDecoration.underline,
+            decorationColor: scheme.primary.withValues(alpha: 0.4),
+          ),
+        ),
       ),
     );
   }
