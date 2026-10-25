@@ -10,26 +10,27 @@
 // fallback FFI shim is NOT needed either: `archive` (already a runtime
 // dependency) ships XZDecoder with streaming decode. Chosen: archive 4.5.2.
 
+import 'dart:io';
+
 import 'package:archive/archive_io.dart';
 
 Future<void> main(List<String> args) async {
-  final input = InputFileStream(args[0]);
-  final xzDecoder = XZDecoder();
-  final watch = Stopwatch()..start();
-  int? expectedLength;
-  if (args.length > 1) {
-    expectedLength = 208617472; // wikt_primary3250-noname.sqlite
+  if (args.length < 1) {
+    stderr.writeln('usage: dart run tool/xz_decode_check.dart <in.xz>');
+    return;
   }
+  final watch = Stopwatch()..start();
   final out = OutputFileStream('/tmp/opencode/decode_check.sqlite');
-  final ok = xzDecoder.decodeStream(input, out);
+  final input = InputFileStream(args[0]);
+  final ok = XZDecoder().decodeStream(input, out);
   watch.stop();
-  final len = out.length;
+  final bytes = out.length;
   await out.close();
   input.close();
-  print('decoded=$ok bytes=$len elapsed=${watch.elapsed}');
-  if (expectedLength != null && len != expectedLength) {
-    print('LENGTH MISMATCH (expected $expectedLength)');
-  } else {
-    print('length matches spike original');
+  // A verification script's mandated report.
+  // ignore: avoid_print
+  print('decoded=$ok bytes=$bytes elapsed=${watch.elapsed}');
+  if (args.length > 1 && int.parse(args[1]) != bytes) {
+    stderr.writeln('LENGTH MISMATCH (expected ${args[1]})');
   }
 }

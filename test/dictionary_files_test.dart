@@ -77,6 +77,34 @@ void main() {
       await decompressAndVerify(xz: xzFile, out: outFile, expectedSha256: '');
       expect(outFile.existsSync(), true);
     });
+
+    test('undecodable container throws StateError and deletes all artifacts',
+        () async {
+      final garbage = Uint8List.fromList(
+        List.generate(64, (i) => (i * 7 + 13) & 0xFF),
+      );
+      final xzFile = File('${scratch.path}/container.xz')
+        ..writeAsBytesSync(garbage);
+      final outFile = File('${scratch.path}/out.sqlite')
+        ..writeAsStringSync('stale');
+
+      final sha = sha256.convert(garbage).toString();
+      await expectLater(
+        decompressAndVerify(
+          xz: xzFile,
+          out: outFile,
+          expectedSha256: sha, // hash matches: failure must surface at decode
+        ),
+        throwsStateError,
+      );
+      expect(xzFile.existsSync(), false, reason: 'container must be deleted');
+      expect(outFile.existsSync(), false, reason: 'stale out must be deleted');
+      expect(
+        File('${scratch.path}/out.sqlite.tmp').existsSync(),
+        false,
+        reason: 'partial tmp out must be deleted',
+      );
+    });
   });
 
   group('cleanupDictionaryArtifacts', () {

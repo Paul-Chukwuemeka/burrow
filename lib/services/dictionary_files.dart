@@ -61,7 +61,24 @@ Future<void> decompressAndVerify({
   final input = InputFileStream(xz.path);
   final output = OutputFileStream(tmpOut.path);
   try {
-    XZDecoder().decodeStream(input, output);
+    try {
+      // verify:true checks the xz container's own CRCs; throwOnError:true
+      // converts damage into an exception — without it a truncated container
+      // would silently decode to a short file and be renamed into place.
+      XZDecoder().decodeStream(
+        input,
+        output,
+        verify: true,
+        throwOnError: true,
+      );
+    } on ArchiveException {
+      throw StateError('Dictionary could not be decoded: corrupt container');
+    }
+  } catch (e) {
+    // A failed decode must not leave a partial output or an unusable
+    // container behind: the next attempt re-downloads cleanly.
+    await _deleteAll([tmpOut, out, xz]);
+    rethrow;
   } finally {
     await output.close();
     input.close();

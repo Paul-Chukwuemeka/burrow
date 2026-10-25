@@ -65,7 +65,7 @@ abstract final class DictionaryRouter {
     );
   }
 
-  /// Opens the built-in dictionary sheet, or the ~60 MB download dialog when
+  /// Opens the built-in dictionary sheet, or the ~50 MB download dialog when
   /// the dictionary is not downloaded yet.
   static void openLocal(
     BuildContext context, {
@@ -83,7 +83,7 @@ abstract final class DictionaryRouter {
         backgroundColor: theme.background,
         title: Text('Download dictionary?', style: TextStyle(color: theme.text)),
         content: Text(
-          'The offline dictionary (~60 MB) is needed to look up word '
+          'The offline dictionary (~50 MB) is needed to look up word '
           'definitions.\n\nDownload now?',
           style: TextStyle(color: theme.muted, fontSize: 14),
         ),

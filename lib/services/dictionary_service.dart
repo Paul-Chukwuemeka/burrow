@@ -14,7 +14,7 @@ import 'package:burrow/services/dictionary_files.dart';
 /// Source dump: https://kaikki.org/dictionary/English/ (postprocessed English
 /// Wiktionary JSONL; converted on-device from cached dumps at release time).
 ///
-/// On first use the compressed database (~60 MB container) is downloaded from
+/// On first use the compressed database (~50 MB container) is downloaded from
 /// a hosted URL, integrity-checked and decompressed into the app documents
 /// directory. Subsequent lookups are instant and fully offline.
 class DictionaryService {
@@ -78,6 +78,27 @@ class DictionaryService {
 
     try {
       final file = await _dbFile;
+      final container = await _containerFile;
+
+      // A container left on disk (interrupted attempt, failed decode, or the
+      // OS cleaning the decompressed file) can be brought straight into
+      // place — no re-download needed, it is hash-pinned.
+      if (!file.existsSync() && container.existsSync()) {
+        onStatus?.call('Preparing dictionary…');
+        try {
+          await Isolate.run(() {
+            return decompressAndVerify(
+              xz: container,
+              out: file,
+              expectedSha256: _expectedXzSha256,
+            );
+          });
+        } on StateError {
+          // Container unusable (hash mismatch / decode failure — both paths
+          // already deleted it). Fall through to a fresh download.
+        }
+      }
+
       if (!file.existsSync()) {
         onStatus?.call('Downloading dictionary…');
         await _downloadDatabase(
@@ -96,6 +117,15 @@ class DictionaryService {
       _isDownloaded = true;
       completer.complete();
     } catch (e) {
+      // Self-heal: never wedge the dictionary on a corrupt decompressed
+      // database — delete it so the next attempt starts from a clean state
+      // (decode/hash failures already delete their own artifacts).
+      final file = await _dbFile;
+      if (file.existsSync()) {
+        if (_lexicor == null) {
+          await file.delete();
+        }
+      }
       completer.completeError(e);
       rethrow;
     } finally {

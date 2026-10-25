@@ -149,10 +149,10 @@ void main() {
         (widget) =>
             widget is Text &&
             widget.data != null &&
-            widget.data!.contains('~60 MB'),
+            widget.data!.contains('~50 MB'),
       ),
       findsOneWidget,
-      reason: 'dialog copy must carry the ~60 MB container size',
+      reason: 'dialog copy must carry the ~50 MB container size',
     );
   });
 

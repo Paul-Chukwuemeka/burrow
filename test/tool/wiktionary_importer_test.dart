@@ -31,15 +31,25 @@ void main() {
     final out = File('${scratch.path}/fixture.sqlite').absolute.path;
 
     printed = [];
+    Object? importError;
+    StackTrace? importTrace;
     await runZonedGuarded(
       () => importWiktionary(source: source, out: out),
-      (_, _) {},
+      (e, s) {
+        importError = e;
+        importTrace = s;
+      },
       zoneSpecification: ZoneSpecification(
         print: (_, _, _, String line) {
           printed.add(line);
         },
       ),
     );
+    // Guarded-zone errors must fail the suite loudly, not surface later as
+    // missing stats rows.
+    if (importError != null) {
+      fail('import failed: $importError\n$importTrace');
+    }
 
     stats = {};
     for (final part in statsLine().split(' ')) {
@@ -151,19 +161,25 @@ void main() {
   test('withRelated:false produces zero related rows', () async {
     final out2 = File('${scratch.path}/norelated.sqlite').absolute.path;
     printed = [];
+    Object? importError;
+    StackTrace? importTrace;
     await runZonedGuarded(
       () => importWiktionary(
         source: 'test/tool/fixtures/kaikki_subset.jsonl',
         out: out2,
         withRelated: false,
       ),
-      (_, _) {},
+      (e, s) {
+        importError = e;
+        importTrace = s;
+      },
       zoneSpecification: ZoneSpecification(
         print: (_, _, _, String line) {
           printed.add(line);
         },
       ),
     );
+    if (importError != null) fail('import failed: $importError\n$importTrace');
     final db2 = sqlite3.open(out2);
     addTearDown(db2.close);
     expect(db2.select('SELECT COUNT(*) c FROM related')[0]['c'], 0);
