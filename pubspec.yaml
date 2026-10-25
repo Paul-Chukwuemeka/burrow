@@ -50,6 +50,7 @@ dependencies:
   csslib: ^1.0.2
   cascadia: ^0.8.0
   crypto: ^3.0.3
+  sqlite3: ^3.5.2
   html: ^0.15.6
   vector_math: ^2.2.0
   # Runtime for the FRB-generated bindings in lib/src/rust/. The native engine
