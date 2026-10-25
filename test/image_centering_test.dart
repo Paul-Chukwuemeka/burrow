@@ -33,8 +33,6 @@ String widgetShape(Widget? node, [String prefix = '', int depth = 0]) {
     Center(widthFactor: final f) => 'Center(widthFactor=$f)',
     Padding() => 'Padding',
     GestureDetector() => 'GestureDetector',
-    SizedBox() => 'SizedBox',
-    Center() => 'Center',
     _ => node.runtimeType.toString(),
   };
   final innerChild = switch (node) {
@@ -65,7 +63,7 @@ void main() {
       expect(ImageRun.standaloneIn('$marker\nprose', 0), isTrue);
       expect(ImageRun.standaloneIn('prose\n$marker\nmore', 6), isTrue);
       expect(ImageRun.standaloneIn('prose\n$marker', 6), isTrue);
-      expect(ImageRun.standaloneIn('$marker', 0), isTrue);
+      expect(ImageRun.standaloneIn(marker, 0), isTrue);
     });
 
     test('horizontal whitespace around the marker stays standalone', () {
