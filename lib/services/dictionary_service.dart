@@ -34,7 +34,10 @@ class DictionaryService {
 
   /// SHA-256 hash of the known-good downloadable container.
   /// Updated when a new version is published. Empty string skips verification.
-  static const _expectedXzSha256 = '';
+  /// artifact: dictionary_wikt.sqlite.xz v2026-10-25,
+  /// sha256 13d816d07f71e1e812d653428d85d5549821f21a0bdb8413a13aee0d6bd232f7
+  static const _expectedXzSha256 =
+      '13d816d07f71e1e812d653428d85d5549821f21a0bdb8413a13aee0d6bd232f7';
 
   Lexicor? _lexicor;
   bool _initializing = false;
