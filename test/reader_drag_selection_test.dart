@@ -357,18 +357,86 @@ void main() {
       final startHandle = find.byKey(const Key('selectionHandleStart'));
       expect(startHandle, findsOneWidget);
 
-      // Drag the *painted dot*, not the box centre: on a first-line start
-      // handle the box clamps to the top of the Stack while the dot is
-      // translated upward. The dot must be clamped back inside the hit box or
-      // this gesture falls through and the selection start does not move.
-      final dot = find.descendant(
+      // Drag the *painted handle*, not the box centre: on a first-line start
+      // handle the box clamps to the top of the Stack while the teardrop is
+      // translated upward. The shape must be clamped back inside the hit box
+      // or this gesture falls through and the selection start does not move.
+      final handle = find.descendant(
         of: startHandle,
-        matching: find.byType(Container),
+        matching: find.byType(CustomPaint),
       );
-      expect(dot, findsOneWidget);
-      await tester.drag(dot, const Offset(120, 0));
+      expect(handle, findsOneWidget);
+      await tester.drag(handle, const Offset(120, 0));
       await tester.pumpAndSettle();
       expect(state.debugSelection.start, greaterThan(startBefore));
+    });
+
+    testWidgets('both handles hang above their caret and point down', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, multi);
+      final body = bodyParagraph(tester, 'w0');
+      final text = body.text.toPlainText();
+      final tokens = text.trim().split(RegExp(r'\s+'));
+      final tokenOffsets = <int>[];
+      var cursor = 0;
+      for (final token in tokens) {
+        final offset = text.indexOf(token, cursor);
+        tokenOffsets.add(offset);
+        cursor = offset + token.length;
+      }
+      final painter = TextPainter(
+        text: body.text,
+        textDirection: body.textDirection,
+      )..layout(maxWidth: body.size.width);
+      final caretYs = [
+        for (final offset in tokenOffsets)
+          painter.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy,
+      ];
+      painter.dispose();
+
+      // Start on the second line and end two lines lower, so neither handle is
+      // pushed down by the first-line clamp.
+      final startIndex = caretYs.indexWhere((y) => y > 30);
+      expect(startIndex, greaterThanOrEqualTo(0));
+      final endIndex = caretYs.indexWhere((y) => y > caretYs[startIndex] + 20);
+      expect(endIndex, greaterThan(startIndex));
+
+      final g = await tester.startGesture(
+        globalForWord(tester, tokens[startIndex]),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await g.moveTo(globalForWord(tester, tokens[endIndex]));
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+
+      final startHandle = find.byKey(const Key('selectionHandleStart'));
+      final endHandle = find.byKey(const Key('selectionHandleEnd'));
+      expect(startHandle, findsOneWidget);
+      expect(endHandle, findsOneWidget);
+
+      Offset caretAt(int flatOffset) => body.localToGlobal(
+        body.getOffsetForCaret(
+          TextPosition(offset: flatOffset.clamp(0, text.length).toInt()),
+          Rect.zero,
+        ),
+      );
+      final startCaret = caretAt(state.debugSelection.start!);
+      final endCaret = caretAt(state.debugSelection.end!);
+      final startGlyph = tester.getRect(
+        find.descendant(of: startHandle, matching: find.byType(CustomPaint)),
+      );
+      final endGlyph = tester.getRect(
+        find.descendant(of: endHandle, matching: find.byType(CustomPaint)),
+      );
+
+      // The bottom edge is the teardrop's tip: both tips sit above their
+      // caret, so both handles point down at the text.
+      expect(startGlyph.bottom, lessThanOrEqualTo(startCaret.dy));
+      expect(endGlyph.bottom, lessThanOrEqualTo(endCaret.dy));
+      expect(startGlyph.height, greaterThan(startGlyph.width));
+      expect(endGlyph.height, greaterThan(endGlyph.width));
     });
 
     testWidgets('end handle drag trims single characters', (tester) async {
