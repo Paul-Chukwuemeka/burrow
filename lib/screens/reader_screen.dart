@@ -642,6 +642,11 @@ class ReaderScreenState extends State<ReaderScreen>
       return;
     }
     if (_doc == null) return;
+    // The initial full-book pass shows the layout spinner and has no page
+    // view yet. Its live paginators are all empty placeholders, so `_flatPage`
+    // says nothing about where the reader is; deriving a position from it
+    // would clobber the stored one with chapter 0, offset 0 (progress 0).
+    if (_pageController == null && _paginationRunning) return;
     // The anchor is captured whenever the page changes and survives
     // background pagination, so it is always real text even while some
     // chapters are still placeholder layouts.
