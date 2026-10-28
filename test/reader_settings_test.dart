@@ -132,6 +132,17 @@ void main() {
       final r = ReaderSettings.fromJson(s.toJson());
       expect(r.scanFolder, '/storage/books');
     });
+
+    test('autoResumeOnRelaunch defaults to false and round-trips', () {
+      expect(ReaderSettings().autoResumeOnRelaunch, isFalse);
+      final s = ReaderSettings()..autoResumeOnRelaunch = true;
+      final r = ReaderSettings.fromJson(s.toJson());
+      expect(r.autoResumeOnRelaunch, isTrue);
+    });
+
+    test('autoResumeOnRelaunch falls back to false on absent key', () {
+      expect(ReaderSettings.fromJson({}).autoResumeOnRelaunch, isFalse);
+    });
   });
 
   group('ReaderTheme selection contrast', () {

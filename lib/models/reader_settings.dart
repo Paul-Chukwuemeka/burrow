@@ -202,6 +202,7 @@ class ReaderSettings {
     this.readerTheme = ReaderThemeMode.sepia,
     this.fontFamily,
     this.keepScreenOn = false,
+    this.autoResumeOnRelaunch = false,
     this.brightness,
     this.volumeKeyTurns = false,
     this.pdfLayoutDirection = PdfLayoutDirection.vertical,
@@ -231,6 +232,10 @@ class ReaderSettings {
   ReaderThemeMode readerTheme;
   String? fontFamily;
   bool keepScreenOn;
+
+  /// When true, a relaunch (cold start) lands straight in the most recently
+  /// read, unfinished book instead of the library.
+  bool autoResumeOnRelaunch;
 
   /// Screen brightness level (0.05–1.0). Null means follow system brightness.
   double? brightness;
@@ -293,6 +298,7 @@ class ReaderSettings {
     'readerTheme': readerTheme.name,
     'fontFamily': fontFamily,
     'keepScreenOn': keepScreenOn,
+    'autoResumeOnRelaunch': autoResumeOnRelaunch,
     'brightness': brightness,
     'volumeKeyTurns': volumeKeyTurns,
     'pdfLayoutDirection': pdfLayoutDirection.name,
@@ -348,6 +354,7 @@ class ReaderSettings {
     ),
     fontFamily: _migrateFontFamily(json),
     keepScreenOn: json['keepScreenOn'] as bool? ?? false,
+    autoResumeOnRelaunch: json['autoResumeOnRelaunch'] as bool? ?? false,
     brightness: _parseBrightness(json),
     volumeKeyTurns: json['volumeKeyTurns'] as bool? ?? false,
     pdfLayoutDirection: PdfLayoutDirection.values.firstWhere(
