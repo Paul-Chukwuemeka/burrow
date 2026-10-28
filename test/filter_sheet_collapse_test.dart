@@ -49,7 +49,7 @@ void main() {
 
   testWidgets('series section collapses to exactly three lines with "Show more"', (tester) async {
     _narrowSurface(tester);
-    await _pumpSheet(tester, books: _series(_narrowGenres));
+    await _pumpSheet(tester, books: _series(_narrowSeries));
 
     expect(find.text('Show more'), findsOneWidget);
     expect(tester.getSize(_sectionClip('Series')).height, _threeLines);
@@ -58,7 +58,7 @@ void main() {
   testWidgets('series section reveals chips beyond three lines via "Show more"', (tester) async {
     _narrowSurface(tester);
     String? picked;
-    await _pumpSheet(tester, books: _series(_narrowGenres), onSeriesChanged: (s) => picked = s);
+    await _pumpSheet(tester, books: _series(_narrowSeries), onSeriesChanged: (s) => picked = s);
 
     expect(find.text('Show more'), findsOneWidget);
     await tester.tap(find.text('Show more'));
@@ -66,10 +66,10 @@ void main() {
 
     expect(find.text('Show less'), findsOneWidget);
 
-    await tester.tap(find.text('Space Opera Saga V'));
+    await tester.tap(find.text('Deep Space Saga V'));
     await tester.pumpAndSettle();
 
-    expect(picked, 'Space Opera Saga V');
+    expect(picked, 'Deep Space Saga V');
   });
 }
 
@@ -96,6 +96,16 @@ const List<String> _narrowGenres = [
 ];
 
 const _shortGenres = ['Fantasy', 'Poetry', 'Drama', 'Horror', 'Sci-Fi', 'Mystery', 'Romance', 'History'];
+
+// Series names in their own shape, same one-per-line sizing constraint.
+const List<String> _narrowSeries = [
+  'Deep Space Saga I',
+  'Deep Space Saga II',
+  'Deep Space Saga III',
+  'Deep Space Saga IV',
+  'Deep Space Saga V',
+  'Deep Space Saga VI',
+];
 
 void _narrowSurface(WidgetTester tester) {
   // 400dp-wide window: ~352dp of content width, long chip names fit one per line.
