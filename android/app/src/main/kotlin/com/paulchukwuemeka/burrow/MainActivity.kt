@@ -117,12 +117,24 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /// Dictionary apps registered for ACTION_DEFINE (literal action string:
-    /// the SDK constant only exists on API 34+). Our own package excluded.
+    /// Dictionary apps reachable by word-lookup intents: the Android 14
+    /// ACTION_DEFINE plus the ColorDict family contract
+    /// ("colordict.intent.action.SEARCH" — ColorDict, GoldenDict, Aard2, …).
+    /// Literal action strings: the DEFINE SDK constant only exists on API 34+.
+    /// Merged by package (a DEFINE entry outranks its ColorDict double);
+    /// our own package excluded.
     private fun listDefineApps(): List<HashMap<String, String>> = try {
-        packageManager
+        val define = packageManager
             .queryIntentActivities(Intent("android.intent.action.DEFINE"), 0)
             .filter { it.activityInfo.packageName != packageName }
+        val colorDict = packageManager
+            .queryIntentActivities(
+                Intent("colordict.intent.action.SEARCH"),
+                0,
+            )
+            .filter { it.activityInfo.packageName != packageName }
+            .filter { colorDictEntry -> define.none { it.activityInfo.packageName == colorDictEntry.activityInfo.packageName } }
+        (define + colorDict)
             .distinctBy { it.activityInfo.packageName }
             .map {
                 hashMapOf<String, String>(
@@ -134,22 +146,38 @@ class MainActivity : FlutterActivity() {
         emptyList()
     }
 
-    /// Hands [word] to the dictionary app [pkg]. Literal ACTION_DEFINE (see
-    /// above) with the word extra; false when the app no longer resolves.
+    /// Hands [word] to the dictionary app [pkg], speaking whichever lookup
+    /// contract that package supports: ACTION_DEFINE with
+    /// android.intent.extra.WORD first (literal strings, see above), then the
+    /// ColorDict family contract with its EXTRA_QUERY extra. False when the
+    /// app no longer resolves under either.
     /// FLAG_ACTIVITY_NEW_TASK: we are not the target activity's task owner.
     private fun launchDefine(pkg: String, word: String): Boolean = try {
-        val i = Intent("android.intent.action.DEFINE")
+        val define = Intent("android.intent.action.DEFINE")
             .putExtra("android.intent.extra.WORD", word)
             .setPackage(pkg)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (i.resolveActivity(packageManager) == null) {
-            false
-        } else {
+        if (define.resolveActivity(packageManager) != null) {
             try {
-                startActivity(i)
+                startActivity(define)
                 true
             } catch (_: Exception) {
                 false
+            }
+        } else {
+            val colorDict = Intent("colordict.intent.action.SEARCH")
+                .putExtra("EXTRA_QUERY", word)
+                .setPackage(pkg)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (colorDict.resolveActivity(packageManager) == null) {
+                false
+            } else {
+                try {
+                    startActivity(colorDict)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
             }
         }
     } catch (_: Exception) {

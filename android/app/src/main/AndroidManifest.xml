@@ -98,9 +98,13 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
-        <!-- Dictionary apps that can define a word (Aard2, GoldenDict, …). -->
+        <!-- Dictionary apps that can define a word (Google app, …). -->
         <intent>
             <action android:name="android.intent.action.DEFINE"/>
+        </intent>
+        <!-- ColorDict-family dictionary apps (ColorDict, GoldenDict, Aard2, …). -->
+        <intent>
+            <action android:name="colordict.intent.action.SEARCH"/>
         </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
