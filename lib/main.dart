@@ -234,13 +234,13 @@ class _BurrowAppState extends State<BurrowApp> {
     );
   }
 
-  // Material 3 Expressive-flavoured foundation: Roboto Flex variable type,
+  // Material 3 Expressive-flavoured foundation: Inter sans for UI type,
   // generous corner radii, tonal surfaces, squircle-ish FABs and springy ink.
   ThemeData _expressiveTheme(ColorScheme scheme, {String? uiFontFamily}) {
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
-      fontFamily: uiFontFamily ?? 'Fraunces',
+      fontFamily: uiFontFamily ?? kDefaultUiFont,
       splashFactory: InkSparkle.splashFactory,
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,

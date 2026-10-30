@@ -178,19 +178,28 @@ const kReaderFonts = <ReaderFont>[
   ),
 ];
 
-/// Fonts offered in the app UI font picker (settings screen).
+/// Default app UI font, used when the user hasn't picked one (`family: null`).
+const kDefaultUiFont = 'Inter';
+
+/// All fonts offered in the app UI font picker (settings screen). Sans-serif
+/// only — the reader keeps its own serif-inclusive list in [kReaderFonts].
 const kUiFonts = <ReaderFont>[
-  ReaderFont(family: null, label: 'Fraunces', subtitle: 'Default serif'),
-  ReaderFont(family: 'Bitter', label: 'Bitter', subtitle: 'Slab serif'),
+  ReaderFont(family: null, label: 'Inter', subtitle: 'Default sans'),
+  ReaderFont(family: 'Roboto', label: 'Roboto', subtitle: 'System sans'),
+  ReaderFont(
+    family: 'Source Sans 3',
+    label: 'Source Sans 3',
+    subtitle: 'Warm grotesque',
+  ),
+  ReaderFont(
+    family: 'Public Sans',
+    label: 'Public Sans',
+    subtitle: 'Neutral workhorse',
+  ),
   ReaderFont(
     family: 'Atkinson Hyperlegible',
     label: 'Atkinson Hyperlegible',
     subtitle: 'Accessibility first',
-  ),
-  ReaderFont(
-    family: 'Source Sans 3',
-    label: 'Source Sans 3',
-    subtitle: 'Clean sans serif',
   ),
 ];
 
@@ -388,7 +397,7 @@ class ReaderSettings {
       (json['lastZoomLevel'] as num?)?.toDouble() ?? 1.0,
       1.0,
     ),
-    uiFontFamily: json['uiFontFamily'] as String?,
+    uiFontFamily: _migrateUiFontFamily(json),
     uiTextScale: _clampTo(
       uiTextScaleRange,
       (json['uiTextScale'] as num?)?.toDouble() ?? 1.0,
@@ -419,6 +428,15 @@ class ReaderSettings {
     final serif = json['serif'] as bool?;
     if (serif == true) return 'Georgia';
     return null;
+  }
+
+  /// Validate the saved UI font against [kUiFonts]. Old serif choices (e.g.
+  /// 'Fraunces', 'Bitter') fall back to null so the picker shows the new
+  /// sans-serif default instead of a value no longer in the list.
+  static String? _migrateUiFontFamily(Map<String, dynamic> json) {
+    final saved = json['uiFontFamily'] as String?;
+    if (saved == null) return null;
+    return kUiFonts.any((f) => f.family == saved) ? saved : null;
   }
 
   /// Migrate legacy `dimmer` (0.3–1.0, 1.0 = no dim) into `brightness`
