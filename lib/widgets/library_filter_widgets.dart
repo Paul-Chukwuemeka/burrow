@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../models/book.dart';
 import '../theme/burrow_tokens.dart';
@@ -136,7 +140,6 @@ class FilterSheetState extends State<FilterSheet> {
   late String? _genre;
   late String? _series;
   late Set<BookFormat> _formats;
-  bool _genresExpanded = false;
 
   @override
   void initState() {
@@ -296,59 +299,26 @@ class FilterSheetState extends State<FilterSheet> {
                 if (sortedGenres.isNotEmpty)
                   FilterSection(
                     label: 'Genre',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    child: _CollapsibleChipWrap(
                       children: [
-                        ClipRect(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: _genresExpanded
-                                  ? double.infinity
-                                  : 130,
-                            ),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                PillChip(
-                                  label: 'All genres',
-                                  selected: _genre == null,
-                                  onTap: () => setState(() {
-                                    _genre = null;
-                                    widget.onGenreChanged(null);
-                                  }),
-                                ),
-                                for (final g in sortedGenres)
-                                  PillChip(
-                                    label: g,
-                                    selected:
-                                        _genre?.toLowerCase() ==
-                                        g.toLowerCase(),
-                                    onTap: () => setState(() {
-                                      _genre = g;
-                                      widget.onGenreChanged(g);
-                                    }),
-                                  ),
-                              ],
-                            ),
-                          ),
+                        PillChip(
+                          label: 'All genres',
+                          selected: _genre == null,
+                          onTap: () => setState(() {
+                            _genre = null;
+                            widget.onGenreChanged(null);
+                          }),
                         ),
-                        if (sortedGenres.length > 6)
-                          GestureDetector(
-                            onTap: () => setState(
-                              () => _genresExpanded = !_genresExpanded,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                _genresExpanded ? 'Show less' : 'Show more',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ),
+                        for (final g in sortedGenres)
+                          PillChip(
+                            label: g,
+                            selected:
+                                _genre?.toLowerCase() ==
+                                g.toLowerCase(),
+                            onTap: () => setState(() {
+                              _genre = g;
+                              widget.onGenreChanged(g);
+                            }),
                           ),
                       ],
                     ),
@@ -357,9 +327,7 @@ class FilterSheetState extends State<FilterSheet> {
                 if (sortedSeries.isNotEmpty)
                   FilterSection(
                     label: 'Series',
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    child: _CollapsibleChipWrap(
                       children: [
                         PillChip(
                           label: 'All series',
@@ -387,6 +355,143 @@ class FilterSheetState extends State<FilterSheet> {
         ],
       ),
     );
+  }
+}
+
+/// Chip geometry shared by the filter sheet's collapsible chip sections:
+/// one chip line is 48px tall (PillChip's minimum) with 8px between lines.
+const double _chipLineHeight = 48;
+const double _chipRunSpacing = 8;
+
+/// Collapsed previews hide everything past the third chip line.
+const double _chipThreeLines = _chipLineHeight * 3 + _chipRunSpacing * 2;
+
+/// A chip list that collapses to three lines behind a "Show more" toggle.
+///
+/// The toggle appears only when the chips actually need more than three lines,
+/// measured from layout — so it never shows up to reveal nothing.
+class _CollapsibleChipWrap extends StatefulWidget {
+  const _CollapsibleChipWrap({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  State<_CollapsibleChipWrap> createState() => _CollapsibleChipWrapState();
+}
+
+class _CollapsibleChipWrapState extends State<_CollapsibleChipWrap> {
+  bool _expanded = false;
+  bool _overflows = false;
+
+  void _onNaturalHeight(double height) {
+    final overflows = height > _chipThreeLines;
+    if (overflows != _overflows && mounted) {
+      setState(() => _overflows = overflows);
+    }
+  }
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRect(
+          child: _MeasuredClampWrap(
+            clampHeight: _expanded ? double.infinity : _chipThreeLines,
+            onNaturalHeight: _onNaturalHeight,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: _chipRunSpacing,
+              children: widget.children,
+            ),
+          ),
+        ),
+        if (_overflows)
+          GestureDetector(
+            onTap: _toggle,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _expanded ? 'Show less' : 'Show more',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Lays out its child at full natural height but clamps its own height to
+/// [clampHeight] (with [ClipRect] above truncating paint and hit tests), and
+/// reports the child's natural height through [onNaturalHeight] once per frame.
+class _MeasuredClampWrap extends SingleChildRenderObjectWidget {
+  const _MeasuredClampWrap({
+    required this.clampHeight,
+    required this.onNaturalHeight,
+    super.child,
+  });
+
+  final double clampHeight;
+  final ValueChanged<double> onNaturalHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMeasuredClamp(clampHeight, onNaturalHeight);
+
+  @override
+  void updateRenderObject(BuildContext context, covariant _RenderMeasuredClamp renderObject) {
+    renderObject
+      ..clampHeight = clampHeight
+      ..onNaturalHeight = onNaturalHeight;
+  }
+}
+
+class _RenderMeasuredClamp extends RenderProxyBox {
+  _RenderMeasuredClamp(double clampHeight, ValueChanged<double> onNaturalHeight)
+    : _clampHeight = clampHeight,
+      _onNaturalHeight = onNaturalHeight;
+
+  double _clampHeight;
+  double get clampHeight => _clampHeight;
+  set clampHeight(double v) {
+    if (_clampHeight == v) return;
+    _clampHeight = v;
+    markNeedsLayout();
+  }
+
+  ValueChanged<double> _onNaturalHeight;
+  set onNaturalHeight(ValueChanged<double> v) => _onNaturalHeight = v;
+
+  double? _reportedHeight;
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    // Lay out the child without a height limit so overflow past the clamp is
+    // measurable, then clamp this render object's own height for display.
+    child.layout(constraints.copyWith(maxHeight: double.infinity), parentUsesSize: true);
+    size = constraints.constrain(
+      Size(child.size.width, math.min(child.size.height, clampHeight)),
+    );
+    final natural = child.size.height;
+    if (_reportedHeight != natural) {
+      _reportedHeight = natural;
+      // Callbacks must not run during layout; defer to after the frame.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (attached) _onNaturalHeight(natural);
+      });
+    }
   }
 }
 

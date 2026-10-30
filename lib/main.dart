@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import 'db/database.dart';
+import 'models/book.dart';
 import 'models/reader_settings.dart';
 import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -157,6 +160,7 @@ class _BurrowAppState extends State<BurrowApp> {
         return LibraryScreen(
           library: library,
           autoScanOnOpen: widget.autoScanOnOpen,
+          openOnLaunch: _launchResumeCandidate(library),
         );
       }
       return OnboardingScreen(
@@ -190,6 +194,20 @@ class _BurrowAppState extends State<BurrowApp> {
         onReset: () => _resetLibrary(context),
       );
     }
+  }
+
+  /// The book to open on top of the library at launch, or null.
+  ///
+  /// Auto-resume on relaunch: with the toggle on, the most recently read,
+  /// unfinished book becomes the launch target. A file deleted while the app
+  /// was closed is skipped — startup here runs on the platform thread long
+  /// before any UI, so a cheap sync existence check is safe and keeps a
+  /// vanished book from landing the user in a reader error screen.
+  Book? _launchResumeCandidate(LibraryService library) {
+    if (library.settings.autoResumeOnRelaunch != true) return null;
+    final candidate = library.mostRecent;
+    if (candidate == null) return null;
+    return File(candidate.path).existsSync() ? candidate : null;
   }
 
   Future<void> _retryStartup(BuildContext context) async {

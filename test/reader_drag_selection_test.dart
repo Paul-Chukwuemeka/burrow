@@ -357,18 +357,98 @@ void main() {
       final startHandle = find.byKey(const Key('selectionHandleStart'));
       expect(startHandle, findsOneWidget);
 
-      // Drag the *painted dot*, not the box centre: on a first-line start
-      // handle the box clamps to the top of the Stack while the dot is
-      // translated upward. The dot must be clamped back inside the hit box or
-      // this gesture falls through and the selection start does not move.
-      final dot = find.descendant(
+      // Drag the *painted handle*, not the box centre: the teardrop is
+      // translated inside its hit box, and this confirms the visible shape is
+      // reachable. If it escaped the box, the gesture would fall through and
+      // the selection start would not move.
+      final handle = find.descendant(
         of: startHandle,
-        matching: find.byType(Container),
+        matching: find.byType(CustomPaint),
       );
-      expect(dot, findsOneWidget);
-      await tester.drag(dot, const Offset(120, 0));
+      expect(handle, findsOneWidget);
+      await tester.drag(handle, const Offset(120, 0));
       await tester.pumpAndSettle();
       expect(state.debugSelection.start, greaterThan(startBefore));
+    });
+
+    testWidgets('both handles hang below their line and point down', (
+      tester,
+    ) async {
+      final state = await mountReaderFor(tester, multi);
+      final body = bodyParagraph(tester, 'w0');
+      final text = body.text.toPlainText();
+      final tokens = text.trim().split(RegExp(r'\s+'));
+      final tokenOffsets = <int>[];
+      var cursor = 0;
+      for (final token in tokens) {
+        final offset = text.indexOf(token, cursor);
+        tokenOffsets.add(offset);
+        cursor = offset + token.length;
+      }
+      final painter = TextPainter(
+        text: body.text,
+        textDirection: body.textDirection,
+      )..layout(maxWidth: body.size.width);
+      final caretYs = [
+        for (final offset in tokenOffsets)
+          painter.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy,
+      ];
+      painter.dispose();
+
+      // Start on the second line and end two lines lower, leaving room below
+      // both lines for the handles.
+      final startIndex = caretYs.indexWhere((y) => y > 30);
+      expect(startIndex, greaterThanOrEqualTo(0));
+      final endIndex = caretYs.indexWhere((y) => y > caretYs[startIndex] + 20);
+      expect(endIndex, greaterThan(startIndex));
+
+      final g = await tester.startGesture(
+        globalForWord(tester, tokens[startIndex]),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await g.moveTo(globalForWord(tester, tokens[endIndex]));
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+
+      final startHandle = find.byKey(const Key('selectionHandleStart'));
+      final endHandle = find.byKey(const Key('selectionHandleEnd'));
+      expect(startHandle, findsOneWidget);
+      expect(endHandle, findsOneWidget);
+
+      ({Offset caret, double lineHeight}) metricsAt(int flatOffset) {
+        final position = TextPosition(
+          offset: flatOffset.clamp(0, text.length).toInt(),
+        );
+        return (
+          caret: body.localToGlobal(
+            body.getOffsetForCaret(position, Rect.zero),
+          ),
+          lineHeight: body.getFullHeightForCaret(position),
+        );
+      }
+
+      final startMetrics = metricsAt(state.debugSelection.start!);
+      final endMetrics = metricsAt(state.debugSelection.end!);
+      final startGlyph = tester.getRect(
+        find.descendant(of: startHandle, matching: find.byType(CustomPaint)),
+      );
+      final endGlyph = tester.getRect(
+        find.descendant(of: endHandle, matching: find.byType(CustomPaint)),
+      );
+
+      // Both teardrops start below their line's bottom edge and their tips
+      // point further down.
+      expect(
+        startGlyph.top,
+        greaterThanOrEqualTo(startMetrics.caret.dy + startMetrics.lineHeight),
+      );
+      expect(
+        endGlyph.top,
+        greaterThanOrEqualTo(endMetrics.caret.dy + endMetrics.lineHeight),
+      );
+      expect(startGlyph.height, greaterThan(startGlyph.width));
+      expect(endGlyph.height, greaterThan(endGlyph.width));
     });
 
     testWidgets('end handle drag trims single characters', (tester) async {
@@ -404,9 +484,9 @@ void main() {
         final body = bodyParagraph(tester, 'w0');
         final tokens = body.text.toPlainText().trim().split(RegExp(r'\s+'));
 
-        // Extend a few lines down: the toolbar anchors at the lift caret (the
-        // end), so the start handle on line 1 stays clear of it and is the
-        // widget that receives the drag below.
+        // Extend a few lines down. For a multi-line selection the toolbar
+        // anchors above the first line, so the start handle below line 1 stays
+        // clear of it and is the widget that receives the drag below.
         final g = await tester.startGesture(
           globalForWord(tester, tokens.first),
         );
@@ -424,11 +504,10 @@ void main() {
 
         // Character precision: crossing the start past the end clamps to
         // `end - 1`, leaving a one-character selection at the far end instead
-        // of inverting the range.
-        await tester.drag(
-          startHandle,
-          globalForWord(tester, tokens[21]) - tester.getCenter(startHandle),
-        );
+        // of inverting the range. The handle hangs below line 1, so drag it
+        // well down and right; the handle-to-caret offset keeps it tracking
+        // the line under the finger.
+        await tester.drag(startHandle, const Offset(300, 120));
         await tester.pumpAndSettle();
         final after = state.debugSelectionText!;
         expect(after.length, 1);

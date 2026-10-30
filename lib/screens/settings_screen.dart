@@ -172,6 +172,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _s.volumeKeyTurns,
             onChanged: (v) => _update(() => _s.volumeKeyTurns = v),
           ),
+          _ToggleRow(
+            icon: Icons.history,
+            label: 'Resume last book on launch',
+            subtitle: 'Open the most recent unfinished book when Burrow starts',
+            value: _s.autoResumeOnRelaunch,
+            onChanged: (v) => _update(() => _s.autoResumeOnRelaunch = v),
+          ),
           const SizedBox(height: 24),
           _sectionHeader('Appearance'),
           const SizedBox(height: 12),

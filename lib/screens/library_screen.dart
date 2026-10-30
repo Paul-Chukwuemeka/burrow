@@ -12,6 +12,7 @@ import '../models/reader_settings.dart';
 import '../services/import_helper.dart';
 import '../services/library_service.dart';
 import '../services/scan_service.dart';
+import '../services/dictionary_router.dart';
 import '../services/share_intent_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
@@ -46,6 +47,7 @@ class LibraryScreen extends StatefulWidget {
     this.scanDevice = _defaultScanDevice,
     this.requestPermission = ScanService.ensurePermission,
     this.autoScanOnOpen = false,
+    this.openOnLaunch,
   });
 
   final LibraryService library;
@@ -66,6 +68,11 @@ class LibraryScreen extends StatefulWidget {
   /// opened in a session, so new files show up without a pull-to-refresh.
   /// Enabled by the app shell (main.dart); tests opt out by default.
   final bool autoScanOnOpen;
+
+  /// Book to open straight into the reader on mount, on top of the library.
+  /// Set by the app shell for auto-resume on relaunch; hand-navigated sessions
+  /// never pass it (and a fresh onboarding `onDone` keeps it null).
+  final Book? openOnLaunch;
 
   /// Auto-scan on open runs at most once per app session.
   static bool _autoScanRan = false;
@@ -113,6 +120,10 @@ class _LibraryScreenState extends State<LibraryScreen>
   bool _fabOpen = false;
   bool _searchOpen = false;
 
+  /// Set once [openOnLaunch] has been consumed, so a widget rebuild can't
+  /// reopen the resume book on top of itself.
+  bool _launchHandled = false;
+
   String _query = '';
   Set<BookFormat> _formatFilters = {};
   SortMode _sort = SortMode.recent;
@@ -137,6 +148,9 @@ class _LibraryScreenState extends State<LibraryScreen>
   StreamSubscription<MetadataStatus>? _metadataSubscription;
   bool _drainingShares = false;
 
+  /// True while an inbound define-word drain is in flight.
+  bool _drainingDefine = false;
+
   late final _selection = BookSelection();
 
   void _onSelectionChanged() {
@@ -151,6 +165,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _drainSharedFiles();
       _autoScanOnOpen();
+      _drainDefineWord();
+      _openLaunchBook();
     });
     final saved = widget.library.libraryLayout;
     _layout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
@@ -213,7 +229,31 @@ class _LibraryScreenState extends State<LibraryScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // A share intent arriving while the app is open lands via onNewIntent;
     // drain on every resume (cold-start shares are caught post-frame above).
-    if (state == AppLifecycleState.resumed) _drainSharedFiles();
+    if (state == AppLifecycleState.resumed) {
+      _drainSharedFiles();
+      _drainDefineWord();
+    }
+  }
+
+  /// Resolves the definition word another app handed Burrow (system Define
+  /// menu, ColorDict-style lookup) through the same router as in-reader
+  /// lookups. Re-entrant calls collapse: native hands each word out once,
+  /// and a mid-drain resume must not fire the router twice.
+  Future<void> _drainDefineWord() async {
+    if (_drainingDefine) return;
+    _drainingDefine = true;
+    try {
+      final word = await ShareIntentService.drainDefineWord();
+      if (word == null || !mounted) return;
+      DictionaryRouter.resolve(
+        context,
+        library: widget.library,
+        theme: widget.library.settings.colors,
+        word: word,
+      );
+    } finally {
+      _drainingDefine = false;
+    }
   }
 
   /// Imports files shared from other apps (one tap opens a single book).
@@ -432,6 +472,22 @@ class _LibraryScreenState extends State<LibraryScreen>
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Cold-start resume: opens the reader once, on top of the library, with
+  /// no hero morph (there is no cover under it yet). The launch candidate was
+  /// already existence-checked by the app shell before this screen mounted;
+  /// the reader renders its own error state if the file vanishes since.
+  Future<void> _openLaunchBook() async {
+    final book = widget.openOnLaunch;
+    if (book == null || _launchHandled) return;
+    _launchHandled = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReaderScreen(book: book, library: widget.library),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _openBook(Book book, {String? heroTag}) async {

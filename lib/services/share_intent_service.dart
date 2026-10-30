@@ -18,6 +18,23 @@ abstract final class ShareIntentService {
     return supportedExtensions.contains(path.toLowerCase().substring(dot + 1));
   }
 
+  /// Returns the definition word another app handed to Burrow (the system
+  /// Define menu picking Burrow, or a ColorDict-style lookup), or null. The
+  /// native bridge keeps at most one word and hands each out exactly once,
+  /// so a second drain empties it — mirroring [drainSharedFiles].
+  /// Never throws: a missing bridge drains as no word.
+  static Future<String?> drainDefineWord() async {
+    try {
+      return await _channel.invokeMethod<String>('getDefineWord');
+    } on PlatformException catch (e) {
+      debugPrint('ShareIntentService: define word unavailable ($e)');
+      return null;
+    } on MissingPluginException {
+      // Non-Android platforms and widget tests without a mock bridge.
+      return null;
+    }
+  }
+
   /// Returns paths staged by the native bridge since the last drain, split
   /// into openable books and rejected files. Never throws: a missing bridge
   /// or malformed payload drains as nothing shared.

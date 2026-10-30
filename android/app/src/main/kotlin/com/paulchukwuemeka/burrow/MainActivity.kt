@@ -2,6 +2,7 @@ package com.paulchukwuemeka.burrow
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.os.Parcelable
 import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
@@ -16,6 +17,16 @@ class MainActivity : FlutterActivity() {
     /// resume) never re-import the same share.
     private val consumedUris = mutableSetOf<String>()
 
+    /// Definition word received through a dictionary intent (the system
+    /// Define menu picking Burrow, or another app sending Burrow a lookup)
+    /// and not yet drained by Flutter. Consumed exactly once.
+    private var pendingDefineWord: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        pendingDefineWord = extractDefineWord(intent)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         channel = MethodChannel(
@@ -23,10 +34,13 @@ class MainActivity : FlutterActivity() {
             "burrow/share_in",
         ).apply {
             setMethodCallHandler { call, result ->
-                if (call.method == "getSharedFiles") {
-                    result.success(consumeSharedFiles())
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "getSharedFiles" -> result.success(consumeSharedFiles())
+                    "getDefineWord" ->
+                        result.success(
+                            pendingDefineWord.also { pendingDefineWord = null },
+                        )
+                    else -> result.notImplemented()
                 }
             }
         }
@@ -44,6 +58,10 @@ class MainActivity : FlutterActivity() {
                                 call.argument<String>("word")!!,
                             ),
                         )
+                    "showDefineChooser" ->
+                        result.success(
+                            showDefineChooser(call.argument<String>("word")!!),
+                        )
                     else -> result.notImplemented()
                 }
             }
@@ -53,7 +71,28 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // Keep an undrained share intact: consumeSharedFiles() reads the
+        // stored intent and ignores definition actions.
+        extractDefineWord(intent)?.let { pendingDefineWord = it }
     }
+
+    /// The lookup word carried by a definition intent: the Android 14
+    /// DEFINE contract carries it as android.intent.extra.WORD, the
+    /// ColorDict family contract as EXTRA_QUERY. Blank treated as absent.
+    private fun extractDefineWord(received: Intent?): String? =
+        when (received?.action) {
+            "android.intent.action.DEFINE",
+            "colordict.intent.action.SEARCH",
+            ->
+                received
+                    .getStringExtra("android.intent.extra.WORD")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: received
+                        .getStringExtra("EXTRA_QUERY")
+                        ?.takeIf { it.isNotBlank() }
+
+            else -> null
+        }
 
     /// Copies the files behind the current SEND / SEND_MULTIPLE / VIEW intent
     /// into app-private storage and returns their paths. Consume-on-read:
@@ -117,12 +156,24 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /// Dictionary apps registered for ACTION_DEFINE (literal action string:
-    /// the SDK constant only exists on API 34+). Our own package excluded.
+    /// Dictionary apps reachable by word-lookup intents: the Android 14
+    /// ACTION_DEFINE plus the ColorDict family contract
+    /// ("colordict.intent.action.SEARCH" — ColorDict, GoldenDict, Aard2, …).
+    /// Literal action strings: the DEFINE SDK constant only exists on API 34+.
+    /// Both actions are probed typeless and with a text/plain MIME type (some
+    /// apps register typed filters). Merged by package (a DEFINE entry
+    /// outranks its ColorDict double); our own package excluded.
     private fun listDefineApps(): List<HashMap<String, String>> = try {
-        packageManager
-            .queryIntentActivities(Intent("android.intent.action.DEFINE"), 0)
-            .filter { it.activityInfo.packageName != packageName }
+        val contracts = listOf("android.intent.action.DEFINE", "colordict.intent.action.SEARCH")
+        val entries = contracts.flatMap { action ->
+            sequence {
+                yield(Intent(action))
+                yield(Intent(action).apply { setType("text/plain") })
+            }.flatMap { request ->
+                packageManager.queryIntentActivities(request, 0)
+            }
+        }.filter { it.activityInfo.packageName != packageName }
+        entries
             .distinctBy { it.activityInfo.packageName }
             .map {
                 hashMapOf<String, String>(
@@ -134,23 +185,79 @@ class MainActivity : FlutterActivity() {
         emptyList()
     }
 
-    /// Hands [word] to the dictionary app [pkg]. Literal ACTION_DEFINE (see
-    /// above) with the word extra; false when the app no longer resolves.
+    /// True when the package's registration matches [request] typeless or
+    /// with a text/plain MIME type — some apps register typed DEFINE filters
+    /// (Chrome-style, Android 14+); a typeless-only probe would miss them and
+    /// wrongly unpin a working dictionary.
+    private fun resolves(request: Intent): Boolean =
+        packageManager.resolveActivity(request, 0) != null ||
+            packageManager
+                .resolveActivity(
+                    // The copy carries the type so the typed registration
+                    // matches; resolveActivity does not mutate its argument.
+                    Intent(request).setType("text/plain"),
+                    0,
+                ) != null
+
+    /// Hands [word] to the dictionary app [pkg], speaking whichever lookup
+    /// contract that package supports: ACTION_DEFINE with
+    /// android.intent.extra.WORD first (literal strings, see above), then the
+    /// ColorDict family contract with its EXTRA_QUERY extra. False when the
+    /// app no longer resolves under either. Type-aware: see [resolves].
     /// FLAG_ACTIVITY_NEW_TASK: we are not the target activity's task owner.
     private fun launchDefine(pkg: String, word: String): Boolean = try {
-        val i = Intent("android.intent.action.DEFINE")
+        val define = Intent("android.intent.action.DEFINE")
             .putExtra("android.intent.extra.WORD", word)
             .setPackage(pkg)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (i.resolveActivity(packageManager) == null) {
-            false
-        } else {
+        if (resolves(define)) {
             try {
-                startActivity(i)
+                startActivity(define)
                 true
             } catch (_: Exception) {
                 false
             }
+        } else {
+            val colorDict = Intent("colordict.intent.action.SEARCH")
+                .putExtra("EXTRA_QUERY", word)
+                .setPackage(pkg)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (resolves(colorDict)) {
+                try {
+                    startActivity(colorDict)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+    } catch (_: Exception) {
+        false
+    }
+
+    /// Opens Android's own app-chooser menu titled "Define with": every app
+    /// reachable by either lookup contract is listed (the alternate carries
+    /// the ColorDict contract; Burrow itself is listed through its manifest
+    /// filters). Returns true only when a chooser was actually started.
+    private fun showDefineChooser(word: String): Boolean = try {
+        val define = Intent("android.intent.action.DEFINE")
+            .putExtra("android.intent.extra.WORD", word)
+        val alternates = arrayListOf(
+            Intent("colordict.intent.action.SEARCH")
+                .putExtra("EXTRA_QUERY", word),
+        )
+        val chooser = Intent.createChooser(define, "Define with")
+            .putParcelableArrayListExtra(
+                Intent.EXTRA_ALTERNATE_INTENTS,
+                alternates,
+            )
+        try {
+            startActivity(chooser)
+            true
+        } catch (_: Exception) {
+            false
         }
     } catch (_: Exception) {
         false

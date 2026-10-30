@@ -132,6 +132,41 @@ void main() {
       final r = ReaderSettings.fromJson(s.toJson());
       expect(r.scanFolder, '/storage/books');
     });
+
+    test('autoResumeOnRelaunch defaults to false and round-trips', () {
+      expect(ReaderSettings().autoResumeOnRelaunch, isFalse);
+      final s = ReaderSettings()..autoResumeOnRelaunch = true;
+      final r = ReaderSettings.fromJson(s.toJson());
+      expect(r.autoResumeOnRelaunch, isTrue);
+    });
+
+    test('autoResumeOnRelaunch falls back to false on absent key', () {
+      expect(ReaderSettings.fromJson({}).autoResumeOnRelaunch, isFalse);
+    });
+  });
+
+  group('ReaderTheme selection contrast', () {
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance();
+      final lb = b.computeLuminance();
+      final hi = la > lb ? la : lb;
+      final lo = la > lb ? lb : la;
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    for (final mode in ReaderThemeMode.values) {
+      test('${mode.name} selection reads clearly without hurting text', () {
+        final theme = ReaderTheme.byMode(mode);
+        expect(
+          contrast(theme.selection, theme.background),
+          greaterThanOrEqualTo(2.0),
+        );
+        expect(
+          contrast(theme.text, theme.selection),
+          greaterThanOrEqualTo(5.0),
+        );
+      });
+    }
   });
 
   test('defaultDictionary round-trips through JSON', () {
