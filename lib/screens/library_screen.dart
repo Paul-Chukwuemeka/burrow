@@ -46,6 +46,7 @@ class LibraryScreen extends StatefulWidget {
     this.scanDevice = _defaultScanDevice,
     this.requestPermission = ScanService.ensurePermission,
     this.autoScanOnOpen = false,
+    this.openOnLaunch,
   });
 
   final LibraryService library;
@@ -66,6 +67,11 @@ class LibraryScreen extends StatefulWidget {
   /// opened in a session, so new files show up without a pull-to-refresh.
   /// Enabled by the app shell (main.dart); tests opt out by default.
   final bool autoScanOnOpen;
+
+  /// Book to open straight into the reader on mount, on top of the library.
+  /// Set by the app shell for auto-resume on relaunch; hand-navigated sessions
+  /// never pass it (and a fresh onboarding `onDone` keeps it null).
+  final Book? openOnLaunch;
 
   /// Auto-scan on open runs at most once per app session.
   static bool _autoScanRan = false;
@@ -113,6 +119,10 @@ class _LibraryScreenState extends State<LibraryScreen>
   bool _fabOpen = false;
   bool _searchOpen = false;
 
+  /// Set once [openOnLaunch] has been consumed, so a widget rebuild can't
+  /// reopen the resume book on top of itself.
+  bool _launchHandled = false;
+
   String _query = '';
   Set<BookFormat> _formatFilters = {};
   SortMode _sort = SortMode.recent;
@@ -151,6 +161,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _drainSharedFiles();
       _autoScanOnOpen();
+      _openLaunchBook();
     });
     final saved = widget.library.libraryLayout;
     _layout = saved == 'list' ? LayoutMode.list : LayoutMode.grid;
@@ -432,6 +443,22 @@ class _LibraryScreenState extends State<LibraryScreen>
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Cold-start resume: opens the reader once, on top of the library, with
+  /// no hero morph (there is no cover under it yet). The launch candidate was
+  /// already existence-checked by the app shell before this screen mounted;
+  /// the reader renders its own error state if the file vanishes since.
+  Future<void> _openLaunchBook() async {
+    final book = widget.openOnLaunch;
+    if (book == null || _launchHandled) return;
+    _launchHandled = true;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReaderScreen(book: book, library: widget.library),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _openBook(Book book, {String? heroTag}) async {
