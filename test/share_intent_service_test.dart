@@ -61,6 +61,30 @@ void main() {
     expect(result.unsupported, 0);
   });
 
+  test('define word drains once, then nothing', () async {
+    final seen = <String>[];
+    String? word = 'serendipity';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (throwMissingPlugin) throw MissingPluginException();
+          if (call.method != 'getDefineWord') return null;
+          seen.add(call.method);
+          final pending = word;
+          word = null;
+          return pending;
+        });
+
+    expect(await ShareIntentService.drainDefineWord(), 'serendipity');
+    expect(await ShareIntentService.drainDefineWord(), isNull);
+    expect(seen, ['getDefineWord', 'getDefineWord']);
+  });
+
+  test('missing bridge drains no define word and never throws', () async {
+    throwMissingPlugin = true;
+
+    expect(await ShareIntentService.drainDefineWord(), isNull);
+  });
+
   test('isSupported matches the five book extensions', () {
     expect(ShareIntentService.isSupported('a.epub'), isTrue);
     expect(ShareIntentService.isSupported('a.EPUB'), isTrue);
