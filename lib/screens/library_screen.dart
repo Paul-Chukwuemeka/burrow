@@ -12,6 +12,7 @@ import '../models/reader_settings.dart';
 import '../services/import_helper.dart';
 import '../services/library_service.dart';
 import '../services/scan_service.dart';
+import '../services/dictionary_router.dart';
 import '../services/share_intent_service.dart';
 import '../theme/burrow_tokens.dart';
 import '../utils/book_title.dart';
@@ -147,6 +148,9 @@ class _LibraryScreenState extends State<LibraryScreen>
   StreamSubscription<MetadataStatus>? _metadataSubscription;
   bool _drainingShares = false;
 
+  /// True while an inbound define-word drain is in flight.
+  bool _drainingDefine = false;
+
   late final _selection = BookSelection();
 
   void _onSelectionChanged() {
@@ -161,6 +165,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _drainSharedFiles();
       _autoScanOnOpen();
+      _drainDefineWord();
       _openLaunchBook();
     });
     final saved = widget.library.libraryLayout;
@@ -224,7 +229,31 @@ class _LibraryScreenState extends State<LibraryScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // A share intent arriving while the app is open lands via onNewIntent;
     // drain on every resume (cold-start shares are caught post-frame above).
-    if (state == AppLifecycleState.resumed) _drainSharedFiles();
+    if (state == AppLifecycleState.resumed) {
+      _drainSharedFiles();
+      _drainDefineWord();
+    }
+  }
+
+  /// Resolves the definition word another app handed Burrow (system Define
+  /// menu, ColorDict-style lookup) through the same router as in-reader
+  /// lookups. Re-entrant calls collapse: native hands each word out once,
+  /// and a mid-drain resume must not fire the router twice.
+  Future<void> _drainDefineWord() async {
+    if (_drainingDefine) return;
+    _drainingDefine = true;
+    try {
+      final word = await ShareIntentService.drainDefineWord();
+      if (word == null || !mounted) return;
+      DictionaryRouter.resolve(
+        context,
+        library: widget.library,
+        theme: widget.library.settings.colors,
+        word: word,
+      );
+    } finally {
+      _drainingDefine = false;
+    }
   }
 
   /// Imports files shared from other apps (one tap opens a single book).
