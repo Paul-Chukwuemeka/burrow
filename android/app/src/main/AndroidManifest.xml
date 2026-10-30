@@ -11,7 +11,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -56,6 +56,17 @@
                 <data android:pathPattern=".*\\.cbz"/>
                 <data android:pathPattern=".*\\.cbr"/>
             </intent-filter>
+            <!-- Definition lookups sent *to* Burrow (we are a dictionary:
+                 the system Define menu lists us; picking Burrow hands the
+                 word to the built-in offline dictionary). -->
+            <intent-filter>
+                <action android:name="android.intent.action.DEFINE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="colordict.intent.action.SEARCH"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
             <!-- Receive book files shared from other apps (WhatsApp, etc.). -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
@@ -98,13 +109,23 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
-        <!-- Dictionary apps that can define a word (Google app, …). -->
+        <!-- Dictionary apps that can define a word (Google app, …).
+             Typed variants cover apps that register the action with
+             mimeType text/plain; resolvers probe both shapes. -->
         <intent>
             <action android:name="android.intent.action.DEFINE"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DEFINE"/>
+            <data android:mimeType="text/plain"/>
         </intent>
         <!-- ColorDict-family dictionary apps (ColorDict, GoldenDict, Aard2, …). -->
         <intent>
             <action android:name="colordict.intent.action.SEARCH"/>
+        </intent>
+        <intent>
+            <action android:name="colordict.intent.action.SEARCH"/>
+            <data android:mimeType="text/plain"/>
         </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
