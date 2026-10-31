@@ -44,15 +44,19 @@ class PillChip extends StatelessWidget {
                     Icon(icon, size: 18, color: scheme.primary),
                     const SizedBox(width: 6),
                   ],
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      letterSpacing: 0.15,
-                      color: selected
-                          ? scheme.onPrimary
-                          : scheme.onSurfaceVariant,
+                  // Flexible so a very long label takes only the remaining
+                  // chip width and wraps instead of overflowing the pill.
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        letterSpacing: 0.15,
+                        color: selected
+                            ? scheme.onPrimary
+                            : scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],

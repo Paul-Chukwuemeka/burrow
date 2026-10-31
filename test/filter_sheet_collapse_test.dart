@@ -55,6 +55,19 @@ void main() {
     expect(tester.getSize(_sectionClip('Series')).height, _threeLines);
   });
 
+  testWidgets('very long single-token series label does not overflow its pill', (tester) async {
+    _narrowSurface(tester);
+    const hugeLabel = 'com3d2-yamato-nadesiko-gp0ffb (opens in a new tab)';
+    await _pumpSheet(tester, books: _series([hugeLabel]));
+
+    expect(tester.takeException(), isNull);
+
+    // The label must wrap inside the chip rather than painting past it,
+    // so its width stays within the sheet's content width (400 - 24*2).
+    final labelSize = tester.getSize(find.text(hugeLabel));
+    expect(labelSize.width, lessThanOrEqualTo(352));
+  });
+
   testWidgets('series section reveals chips beyond three lines via "Show more"', (tester) async {
     _narrowSurface(tester);
     String? picked;
