@@ -1101,12 +1101,18 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   /// Contextual action bar shown while books are selected. Reference UX for
   /// the collection/author/series/smart-group screens (Task 5).
+  ///
+  /// Rendered as a pinned sliver so it stays below the app bar while the
+  /// grid/list scrolls beneath it.
   Widget _selectionBar() {
     final scheme = Theme.of(context).colorScheme;
     final selected = _selectedBooks;
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _PinnedSelectionBarDelegate(
+        backgroundColor: scheme.surface,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
         child: Material(
           color: scheme.primaryContainer,
           borderRadius: BorderRadius.circular(Burrow.shapeSm + 4),
@@ -1168,7 +1174,8 @@ class _LibraryScreenState extends State<LibraryScreen>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   /// Batch confirm sheet mirroring [_showRemoveBookSheet]: one confirm step
@@ -2678,5 +2685,44 @@ class _ScanningBanner extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Pins the selection action bar below the app bar while books are selected,
+/// so the actions stay reachable while the grid/list scrolls beneath them.
+///
+/// The [backgroundColor] (the page surface) hides scrolling content behind
+/// the pill's transparent corner/padding gaps.
+class _PinnedSelectionBarDelegate extends SliverPersistentHeaderDelegate {
+  _PinnedSelectionBarDelegate({
+    required this.backgroundColor,
+    required this.child,
+  });
+
+  final Widget child;
+  final Color backgroundColor;
+
+  /// Top padding (8) + row height (48, default IconButton) + inner padding
+  /// (4 + 4).
+  static const double _extent = 64;
+
+  @override
+  double get minExtent => _extent;
+
+  @override
+  double get maxExtent => _extent;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Material(
+      color: backgroundColor,
+      child: Align(alignment: Alignment.topCenter, child: child),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedSelectionBarDelegate oldDelegate) {
+    return child != oldDelegate.child ||
+        backgroundColor != oldDelegate.backgroundColor;
   }
 }
