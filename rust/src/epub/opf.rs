@@ -321,6 +321,12 @@ struct Meta {
     name: Option<String>,
     content: Option<String>,
     property: Option<String>,
+    /// The element's `id` — the refine target of `collection-type`/
+    /// `group-position` siblings (EPUB Collections spec).
+    id: Option<String>,
+    /// The element's `refines` (`#id`), linking it to its owning metadata
+    /// element.
+    refines: Option<String>,
     text: String,
 }
 
@@ -522,17 +528,16 @@ fn handle(out: &mut Opf, frame: &Frame) {
             // Calibre annotation: the first `<meta
             // name="calibre:annotation">` wins (mirroring Dart, which breaks
             // after the first match even when `content` is absent).
-            if !out.annotation_seen
-                && get(&frame.attrs, "name") == Some("calibre:annotation")
-            {
+            if !out.annotation_seen && get(&frame.attrs, "name") == Some("calibre:annotation") {
                 out.annotation_seen = true;
-                out.annotation = get(&frame.attrs, "content")
-                    .map(|c| c.trim().to_string());
+                out.annotation = get(&frame.attrs, "content").map(|c| c.trim().to_string());
             }
             out.metas.push(Meta {
                 name: get(&frame.attrs, "name").map(str::to_string),
                 content: get(&frame.attrs, "content").map(str::to_string),
                 property: get(&frame.attrs, "property").map(str::to_string),
+                id: get(&frame.attrs, "id").map(str::to_string),
+                refines: get(&frame.attrs, "refines").map(str::to_string),
                 text: text.to_string(),
             })
         }
@@ -598,14 +603,21 @@ fn is_isbn10(v: &str) -> bool {
         && (b[9].is_ascii_digit() || b[9] == b'X' || b[9] == b'x')
 }
 
-/// Calibre's `calibre:series` / `calibre:series_index` metas, falling back to
-/// the EPUB3 `belongs-to-series` / `group-position` properties.
+/// Calibre's `calibre:series` / `calibre:series_index` metas (matched
+/// ASCII-case-insensitively — some producers vary the case), falling back to
+/// the non-standard EPUB2-era `belongs-to-series` / `group-position`
+/// properties, and finally to the EPUB Collections spec's
+/// `belongs-to-collection` + series `collection-type` (the form Calibre 5+
+/// and other modern writers actually emit for EPUB3).
 fn pick_series(metas: &[Meta]) -> (Option<String>, Option<f64>) {
-    let mut name: Option<String> = None;
     let mut index: Option<f64> = None;
+
+    // Legacy Calibre metas win outright (both may not be present).
+    let mut name: Option<String> = None;
     for m in metas {
-        match m.name.as_deref() {
-            Some("calibre:series") => {
+        let Some(n) = &m.name else { continue };
+        match n.to_ascii_lowercase().as_str() {
+            "calibre:series" => {
                 name = m
                     .content
                     .as_deref()
@@ -613,31 +625,119 @@ fn pick_series(metas: &[Meta]) -> (Option<String>, Option<f64>) {
                     .filter(|s| !s.is_empty())
                     .map(str::to_string);
             }
-            Some("calibre:series_index") => {
+            "calibre:series_index" => {
                 index = m.content.as_deref().and_then(|s| s.trim().parse().ok());
             }
             _ => {}
         }
     }
-    if name.is_none() {
-        for m in metas {
-            match m.property.as_deref() {
-                Some("belongs-to-series") => {
-                    let t = m.text.trim();
-                    if !t.is_empty() {
-                        name = Some(t.to_string());
-                    }
+    if name.is_some() {
+        return (name, index);
+    }
+
+    // Non-standard `belongs-to-series` (older writers); kept for compatibility.
+    for m in metas {
+        match m.property.as_deref() {
+            Some(p) if p.eq_ignore_ascii_case("belongs-to-series") => {
+                let t = m.text.trim();
+                if !t.is_empty() {
+                    return (Some(t.to_string()), index);
                 }
-                Some("group-position") => {
-                    if index.is_none() {
-                        index = m.text.trim().parse().ok();
-                    }
+            }
+            Some(p) if p.eq_ignore_ascii_case("group-position") => {
+                if index.is_none() {
+                    index = m.text.trim().parse().ok();
                 }
-                _ => {}
+            }
+            _ => {}
+        }
+    }
+
+    // EPUB Collections spec: `belongs-to-collection` metadata elements, with
+    // the series one identified by a `collection-type` refinement. A lone
+    // collection with no type at all still counts (a single candidate cannot
+    // be anything else); with several untyped candidates we stay silent
+    // rather than guess.
+    let mut series_candidate: Option<&Meta> = None;
+    let mut any_collection: Option<&Meta> = None;
+    let mut collection_count = 0usize;
+    for m in metas {
+        if !m
+            .property
+            .as_deref()
+            .map(|p| p.eq_ignore_ascii_case("belongs-to-collection"))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let t = m.text.trim();
+        if t.is_empty() {
+            continue;
+        }
+        collection_count += 1;
+        if any_collection.is_none() {
+            any_collection = Some(m);
+        }
+        let is_series_type = metas.iter().any(|r| {
+            r.property.as_deref() == Some("collection-type")
+                && r.refines
+                    .as_deref()
+                    .map(|r| {
+                        r.trim_start_matches('#')
+                            .eq_ignore_ascii_case(m.id.as_deref().unwrap_or_default())
+                    })
+                    .unwrap_or(false)
+                && r.text.trim().eq_ignore_ascii_case("series")
+        });
+        if series_candidate.is_none() && is_series_type {
+            series_candidate = Some(m);
+        }
+    }
+    if let Some(pick) = series_candidate.or_else(|| {
+        if collection_count == 1 {
+            any_collection
+        } else {
+            None
+        }
+    }) {
+        let name = pick.text.trim().to_string();
+        return (Some(name), collection_index(metas, index, pick));
+    }
+
+    (None, index)
+}
+
+/// The index for a picked series collection: a `group-position` refined to
+/// that collection first, then an unrefined one, else the fallback index.
+fn collection_index(metas: &[Meta], fallback: Option<f64>, series: &Meta) -> Option<f64> {
+    let target = series.id.as_deref();
+    for m in metas {
+        let matches_refine = m
+            .refines
+            .as_deref()
+            .map(|r| {
+                target
+                    .map(|t| r.trim_start_matches('#').eq_ignore_ascii_case(t))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if m.property.as_deref() == Some("group-position") && matches_refine {
+            if let Some(v) = m.text.trim().parse().ok() {
+                return Some(v);
             }
         }
     }
-    (name, index)
+    for m in metas {
+        if m.property.as_deref() == Some("group-position")
+            && m.refines.is_none()
+            && !m.text.trim().is_empty()
+        {
+            if let Some(v) = m.text.trim().parse().ok() {
+                return Some(v);
+            }
+        }
+    }
+    fallback
 }
 
 /// Normalised archive keys the OPF declares as the cover image.
@@ -1220,6 +1320,137 @@ mod tests {
         assert_eq!(opf.doc_source, None);
     }
 
+    // --- Series extraction coverage -------------------------------------
+
+    #[test]
+    fn epub3_belongs_to_collection_series_is_extracted() {
+        // The EPUB Collections spec (and Calibre 5+ in EPUB3 output) marks a
+        // series with `belongs-to-collection` + a series `collection-type`,
+        // not the non-standard `belongs-to-series`.
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta property="belongs-to-collection" id="c1">The Saga</meta>
+            <meta refines="#c1" property="collection-type">series</meta>
+            <meta property="group-position">3</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("The Saga"));
+        assert_eq!(index, Some(3.0));
+    }
+
+    #[test]
+    fn epub3_series_group_position_refined_to_the_collection_is_used() {
+        // With several collections each carrying their own (refined) index,
+        // the index must come from the one refined to the series collection.
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta property="belongs-to-collection" id="c1">The Saga</meta>
+            <meta refines="#c1" property="collection-type">series</meta>
+            <meta refines="#c1" property="group-position">3</meta>
+            <meta property="belongs-to-collection" id="c2">Reading List</meta>
+            <meta refines="#c2" property="group-position">7</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("The Saga"));
+        assert_eq!(index, Some(3.0));
+    }
+
+    #[test]
+    fn prefers_series_typed_collection_over_untyped_ones() {
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta property="belongs-to-collection" id="c1">Author Assemble</meta>
+            <meta refines="#c1" property="collection-type">set</meta>
+            <meta property="belongs-to-collection" id="c2">Wheel of Time</meta>
+            <meta refines="#c2" property="collection-type">series</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("Wheel of Time"));
+        assert_eq!(index, None);
+    }
+
+    #[test]
+    fn single_untyped_collection_is_still_a_series() {
+        // One collection with a group-position but no explicit type: a
+        // single-candidate series must not be silently dropped.
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta property="belongs-to-collection" id="c1">Discworld</meta>
+            <meta refines="#c1" property="group-position">04</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("Discworld"));
+        assert_eq!(index, Some(4.0));
+    }
+
+    #[test]
+    fn unrefined_group_position_fills_index_for_refined_series() {
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta property="belongs-to-collection" id="c1">The Saga</meta>
+            <meta refines="#c1" property="collection-type">series</meta>
+            <meta property="group-position">2.0</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("The Saga"));
+        assert_eq!(index, Some(2.0));
+    }
+
+    #[test]
+    fn calibre_series_meta_is_case_insensitive() {
+        // Some producers write `calibre:Series` / mixed-case meta names.
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta name="Calibre:Series" content="Burrow Chronicles"/>
+            <meta name="calibre:Series_Index" content="2.5"/>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("Burrow Chronicles"));
+        assert_eq!(index, Some(2.5));
+    }
+
+    #[test]
+    fn calibre_meta_wins_over_epub3_collection() {
+        // Priority order is preserved: legacy Calibre metas first.
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta name="calibre:series" content="Calibre Name"/>
+            <meta name="calibre:series_index" content="5"/>
+            <meta property="belongs-to-collection" id="c1">EPUB3 Name</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name.as_deref(), Some("Calibre Name"));
+        assert_eq!(index, Some(5.0));
+    }
+
+    #[test]
+    fn no_series_candidates_stay_none() {
+        let opf = super::parse_opf(
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>T</dc:title>
+            <meta property="belongs-to-collection" id="c1">Set A</meta>
+            <meta property="belongs-to-collection" id="c2">Set B</meta>
+            </metadata></package>"##,
+        );
+        let (name, index) = super::pick_series(&opf.metas);
+        assert_eq!(name, None);
+        assert_eq!(index, None);
+    }
+
     #[test]
     fn annotated_fixture_metadata_round_trips() {
         let m = read_metadata(&fixture("annotated-meta.epub")).unwrap();
@@ -1240,9 +1471,9 @@ mod tests {
         // `<dc:creator>`, unclosed ancestors) must still yield the
         // metadata parsed so far.
         let opf = super::parse_opf(
-            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
             <dc:title>Truncated Title</dc:title>
-            <dc:creator>Truncated Author"#,
+            <dc:creator>Truncated Author"##,
         );
         assert_eq!(opf.title, "Truncated Title");
         assert_eq!(opf.author, "Truncated Author");
@@ -1251,8 +1482,8 @@ mod tests {
     #[test]
     fn unclosed_title_still_parses_at_eof() {
         let opf = super::parse_opf(
-            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-            <dc:title>Unclosed Title"#,
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Unclosed Title"##,
         );
         assert_eq!(opf.title, "Unclosed Title");
     }
@@ -1261,9 +1492,9 @@ mod tests {
     fn stray_end_tag_does_not_close_the_wrong_parent() {
         // `</bogus>` must not pop `<dc:title>`; the title survives.
         let opf = super::parse_opf(
-            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
             <dc:title>Kept</dc:title></bogus>
-            </metadata></package>"#,
+            </metadata></package>"##,
         );
         assert_eq!(opf.title, "Kept");
     }
@@ -1274,9 +1505,9 @@ mod tests {
         // (first non-empty wins), identically under blind-pop and matched
         // recovery. Locks the no-behaviour-change guarantee.
         let opf = super::parse_opf(
-            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            r##"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
             <dc:title>Outer<dc:title>Inner</dc:title></dc:title>
-            </metadata></package>"#,
+            </metadata></package>"##,
         );
         assert_eq!(opf.title, "Inner");
     }
