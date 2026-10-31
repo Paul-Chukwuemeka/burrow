@@ -241,25 +241,45 @@ class _EditBookScreenState extends State<EditBookScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit book'),
-        actions: [
-          TextButton.icon(
-            onPressed: _fetchOnlineMetadata,
-            icon: const Icon(Icons.cloud_download_outlined, size: 20),
-            label: const Text('Online'),
+        // The labeled actions live in a second toolbar row so the title always
+        // has room, even in a narrow window.
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(kToolbarHeight),
+          // Reversed horizontal scroll keeps the row right-aligned when it
+          // fits and lets narrow windows reach every action.
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            reverse: true,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton.icon(
+                  onPressed: _fetchOnlineMetadata,
+                  icon: const Icon(Icons.cloud_download_outlined, size: 20),
+                  label: const Text('Online'),
+                ),
+                TextButton.icon(
+                  onPressed: _refetching ? null : _refetchMetadata,
+                  icon: _refetching
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 20),
+                  label: const Text('Refetch'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: TextButton(
+                    onPressed: _save,
+                    child: const Text('Save'),
+                  ),
+                ),
+              ],
+            ),
           ),
-          TextButton.icon(
-            onPressed: _refetching ? null : _refetchMetadata,
-            icon: _refetching
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh, size: 20),
-            label: const Text('Refetch'),
-          ),
-          TextButton(onPressed: _save, child: const Text('Save')),
-        ],
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
