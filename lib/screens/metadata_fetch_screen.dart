@@ -6,6 +6,21 @@ import '../models/book.dart';
 import '../services/metadata_api_service.dart';
 import '../utils/book_title.dart';
 
+/// Builds the auto-fetch search query from the book's own data.
+///
+/// Prefers a normalized ISBN, otherwise uses the cleaned display title —
+/// never the raw store-filename title, which is full of search-hostile cruft.
+String? buildAutoMetadataQuery(Book book) {
+  final isbn = MetadataApiService.normalizeIsbn(book.isbn);
+  if (isbn != null) return isbn;
+
+  final cleanTitle = book.displayTitle.trim();
+  if (cleanTitle.isNotEmpty) return cleanTitle;
+
+  final rawTitle = book.title.trim();
+  return rawTitle.isEmpty ? null : rawTitle;
+}
+
 /// Screen for fetching book metadata from online APIs.
 ///
 /// Shows auto-fetch results based on the book's existing data and allows
@@ -37,7 +52,8 @@ class _MetadataFetchScreenState extends State<MetadataFetchScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.text = widget.book.title;
+    final initial = widget.book.displayTitle;
+    _searchCtrl.text = initial.isNotEmpty ? initial : widget.book.title;
   }
 
   @override
@@ -110,15 +126,7 @@ class _MetadataFetchScreenState extends State<MetadataFetchScreen> {
     }
   }
 
-  String? _buildAutoQuery() {
-    if (widget.book.isbn != null && widget.book.isbn!.isNotEmpty) {
-      return widget.book.isbn;
-    }
-    if (widget.book.title.isNotEmpty) {
-      return widget.book.title;
-    }
-    return null;
-  }
+  String? _buildAutoQuery() => buildAutoMetadataQuery(widget.book);
 
   void _selectResult(ApiBookMetadata meta) {
     widget.onSelected(meta);

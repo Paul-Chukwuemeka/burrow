@@ -149,6 +149,44 @@ class MetadataApiService {
   // Search (multiple results)
   // ---------------------------------------------------------------------------
 
+  /// Detects and normalizes an ISBN inside a user-supplied query string.
+  ///
+  /// Strips hyphens/whitespace, then accepts 10-digit ISBNs (optionally ending
+  /// in `X`) or 13-digit ISBN-13s. Free-text titles — even ones containing
+  /// digits such as a year — return `null`.
+  static String? normalizeIsbn(String? input) {
+    if (input == null) return null;
+    final compact = input
+        .replaceAll(RegExp(r'[\s-]'), '')
+        .replaceFirst(RegExp(r'^isbn:', caseSensitive: false), '');
+    final isbn10 = RegExp(r'^\d{9}[\dXx]$');
+    final isbn13 = RegExp(r'^\d{13}$');
+    if (isbn10.hasMatch(compact)) return compact.toUpperCase();
+    if (isbn13.hasMatch(compact)) return compact;
+    return null;
+  }
+
+  /// Builds the Open Library search URI for a raw query.
+  ///
+  /// ISBN-like queries must go through the free-text `q=` parameter: OL's
+  /// `title=` field filter never matches an ISBN, which used to make ISBN
+  /// auto-fetches return zero results silently.
+  static Uri openLibrarySearchUri({
+    required String query,
+    required int limit,
+  }) {
+    final isbn = normalizeIsbn(query);
+    final params = <String, String>{
+      if (isbn != null) 'q': isbn else 'title': query,
+      'limit': limit.toString(),
+      'fields':
+          'key,title,author_name,subject,publisher,isbn,published_date,number_of_pages_median,cover_i',
+    };
+
+    return Uri.parse('$_openLibraryBase/search.json')
+        .replace(queryParameters: params);
+  }
+
   /// Searches both Google Books and Open Library, returns merged results.
   static Future<List<ApiBookMetadata>> search({
     required String query,
@@ -156,8 +194,16 @@ class MetadataApiService {
   }) async {
     final results = <ApiBookMetadata>[];
 
+    // ISBN-only queries need the dedicated Google Books `isbn:` filter;
+    // a bare ISBN in plain `q=` rarely yields useable hits.
+    final isbn = normalizeIsbn(query);
+    final googleQuery = isbn != null ? 'isbn:$isbn' : query;
+
     try {
-      final gb = await _searchGoogleBooks(query: query, maxResults: maxResults);
+      final gb = await _searchGoogleBooks(
+        query: googleQuery,
+        maxResults: maxResults,
+      );
       results.addAll(gb);
     } catch (e) {
       debugPrint('MetadataApiService: Google Books search failed: $e');
@@ -437,13 +483,7 @@ class MetadataApiService {
     required String query,
     int limit = 10,
   }) async {
-    final params = <String, String>{
-      'title': query,
-      'limit': limit.toString(),
-      'fields': 'key,title,author_name,subject,publisher,isbn,published_date,number_of_pages_median,cover_i',
-    };
-
-    final uri = Uri.parse('$_openLibraryBase/search.json').replace(queryParameters: params);
+    final uri = openLibrarySearchUri(query: query, limit: limit);
 
     final client = HttpClient();
     try {
