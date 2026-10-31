@@ -1,6 +1,7 @@
 # Local Stockfish fallback binary (large; install via system package or
-# download the official build into bin/stockfish as documented in the plan)
-bin/
+# download the official build into bin/stockfish — see bin/README.md)
+bin/*
+!bin/README.md
 
 # Python caches
 __pycache__/
