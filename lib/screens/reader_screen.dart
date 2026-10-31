@@ -315,6 +315,11 @@ class ReaderScreenState extends State<ReaderScreen>
     BrightnessController.instance.apply(_settings.brightness);
     _bookmarkCtrl.loadBookmarks();
     _sessionCtrl.startSession();
+    // The reader is on screen: a process death from here (foreground task
+    // killed, backgrounded then killed by the OS, task swiped in recents)
+    // leaves this persisted key true, so the next cold start resumes.
+    _settings.readerOpenAtLastExit = true;
+    unawaited(widget.library.saveSettings());
     if (_isPdf) {
       _pdfCtrl.pdfController.addListener(_pdfCtrl.onPdfViewChanged);
     } else if (!_isComic) {
@@ -403,6 +408,9 @@ class ReaderScreenState extends State<ReaderScreen>
     _flushSave();
     _flushComicPosition();
     _settingsSaveDebounce?.cancel();
+    // Backed out of the reader before the app exited: a later close must not
+    // auto-resume. Set before the save below persists it.
+    _settings.readerOpenAtLastExit = false;
     widget.library.saveSettings();
     _pageController?.dispose();
     _disposeDrivers();

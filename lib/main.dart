@@ -198,13 +198,18 @@ class _BurrowAppState extends State<BurrowApp> {
 
   /// The book to open on top of the library at launch, or null.
   ///
-  /// Auto-resume on relaunch: with the toggle on, the most recently read,
+  /// Auto-resume on relaunch: with [ReaderSettings.autoResumeOnRelaunch] on
+  /// and a reader on screen when the app last died
+  /// ([ReaderSettings.readerOpenAtLastExit]), the most recently read,
   /// unfinished book becomes the launch target. A file deleted while the app
   /// was closed is skipped — startup here runs on the platform thread long
   /// before any UI, so a cheap sync existence check is safe and keeps a
   /// vanished book from landing the user in a reader error screen.
   Book? _launchResumeCandidate(LibraryService library) {
     if (library.settings.autoResumeOnRelaunch != true) return null;
+    // A reader the user backed out of cleared this; a kill with the reader on
+    // screen never ran the clearing dispose, so only then do we resume.
+    if (library.settings.readerOpenAtLastExit != true) return null;
     final candidate = library.mostRecent;
     if (candidate == null) return null;
     return File(candidate.path).existsSync() ? candidate : null;

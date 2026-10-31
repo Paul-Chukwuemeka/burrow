@@ -143,6 +143,17 @@ void main() {
     test('autoResumeOnRelaunch falls back to false on absent key', () {
       expect(ReaderSettings.fromJson({}).autoResumeOnRelaunch, isFalse);
     });
+
+    test('readerOpenAtLastExit defaults to false and round-trips', () {
+      expect(ReaderSettings().readerOpenAtLastExit, isFalse);
+      final s = ReaderSettings()..readerOpenAtLastExit = true;
+      final r = ReaderSettings.fromJson(s.toJson());
+      expect(r.readerOpenAtLastExit, isTrue);
+    });
+
+    test('readerOpenAtLastExit falls back to false on absent key', () {
+      expect(ReaderSettings.fromJson({}).readerOpenAtLastExit, isFalse);
+    });
   });
 
   group('ReaderTheme selection contrast', () {

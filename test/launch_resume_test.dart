@@ -115,6 +115,9 @@ void main() {
 
     // Toggle on before the app builds: _buildHome must resume from it.
     library.settings.autoResumeOnRelaunch = true;
+    // Last exit happened inside the reader (process death with it on screen,
+    // or a background kill — no Dart code ran to clear it).
+    library.settings.readerOpenAtLastExit = true;
 
     library.onboardingComplete = true;
     await tester.pumpWidget(BurrowApp(library: library, autoScanOnOpen: false));
@@ -151,6 +154,30 @@ void main() {
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
     expect(find.byType(ReaderScreen).evaluate(), isEmpty);
+
+    // Leaving the reader clears the was-open-at-exit flag: a later close from
+    // the library must not auto-resume.
+    expect(library.settings.readerOpenAtLastExit, isFalse);
+  });
+
+  testWidgets('toggle on but reader not open at last exit stays on library', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+    addTearDown(() => tester.pumpWidget(const SizedBox()));
+
+    // The toggle wants auto-resume, but the last close happened on the
+    // library screen (the reader was backed out of before the app exited),
+    // so the relaunch must open the library only.
+    library.settings.autoResumeOnRelaunch = true;
+    library.settings.readerOpenAtLastExit = false;
+
+    await pumpBurrow(tester, library);
+
+    expect(find.byType(LibraryScreen), findsOneWidget);
+    expect(find.byType(ReaderScreen).evaluate(), isEmpty);
   });
 
   testWidgets('with the toggle off (default), launch stays on the library', (
@@ -185,5 +212,34 @@ void main() {
 
     expect(find.byType(LibraryScreen), findsOneWidget);
     expect(find.byType(ReaderScreen).evaluate(), isEmpty);
+  });
+
+  testWidgets('opening the reader marks readerOpenAtLastExit', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+    addTearDown(() => tester.pumpWidget(const SizedBox()));
+
+    library.settings.readerOpenAtLastExit = false;
+    await tester.pumpWidget(
+      MaterialApp(home: ReaderScreen(book: mid, library: library)),
+    );
+    await tester.pump();
+
+    // The reader is on screen: a kill from here (foreground or background)
+    // must resume on the next cold start.
+    expect(library.settings.readerOpenAtLastExit, isTrue);
+
+    // Let the open finish so teardown isn't stuck cancelling a mid-parse
+    // document (same bounded pump the resume test above uses — a bare
+    // reader never settles for pumpAndSettle).
+    final state = tester.state<ReaderScreenState>(find.byType(ReaderScreen));
+    for (var i = 0; i < 100 && !state.debugHasDocument; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(state.debugHasDocument, isTrue);
   });
 }

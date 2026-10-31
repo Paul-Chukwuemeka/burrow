@@ -212,6 +212,7 @@ class ReaderSettings {
     this.fontFamily,
     this.keepScreenOn = false,
     this.autoResumeOnRelaunch = false,
+    this.readerOpenAtLastExit = false,
     this.brightness,
     this.volumeKeyTurns = false,
     this.pdfLayoutDirection = PdfLayoutDirection.vertical,
@@ -245,6 +246,14 @@ class ReaderSettings {
   /// When true, a relaunch (cold start) lands straight in the most recently
   /// read, unfinished book instead of the library.
   bool autoResumeOnRelaunch;
+
+  /// Whether a reader screen was on screen when the app last died.
+  ///
+  /// True while a reader is open, cleared when the reader backs out. It is
+  /// persisted under that name, so a process kill (foreground or background)
+  /// leaves it true and a close from any other screen leaves it false.
+  /// [autoResumeOnRelaunch] only resumes when this is also true.
+  bool readerOpenAtLastExit;
 
   /// Screen brightness level (0.05–1.0). Null means follow system brightness.
   double? brightness;
@@ -308,6 +317,7 @@ class ReaderSettings {
     'fontFamily': fontFamily,
     'keepScreenOn': keepScreenOn,
     'autoResumeOnRelaunch': autoResumeOnRelaunch,
+    'readerOpenAtLastExit': readerOpenAtLastExit,
     'brightness': brightness,
     'volumeKeyTurns': volumeKeyTurns,
     'pdfLayoutDirection': pdfLayoutDirection.name,
@@ -364,6 +374,7 @@ class ReaderSettings {
     fontFamily: _migrateFontFamily(json),
     keepScreenOn: json['keepScreenOn'] as bool? ?? false,
     autoResumeOnRelaunch: json['autoResumeOnRelaunch'] as bool? ?? false,
+    readerOpenAtLastExit: json['readerOpenAtLastExit'] as bool? ?? false,
     brightness: _parseBrightness(json),
     volumeKeyTurns: json['volumeKeyTurns'] as bool? ?? false,
     pdfLayoutDirection: PdfLayoutDirection.values.firstWhere(
