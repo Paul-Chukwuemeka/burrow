@@ -1,0 +1,9 @@
+# Local Stockfish fallback binary (large; install via system package or
+# download the official build into bin/stockfish as documented in the plan)
+bin/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
