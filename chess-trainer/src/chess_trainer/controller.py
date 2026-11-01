@@ -28,9 +28,15 @@ for the same position and persists the text rather than regenerating it.
 move), which lets review apply ``move_uci`` to it.  Bot moves and clean-mode
 player moves are recorded with :attr:`CoachVerdict.SILENT` and no message.
 
-The store is accepted in the constructor but deliberately untouched here:
-Task 8 wires the end-of-game save/retune hook, and until then no method may
-dereference it.  The controller is not thread-safe; the slow engine calls
+Ending a game has a side effect: the first time the controller notices that
+play is over, :meth:`GameController._finalize_game` packages the PGN, saves it
+and its stats through the store, asks :func:`chess_trainer.adapt.retune` for the
+next strength and writes that back through :attr:`Store.bot_strength`.  It runs
+exactly once per game (``new_game`` starts a fresh one), and ``finished_game``
+returns a defensive copy of the same record.  A store failure propagates: the
+caller decides whether to surface it, but a game is never silently half-saved.
+
+The controller is not thread-safe; the slow engine calls
 (``try_player_move``'s coach pass and ``bot_move``) belong on the GUI's worker
 thread, one call at a time.
 
@@ -42,21 +48,23 @@ resigning.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import chess
 import chess.pgn
 
+from chess_trainer import adapt
 from chess_trainer.coach import CoachVerdict
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from chess_trainer.bot import Bot
     from chess_trainer.coach import Coach
+    from chess_trainer.store import Store
 
-#: Starting strength when the caller has not loaded a saved value yet.  It is
-#: the same default the store uses (Stockfish skill 6.0, roughly 640 Elo).
+#: Starting strength when the store has no saved value yet.  It is the same
+#: default the store uses (Stockfish skill 6.0, roughly 640 Elo).
 DEFAULT_BOT_STRENGTH = 6.0
 
 #: Termination recorded for a resignation (python-chess has no RESIGN member).
@@ -129,13 +137,15 @@ class FinishedGame:
 class GameController:
     """Owns the board and the rules of a single game against the bot."""
 
-    def __init__(self, bot: Bot, coach: Coach, store: object) -> None:
-        # Duck-typed in tests and not used until Task 8; do not dereference it.
+    def __init__(self, bot: Bot, coach: Coach, store: Store) -> None:
         self.bot = bot
         self.coach = coach
+        #: Persistence for the end-of-game save and the adapted strength.
         self._store = store
-        #: Adapted by Task 8; ``new_game`` must not reset it.
-        self.bot_strength = DEFAULT_BOT_STRENGTH
+        #: Loaded from the store so the dial survives a restart, then adapted
+        #: after each game; ``new_game`` must not reset it.  Callers may still
+        #: override it before the first game starts.
+        self.bot_strength = self._store.bot_strength
         self.new_game(Mode.CLEAN)
 
     # -- lifecycle ---------------------------------------------------------
@@ -148,6 +158,7 @@ class GameController:
         self._annotations: list[GameAnnotation] = []
         self._resigned = False
         self.awaiting_retry = False
+        self._finished: FinishedGame | None = None
 
     # -- views -------------------------------------------------------------
 
@@ -229,6 +240,7 @@ class GameController:
                 is_player=True,
             )
         )
+        self._finalize_game()
         return PlayerMoveOutcome(
             accepted=True,
             verdict=verdict,
@@ -277,6 +289,7 @@ class GameController:
                 is_player=False,
             )
         )
+        self._finalize_game()
         return played
 
     def undo_player_move(self) -> bool:
@@ -301,6 +314,9 @@ class GameController:
     def confirm_move(self) -> None:
         """Keep the move currently on offer; the bot replies on the next tick."""
         self.awaiting_retry = False
+        # A confirmed move may have ended the game (the interruption held the
+        # board back from reporting it), so this is a possible finish point.
+        self._finalize_game()
 
     def resign(self) -> None:
         """End the game as a player loss (a no-op once the game is over)."""
@@ -310,11 +326,34 @@ class GameController:
             return
         self._resigned = True
         self.awaiting_retry = False
+        self._finalize_game()
 
     # -- game over ---------------------------------------------------------
 
     def finished_game(self) -> FinishedGame | None:
-        """The completed game, or ``None`` while play (or a retry) is pending."""
+        """The completed game, or ``None`` while play (or a retry) is pending.
+
+        The game is saved and the bot strength adapted on the first call (or
+        earlier, at the move that ended play).  Each call returns a fresh copy,
+        so callers cannot mutate the record the store already saw.
+        """
+        finished = self._finalize_game()
+        if finished is None:
+            return None
+        return replace(finished, annotations=list(finished.annotations))
+
+    # -- internals ---------------------------------------------------------
+
+    def _finalize_game(self) -> FinishedGame | None:
+        """Save, record and retune exactly once; ``None`` while play pending.
+
+        The record is built before the strength changes, so its
+        ``bot_strength`` is the strength the game was actually played at.
+        Persistence failures propagate to the caller and leave the game
+        unfinalised, so a later call can retry the whole hook.
+        """
+        if self._finished is not None:
+            return self._finished
         result = self._termination()
         if result is None:
             return None
@@ -323,7 +362,7 @@ class GameController:
         if self._resigned:
             # The board itself has no outcome; from_board would write "*".
             game.headers["Result"] = "0-1" if self.player_white else "1-0"
-        return FinishedGame(
+        finished = FinishedGame(
             pgn=str(game),
             annotations=list(self._annotations),
             is_practice=self.is_practice,
@@ -332,7 +371,16 @@ class GameController:
             result=result,
         )
 
-    # -- internals ---------------------------------------------------------
+        self._store.save(finished)
+        self._store.record_to_stats(finished)
+        results = [
+            adapt.GameResult.from_record(record)
+            for record in self._store.load_game_records()
+        ]
+        self.bot_strength = adapt.retune(self.bot_strength, results)
+        self._store.bot_strength = self.bot_strength
+        self._finished = finished
+        return finished
 
     @property
     def _player_color(self) -> chess.Color:

@@ -23,7 +23,10 @@ Two corrections to the brief, both forced by the installed python-chess
 
 from __future__ import annotations
 
+import io
+
 import chess
+import chess.pgn
 import pytest
 
 from chess_trainer.coach import CoachVerdict
@@ -36,6 +39,7 @@ from chess_trainer.controller import (
     Mode,
     PlayerMoveOutcome,
 )
+from chess_trainer.store import GameRecord, Store
 
 START = chess.STARTING_FEN
 
@@ -92,15 +96,65 @@ class StubCoach:
         return self.messages.get(played_uci, f"stub note for {played_uci}.")
 
 
-class ExplodingStore:
-    """Store stand-in that fails the test on any attribute access.
+class FakeStore:
+    """In-memory stand-in for the parts of ``Store`` the controller uses.
 
-    Task 6 accepts a store but must not touch it until Task 8 wires the
-    end-of-game hook; every test in this file runs against this object.
+    Task 8 made the controller save, record and retune at the end of every
+    game, so controller tests need a store that honours that contract without
+    touching disk.  Outcomes are derived from the PGN result header exactly as
+    the real store does, which is what makes resignations testable.
     """
 
-    def __getattr__(self, name: str) -> object:
-        raise AssertionError(f"controller dereferenced store.{name}")
+    def __init__(self, strength: float = 6.0) -> None:
+        self.saved: list[FinishedGame] = []
+        self.recorded: list[FinishedGame] = []
+        self.records: list[GameRecord] = []
+        self._strength = strength
+
+    def save(self, finished: FinishedGame) -> None:
+        self.saved.append(finished)
+
+    def record_to_stats(self, finished: FinishedGame) -> None:
+        self.recorded.append(finished)
+        self.records.append(self._record(finished))
+
+    def load_game_records(self) -> list[GameRecord]:
+        return list(self.records)
+
+    @property
+    def bot_strength(self) -> float:
+        return self._strength
+
+    @bot_strength.setter
+    def bot_strength(self, value: float) -> None:
+        self._strength = float(value)
+
+    @staticmethod
+    def _record(finished: FinishedGame) -> GameRecord:
+        game = chess.pgn.read_game(io.StringIO(finished.pgn))
+        header = game.headers.get("Result", "*") if game is not None else "*"
+        if header == "1/2-1/2":
+            outcome = "draw"
+        elif header == "1-0":
+            outcome = "win" if finished.player_white else "loss"
+        elif header == "0-1":
+            outcome = "loss" if finished.player_white else "win"
+        else:  # pragma: no cover - the controller always writes a header
+            outcome = "draw"
+        if outcome == "win":
+            margin = 5.0
+        elif outcome == "loss":
+            margin = -5.0
+        else:
+            margin = 0.0
+        return GameRecord(
+            result=outcome,
+            practice=finished.is_practice,
+            blunders=0,
+            margin=margin,
+            strength=finished.bot_strength,
+            date="",
+        )
 
 
 # --- helpers --------------------------------------------------------------
@@ -120,10 +174,13 @@ def make_controller(
     messages: dict[str, str] | None = None,
     mode: Mode = Mode.LIVE_COACH,
     player_white: bool = True,
+    store: FakeStore | None = None,
 ) -> tuple[GameController, ScriptedBot, StubCoach]:
     bot = ScriptedBot(*bot_moves)
     coach = StubCoach(verdicts, messages)
-    controller = GameController(bot, coach, ExplodingStore())
+    controller = GameController(
+        bot, coach, FakeStore() if store is None else store
+    )
     controller.new_game(mode, player_white=player_white)
     return controller, bot, coach
 
@@ -173,6 +230,15 @@ def test_default_bot_strength_is_the_store_default():
     controller, _, _ = make_controller(mode=Mode.CLEAN)
 
     assert controller.bot_strength == 6.0
+
+
+def test_the_saved_strength_is_loaded_on_construction(tmp_path):
+    store = Store(tmp_path)
+    store.bot_strength = 9.5
+
+    controller = GameController(ScriptedBot(), StubCoach(), store)
+
+    assert controller.bot_strength == 9.5
 
 
 def test_new_game_keeps_the_adapted_bot_strength():
@@ -595,20 +661,117 @@ def test_finished_game_is_a_snapshot_copy():
     assert first.annotations is not second.annotations
 
 
-def test_the_store_is_accepted_but_never_dereferenced():
-    # ExplodingStore raises on any attribute access; playing, ending and
-    # formatting a finished game must never reach for it.  Task 8 wires the
-    # end-of-game save hook into the controller.
-    exploding = ExplodingStore()
+# --- the end-of-game store hookup ------------------------------------------
+
+
+def test_resign_saves_records_and_retunes_the_strength(tmp_path):
+    store = Store(tmp_path)
+    controller = GameController(ScriptedBot(), StubCoach(), store)
+    controller.new_game(Mode.CLEAN, player_white=True)
+
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    stats = store.load_stats()
+    assert stats.total == 1
+    assert stats.losses == 1
+    assert stats.practice_total == 0
+    # The record carries the strength the game was played at; the live dial
+    # has already moved down after the loss.
+    assert finished.bot_strength == 6.0
+    assert controller.bot_strength < 6.0
+    assert store.bot_strength == controller.bot_strength
+    assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
+
+
+def test_the_game_is_recorded_when_the_player_is_checkmated(tmp_path):
+    # Player is White and gets mated by the scripted bot, so the save happens
+    # from the move path, not from resign().
+    store = Store(tmp_path)
     controller = GameController(
-        ScriptedBot("f2f3", "g2g4"), StubCoach(), exploding
+        ScriptedBot("e7e5", "d8h4"), StubCoach(), store
+    )
+    controller.new_game(Mode.CLEAN, player_white=True)
+    assert controller.try_player_move("f2f3").accepted is True
+    assert controller.bot_move() == "e7e5"
+    assert controller.try_player_move("g2g4").accepted is True
+    assert controller.bot_move() == "d8h4"
+
+    stats = store.load_stats()
+    assert stats.total == 1
+    assert stats.losses == 1
+    assert store.bot_strength < 6.0
+
+
+def test_the_game_is_recorded_when_the_player_wins(tmp_path):
+    # Player is Black and delivers Fool's mate through try_player_move.
+    store = Store(tmp_path)
+    controller = GameController(
+        ScriptedBot("f2f3", "g2g4"), StubCoach(), store
     )
     controller.new_game(Mode.CLEAN, player_white=False)
-    controller.bot_move()
-    controller.try_player_move("e7e5")
-    controller.bot_move()
-    controller.try_player_move("d8h4")
-    assert controller.finished_game() is not None
+    assert controller.bot_move() == "f2f3"
+    assert controller.try_player_move("e7e5").accepted is True
+    assert controller.bot_move() == "g2g4"
+    assert controller.try_player_move("d8h4").accepted is True
+
+    stats = store.load_stats()
+    assert stats.total == 1
+    assert stats.wins == 1
+    assert store.bot_strength > 6.0
+
+
+def test_finished_game_finalises_only_once(tmp_path):
+    store = Store(tmp_path)
+    controller = GameController(ScriptedBot(), StubCoach(), store)
+    controller.new_game(Mode.CLEAN)
+
+    controller.resign()
+    first = controller.finished_game()
+    second = controller.finished_game()
+
+    assert first == second
+    assert first is not None and second is not None
+    assert first.annotations is not second.annotations
+    assert store.load_stats().total == 1
+    assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
+    # Repeating the query must not retune a second time.
+    assert controller.bot_strength == store.bot_strength
+
+
+def test_the_adapted_strength_survives_a_controller_restart(tmp_path):
+    store = Store(tmp_path)
+    first = GameController(ScriptedBot(), StubCoach(), store)
+    first.new_game(Mode.CLEAN)
+    first.resign()
+    adapted = first.bot_strength
+
+    restarted = GameController(ScriptedBot(), StubCoach(), store)
+
+    assert adapted < 6.0
+    assert restarted.bot_strength == adapted
+
+
+def test_practice_games_are_saved_with_the_practice_flag(tmp_path):
+    store = Store(tmp_path)
+    controller = GameController(
+        ScriptedBot(), StubCoach(verdicts={"e2e4": CoachVerdict.BLUNDER}), store
+    )
+    controller.new_game(Mode.LIVE_COACH)
+    controller.try_player_move("e2e4")
+    controller.confirm_move()
+
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    stats = store.load_stats()
+    assert stats.total == 1
+    assert stats.practice_total == 1
+    assert store.load_game_records()[0].practice is True
+    sidecars = list((tmp_path / "games").rglob("*.annotations.json"))
+    assert len(sidecars) == 1
 
 
 # --- take-back restores special moves exactly ------------------------------
