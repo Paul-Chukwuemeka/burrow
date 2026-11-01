@@ -39,7 +39,7 @@ from chess_trainer.controller import (
     Mode,
     PlayerMoveOutcome,
 )
-from chess_trainer.store import GameRecord, Store
+from chess_trainer.store import DEFAULT_BOT_STRENGTH, GameRecord, Store
 
 START = chess.STARTING_FEN
 
@@ -157,6 +157,61 @@ class FakeStore:
         )
 
 
+class StrengthlessStore:
+    """Minimal duck-typed store with no strength dial.
+
+    Task 6 accepted any store-shaped object; Task 8 reads the saved strength at
+    construction, so this guard keeps such a store working (it falls back to
+    the shared default instead of raising ``AttributeError``).
+    """
+
+    def __init__(self) -> None:
+        self.saved: list[FinishedGame] = []
+        self.recorded: list[FinishedGame] = []
+
+    def save(self, finished: FinishedGame) -> None:
+        self.saved.append(finished)
+
+    def record_to_stats(self, finished: FinishedGame) -> None:
+        self.recorded.append(finished)
+
+    def load_game_records(self) -> list[GameRecord]:
+        return []
+
+
+class FlakyStrengthStore(Store):
+    """A real store whose first strength write fails, as on a full disk."""
+
+    def __init__(self, data_dir) -> None:
+        super().__init__(data_dir)
+        self.write_attempts = 0
+
+    @property
+    def bot_strength(self) -> float:
+        return Store.bot_strength.fget(self)  # type: ignore[attr-defined]
+
+    @bot_strength.setter
+    def bot_strength(self, value: float) -> None:
+        self.write_attempts += 1
+        if self.write_attempts == 1:
+            raise OSError("disk full")
+        Store.bot_strength.fset(self, value)  # type: ignore[attr-defined]
+
+
+class FlakyRecordStore(Store):
+    """A real store whose first stats append fails, as on a full disk."""
+
+    def __init__(self, data_dir) -> None:
+        super().__init__(data_dir)
+        self.record_attempts = 0
+
+    def record_to_stats(self, finished: FinishedGame) -> None:
+        self.record_attempts += 1
+        if self.record_attempts == 1:
+            raise OSError("disk full")
+        super().record_to_stats(finished)
+
+
 # --- helpers --------------------------------------------------------------
 
 
@@ -239,6 +294,18 @@ def test_the_saved_strength_is_loaded_on_construction(tmp_path):
     controller = GameController(ScriptedBot(), StubCoach(), store)
 
     assert controller.bot_strength == 9.5
+
+
+def test_a_duck_typed_store_without_a_strength_dial_still_constructs():
+    # Task 6 accepted any store-shaped object.  Loading the saved dial must
+    # degrade to the shared default rather than reject such a store.
+    controller = GameController(ScriptedBot(), StubCoach(), StrengthlessStore())
+
+    assert controller.bot_strength == DEFAULT_BOT_STRENGTH
+
+    # Ordinary play stays store-free until the game actually ends.
+    controller.new_game(Mode.CLEAN)
+    assert controller.try_player_move("e2e4").accepted is True
 
 
 def test_new_game_keeps_the_adapted_bot_strength():
@@ -664,6 +731,20 @@ def test_finished_game_is_a_snapshot_copy():
 # --- the end-of-game store hookup ------------------------------------------
 
 
+def test_a_non_terminal_move_writes_nothing(tmp_path):
+    store = Store(tmp_path)
+    store.bot_strength = 7.25
+    controller = GameController(ScriptedBot("e7e5"), StubCoach(), store)
+    controller.new_game(Mode.CLEAN)
+
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    assert store.load_stats().total == 0
+    assert list((tmp_path / "games").rglob("*.pgn")) == []
+    assert store.bot_strength == 7.25
+
+
 def test_resign_saves_records_and_retunes_the_strength(tmp_path):
     store = Store(tmp_path)
     controller = GameController(ScriptedBot(), StubCoach(), store)
@@ -751,6 +832,55 @@ def test_the_adapted_strength_survives_a_controller_restart(tmp_path):
 
     assert adapted < 6.0
     assert restarted.bot_strength == adapted
+
+
+def test_a_failed_strength_write_does_not_duplicate_the_game(tmp_path):
+    store = FlakyStrengthStore(tmp_path)
+    controller = GameController(ScriptedBot(), StubCoach(), store)
+    controller.new_game(Mode.CLEAN)
+
+    # resign() finalises immediately, so the write failure surfaces there.
+    with pytest.raises(OSError):
+        controller.resign()
+
+    assert store.load_stats().total == 1
+    assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
+    assert store.write_attempts == 1
+    # The dial stays stale on both sides rather than adapting twice.
+    assert store.bot_strength == DEFAULT_BOT_STRENGTH
+    assert controller.bot_strength == DEFAULT_BOT_STRENGTH
+
+    # The record is cached: asking again must not save, record, or retry the
+    # strength write.
+    finished = controller.finished_game()
+
+    assert finished is not None
+    assert store.load_stats().total == 1
+    assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
+    assert store.write_attempts == 1
+    assert store.bot_strength == DEFAULT_BOT_STRENGTH
+
+
+def test_a_failed_record_is_retried_without_saving_the_pgn_twice(tmp_path):
+    store = FlakyRecordStore(tmp_path)
+    controller = GameController(ScriptedBot(), StubCoach(), store)
+    controller.new_game(Mode.CLEAN)
+
+    with pytest.raises(OSError):
+        controller.resign()
+
+    assert store.record_attempts == 1
+    assert store.load_stats().total == 0
+    # The PGN from the first attempt is kept and not written again.
+    assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
+
+    finished = controller.finished_game()
+
+    assert finished is not None
+    assert store.record_attempts == 2
+    assert store.load_stats().total == 1
+    assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
+    assert controller.bot_strength == store.bot_strength
 
 
 def test_practice_games_are_saved_with_the_practice_flag(tmp_path):

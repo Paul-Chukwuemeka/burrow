@@ -31,10 +31,14 @@ player moves are recorded with :attr:`CoachVerdict.SILENT` and no message.
 Ending a game has a side effect: the first time the controller notices that
 play is over, :meth:`GameController._finalize_game` packages the PGN, saves it
 and its stats through the store, asks :func:`chess_trainer.adapt.retune` for the
-next strength and writes that back through :attr:`Store.bot_strength`.  It runs
-exactly once per game (``new_game`` starts a fresh one), and ``finished_game``
-returns a defensive copy of the same record.  A store failure propagates: the
-caller decides whether to surface it, but a game is never silently half-saved.
+next strength and writes that back through :attr:`Store.bot_strength`.  The PGN
+save and the stats record are each marked done as soon as they succeed and are
+never repeated for the same game; the finished record is cached as soon as the
+stats record lands, before the strength is retuned.  A store failure still
+propagates to the caller: a failed save or record is retried (only the failed
+step) on a later call, while a failed strength write leaves the game recorded
+exactly once and the saved dial stale.  ``finished_game`` returns a defensive
+copy of the cached record, and ``new_game`` starts a fresh one.
 
 The controller is not thread-safe; the slow engine calls
 (``try_player_move``'s coach pass and ``bot_move``) belong on the GUI's worker
@@ -57,15 +61,12 @@ import chess.pgn
 
 from chess_trainer import adapt
 from chess_trainer.coach import CoachVerdict
+from chess_trainer.store import DEFAULT_BOT_STRENGTH
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from chess_trainer.bot import Bot
     from chess_trainer.coach import Coach
     from chess_trainer.store import Store
-
-#: Starting strength when the store has no saved value yet.  It is the same
-#: default the store uses (Stockfish skill 6.0, roughly 640 Elo).
-DEFAULT_BOT_STRENGTH = 6.0
 
 #: Termination recorded for a resignation (python-chess has no RESIGN member).
 RESIGNATION: chess.Termination = chess.Termination.VARIANT_LOSS
@@ -144,8 +145,12 @@ class GameController:
         self._store = store
         #: Loaded from the store so the dial survives a restart, then adapted
         #: after each game; ``new_game`` must not reset it.  Callers may still
-        #: override it before the first game starts.
-        self.bot_strength = self._store.bot_strength
+        #: override it before the first game starts.  Duck-typed stores that do
+        #: not track a dial fall back to the shared default rather than failing
+        #: at construction.
+        self.bot_strength = getattr(
+            self._store, "bot_strength", DEFAULT_BOT_STRENGTH
+        )
         self.new_game(Mode.CLEAN)
 
     # -- lifecycle ---------------------------------------------------------
@@ -159,6 +164,11 @@ class GameController:
         self._resigned = False
         self.awaiting_retry = False
         self._finished: FinishedGame | None = None
+        #: Persistence steps already completed for this game.  They are set
+        #: only after the store call returns, so a retry resumes at the step
+        #: that failed instead of writing the game twice.
+        self._saved = False
+        self._recorded = False
 
     # -- views -------------------------------------------------------------
 
@@ -345,12 +355,16 @@ class GameController:
     # -- internals ---------------------------------------------------------
 
     def _finalize_game(self) -> FinishedGame | None:
-        """Save, record and retune exactly once; ``None`` while play pending.
+        """Save, record and retune once; ``None`` while play is pending.
 
         The record is built before the strength changes, so its
         ``bot_strength`` is the strength the game was actually played at.
-        Persistence failures propagate to the caller and leave the game
-        unfinalised, so a later call can retry the whole hook.
+        Save and record are skipped once they have succeeded, so a failure in
+        either is retried on a later call without repeating the other.  The
+        record is cached as soon as the stats record lands, before the
+        strength is read or written: if adapting or writing fails, the game
+        still stays recorded exactly once and the saved dial is simply left
+        unchanged.
         """
         if self._finished is not None:
             return self._finished
@@ -371,15 +385,24 @@ class GameController:
             result=result,
         )
 
-        self._store.save(finished)
-        self._store.record_to_stats(finished)
+        if not self._saved:
+            self._store.save(finished)
+            self._saved = True
+        if not self._recorded:
+            self._store.record_to_stats(finished)
+            self._recorded = True
+
+        # The game now exists on disk exactly once.  Cache it before adapting
+        # so a failed strength write cannot make a later call record it again;
+        # the saved dial stays stale until a future game retunes from it.
+        self._finished = finished
         results = [
             adapt.GameResult.from_record(record)
             for record in self._store.load_game_records()
         ]
-        self.bot_strength = adapt.retune(self.bot_strength, results)
-        self._store.bot_strength = self.bot_strength
-        self._finished = finished
+        next_strength = adapt.retune(self.bot_strength, results)
+        self._store.bot_strength = next_strength
+        self.bot_strength = next_strength
         return finished
 
     @property
