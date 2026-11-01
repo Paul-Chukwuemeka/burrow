@@ -34,6 +34,10 @@ DEFAULT_DEPTH = 12
 #: Number of principal variations requested from the engine.
 MULTIPV = 3
 
+#: Stockfish's full-strength Skill Level and documented default.  Restoring it
+#: puts the engine back in its out-of-the-box state.
+FULL_SKILL = 20
+
 _STOCKFISH_ENV_HINT = (
     "Install Stockfish and put it on PATH, pass an explicit path to Engine(), "
     "or see chess-trainer/bin/README.md for the vendored binary."
@@ -130,6 +134,7 @@ class Engine:
         self.path = _find_stockfish(path)
         self._engine = chess.engine.SimpleEngine.popen_uci(self.path)
         self._closed = False
+        self._skill_level = FULL_SKILL
 
     def __enter__(self) -> Self:
         return self
@@ -142,6 +147,44 @@ class Engine:
         if not self._closed:
             self._closed = True
             self._engine.quit()
+
+    def set_skill(self, level: int) -> None:
+        """Set Stockfish's Skill Level (0-20) for subsequent searches.
+
+        :data:`FULL_SKILL` is Stockfish's documented default, so restoring it
+        puts the engine back in its out-of-the-box state (python-chess refuses
+        to unset "spin" options, so the default is set explicitly).  Calling
+        this repeatedly with the level already in force is a no-op, so callers
+        can restore skill unconditionally.  Raises ``RuntimeError`` once
+        :meth:`close` has run.
+        """
+        self._ensure_open()
+        if not 0 <= level <= FULL_SKILL:
+            raise ValueError(
+                f"skill level must be between 0 and {FULL_SKILL}, got {level}"
+            )
+        if level == self._skill_level:
+            return
+        self._engine.configure({"Skill Level": level})
+        self._skill_level = level
+
+    def play(self, board: chess.Board, time_s: float = 0.3) -> str:
+        """Return the engine's move for ``board`` as UCI, searching ``time_s``.
+
+        Uses whatever Skill Level is currently configured (see
+        :meth:`set_skill`).  Raises ``ValueError`` when the position has no
+        legal moves and ``RuntimeError`` once :meth:`close` has run.
+        """
+        self._ensure_open()
+        result = self._engine.play(board, chess.engine.Limit(time=time_s))
+        if result.move is None:
+            raise ValueError(f"no legal moves in position: {board.fen()!r}")
+        return result.move.uci()
+
+    def _ensure_open(self) -> None:
+        """Guard for methods that assume a live engine process."""
+        if self._closed:
+            raise RuntimeError("engine has been closed")
 
     def top_moves(self, fen: str, depth: int = DEFAULT_DEPTH) -> list[EngineMove]:
         """Return up to three best moves for ``fen``, best first.

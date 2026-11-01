@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 import chess
-import chess.engine
 import pytest
 
 from chess_trainer.bot import Bot, slack, weak_prob
@@ -44,30 +44,22 @@ def _walk_fens(count: int = 40) -> list[str]:
 FEN_SAMPLES = _walk_fens()
 
 
-class _StubInner:
-    """Stand-in for ``chess.engine.SimpleEngine`` (only the used API)."""
-
-    def __init__(self, play_uci: str | None) -> None:
-        self.play_uci = play_uci
-        self.skill_levels: list[int] = []
-
-    def configure(self, options: dict[str, object]) -> None:
-        self.skill_levels.append(int(options["Skill Level"]))  # type: ignore[arg-type]
-
-    def play(
-        self, board: chess.Board, limit: chess.engine.Limit
-    ) -> chess.engine.PlayResult:
-        move = chess.Move.from_uci(self.play_uci) if self.play_uci else None
-        return chess.engine.PlayResult(move, None)
-
-
 class StubEngine:
-    """Duck-typed ``Engine``: canned play result and top moves, no Stockfish."""
+    """Duck-typed ``Engine``: canned moves, no Stockfish process."""
 
     def __init__(self, play_uci: str | None, top_moves: list[EngineMove]) -> None:
-        self._engine = _StubInner(play_uci)
-        self._top_moves = list(top_moves)
+        self.play_uci = play_uci
+        self.skill_levels: list[int] = []
+        self.play_calls = 0
         self.top_moves_calls = 0
+        self._top_moves = list(top_moves)
+
+    def set_skill(self, level: int) -> None:
+        self.skill_levels.append(level)
+
+    def play(self, board: chess.Board, time_s: float = 0.3) -> str | None:
+        self.play_calls += 1
+        return self.play_uci
 
     def top_moves(self, fen: str, depth: int = 12) -> list[EngineMove]:
         self.top_moves_calls += 1
@@ -185,21 +177,30 @@ def test_choose_move_sets_and_restores_skill_level():
     bot.choose_move(chess.Board(), 7.9, seed=0)
     # int(7.9) == 7 while playing, and full strength is restored afterwards so
     # the coach can keep using the same Engine instance.
-    assert bot.engine._engine.skill_levels == [7, 20]  # type: ignore[attr-defined]
+    assert bot.engine.skill_levels == [7, 20]
 
 
 def test_choose_move_restores_skill_level_after_engine_error():
     engine = StubEngine("g1f3", [])
 
-    def boom(board: chess.Board, limit: chess.engine.Limit) -> None:
+    def boom(board: chess.Board, time_s: float = 0.3) -> str:
         raise RuntimeError("engine exploded")
 
-    engine._engine.play = boom  # type: ignore[method-assign]
+    engine.play = boom  # type: ignore[method-assign]
     bot = Bot(engine)
 
     with pytest.raises(RuntimeError, match="exploded"):
         bot.choose_move(chess.Board(), 5, seed=0)
-    assert engine._engine.skill_levels == [5, 20]
+    assert engine.skill_levels == [5, 20]
+
+
+def test_bot_uses_only_public_engine_surface():
+    source = (
+        Path(__file__).resolve().parents[2] / "src" / "chess_trainer" / "bot.py"
+    ).read_text(encoding="utf-8")
+    assert "_engine" not in source, "Bot must not reach into Engine internals"
+    assert "set_skill(" in source
+    assert ".play(" in source
 
 
 def test_choose_move_seed_is_reproducible():

@@ -3,10 +3,12 @@
 Stockfish's own strength floor is roughly 1320 Elo, well above the ~570 the
 first user plays at, so this module weakens it in two layers:
 
-1. **Skill-limited search.**  The engine's ``Skill Level`` option is set to
-   ``int(strength)`` for one 0.3 s search.  Even at high skill this already
-   misses some tactics; the option is restored to full strength afterwards so
-   the coach can share the same :class:`~chess_trainer.engine.Engine`.
+1. **Skill-limited search.**  The engine's Skill Level is set to
+   ``int(strength)`` for one 0.3 s search through
+   :meth:`Engine.set_skill <chess_trainer.engine.Engine.set_skill>` and
+   :meth:`Engine.play <chess_trainer.engine.Engine.play>`.  Even at high skill
+   this already misses some tactics; the option is restored to full strength
+   afterwards so the coach can share the same Engine.
 2. **A humanlike error model.**  With probability :func:`weak_prob` the move
    from layer 1 is replaced by one of the engine's top three moves, restricted
    to choices that give up at most :func:`slack` centipawns against the best
@@ -23,7 +25,6 @@ import random
 from typing import TYPE_CHECKING
 
 import chess
-import chess.engine
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from chess_trainer.engine import Engine
@@ -105,7 +106,7 @@ class Bot:
 
         rng = random.Random(seed) if seed is not None else self._rng
 
-        best_effort = self._engine_move(board, strength)
+        best_effort = self._base_move(board, strength)
         if rng.random() < weak_prob(strength):
             weaker = self._weak_move(board, strength, rng)
             if weaker is not None:
@@ -117,33 +118,20 @@ class Bot:
         # lookalike misbehaves.
         return rng.choice(legal).uci()
 
-    def _inner(self) -> chess.engine.SimpleEngine:
-        """Return the underlying python-chess engine.
-
-        :class:`~chess_trainer.engine.Engine` does not expose its SimpleEngine,
-        and the Skill Level knob is only reachable through it, so this breaks
-        the encapsulation in one documented place.
-        """
-        inner = getattr(self.engine, "_engine", None)
-        if inner is None or not hasattr(inner, "play"):
-            raise TypeError(
-                "Bot needs a chess_trainer.engine.Engine (or a lookalike with "
-                f"an ._engine, .play and .top_moves); got {type(self.engine).__name__}"
-            )
-        return inner
-
-    def _engine_move(self, board: chess.Board, strength: float) -> chess.Move | None:
+    def _base_move(self, board: chess.Board, strength: float) -> chess.Move | None:
         """The skill-limited search's move, with Skill Level restored after."""
-        inner = self._inner()
         skill = max(MIN_SKILL, min(MAX_SKILL, int(strength)))
         try:
-            inner.configure({"Skill Level": skill})
-            result = inner.play(board, chess.engine.Limit(time=MOVE_TIME))
+            self.engine.set_skill(skill)
+            uci = self.engine.play(board, MOVE_TIME)
         finally:
             # The coach analyses through the same Engine; leaving it crippled
             # would quietly degrade every post-game review.
-            inner.configure({"Skill Level": MAX_SKILL})
-        return result.move
+            self.engine.set_skill(MAX_SKILL)
+        try:
+            return chess.Move.from_uci(uci)
+        except ValueError:  # pragma: no cover - engine emits valid UCI
+            return None
 
     def _weak_move(
         self, board: chess.Board, strength: float, rng: random.Random

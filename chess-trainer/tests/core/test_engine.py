@@ -1,5 +1,6 @@
 """Tests for the Stockfish wrapper used by the coach and the GUI."""
 
+import chess
 import pytest
 
 from chess_trainer.engine import DEFAULT_DEPTH, Engine, MoveAnalysis
@@ -124,3 +125,34 @@ def test_close_is_idempotent():
 def test_context_manager_closes_engine():
     with Engine() as e:
         assert e.path
+
+
+def test_set_skill_and_play_round_trip():
+    engine = Engine()
+    try:
+        with pytest.raises(ValueError):
+            engine.set_skill(21)
+
+        engine.set_skill(5)
+        engine.set_skill(5)  # idempotent: same level is a no-op
+        board = chess.Board()
+        uci = engine.play(board, time_s=0.5)
+        assert uci in [move.uci() for move in board.legal_moves]
+
+        # 20 is Stockfish's default: restoring it must leave the engine usable.
+        engine.set_skill(20)
+        engine.set_skill(20)
+        assert engine.best(chess.STARTING_FEN, depth=8).uci in [
+            move.uci() for move in board.legal_moves
+        ]
+        assert engine.play(board, time_s=0.5) in [
+            move.uci() for move in board.legal_moves
+        ]
+    finally:
+        engine.close()
+
+    # Both new methods share close()'s lifecycle guard.
+    with pytest.raises(RuntimeError):
+        engine.set_skill(5)
+    with pytest.raises(RuntimeError):
+        engine.play(chess.Board())
