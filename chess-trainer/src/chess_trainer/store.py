@@ -49,17 +49,19 @@ from typing import TYPE_CHECKING, Any
 import chess
 import chess.pgn
 
+from chess_trainer.adapt import MAX_STRENGTH, MIN_STRENGTH
 from chess_trainer.coach import CoachVerdict
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from chess_trainer.controller import FinishedGame
 
-#: Starting / fallback bot strength (Stockfish skill 6.0, roughly 640 Elo).
-DEFAULT_BOT_STRENGTH = 6.0
+#: Starting / fallback bot strength (Stockfish skill 1.8, roughly 640 Elo).
+DEFAULT_BOT_STRENGTH = 1.8
 
-#: Stockfish ``Skill Level`` range, the scale stored in ``bot.json``.
-MIN_BOT_STRENGTH = 0.0
-MAX_BOT_STRENGTH = 20.0
+#: Stockfish ``Skill Level`` range, the scale stored in ``bot.json``.  The
+#: ceiling is adaptation's humanlike limit, the single source of truth.
+MIN_BOT_STRENGTH = MIN_STRENGTH
+MAX_BOT_STRENGTH = MAX_STRENGTH
 
 #: The one default location, resolved relative to the package::
 #:
@@ -518,7 +520,14 @@ class Store:
 
     @property
     def bot_strength(self) -> float:
-        """The saved strength, or the 640-Elo default when unreadable."""
+        """The saved strength, clamped to the humanlike range.
+
+        An unreadable or non-numeric file falls back to the 640-Elo default.
+        A finite number -- including a legacy file written under the old
+        20-point ceiling -- is clamped into ``[0.0, 14.0]`` instead of being
+        rejected, so a corrupt or stale ``bot.json`` cannot field an
+        above-ceiling bot for one game.
+        """
         try:
             raw = json.loads(self._bot_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -526,7 +535,8 @@ class Store:
         if isinstance(raw, dict):
             # Tolerate a future ``{"strength": ...}`` shape.
             raw = raw.get("strength")
-        return _as_strength(raw, default=DEFAULT_BOT_STRENGTH)
+        number = _as_float(raw, default=DEFAULT_BOT_STRENGTH)
+        return min(max(number, MIN_BOT_STRENGTH), MAX_BOT_STRENGTH)
 
     @bot_strength.setter
     def bot_strength(self, value: float) -> None:

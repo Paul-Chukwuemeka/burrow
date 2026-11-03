@@ -32,7 +32,14 @@ import pytest
 from chess_trainer import store as store_module
 from chess_trainer.coach import CoachVerdict
 from chess_trainer.controller import RESIGNATION, FinishedGame, GameAnnotation
-from chess_trainer.store import DEFAULT_BOT_STRENGTH, GameRecord, StatsFile, Store
+from chess_trainer.store import (
+    DEFAULT_BOT_STRENGTH,
+    MAX_BOT_STRENGTH,
+    MIN_BOT_STRENGTH,
+    GameRecord,
+    StatsFile,
+    Store,
+)
 
 START = chess.STARTING_FEN
 
@@ -127,7 +134,7 @@ def test_default_data_dir_is_the_package_data_folder() -> None:
     # Only the path is inspected: no store is constructed, so the real data
     # directory is never created or written by the tests.
     expected = Path(store_module.__file__).resolve().parents[2] / "data"
-    assert DEFAULT_BOT_STRENGTH == 6.0
+    assert DEFAULT_BOT_STRENGTH == 1.8
     assert store_module.DEFAULT_DATA_DIR == expected
     assert store_module.DEFAULT_DATA_DIR.parent.name == "chess-trainer"
     assert store_module.DEFAULT_DATA_DIR.name == "data"
@@ -498,9 +505,9 @@ def test_stats_json_shape_matches_schema(tmp_path: Path) -> None:
 # --- bot strength ---------------------------------------------------------
 
 
-def test_bot_strength_defaults_to_6(tmp_path: Path) -> None:
+def test_bot_strength_defaults_to_the_shared_default(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    assert store.bot_strength == 6.0
+    assert store.bot_strength == 1.8
     assert store.bot_strength == DEFAULT_BOT_STRENGTH
 
 
@@ -520,9 +527,6 @@ def test_bot_strength_persists_across_instances(tmp_path: Path) -> None:
         '"high"',
         "[]",
         "null",
-        "42",
-        "-3",
-        "21",
         "NaN",
     ],
 )
@@ -531,6 +535,31 @@ def test_corrupt_bot_file_yields_default(
 ) -> None:
     (tmp_path / "bot.json").write_text(content, encoding="utf-8")
     assert Store(tmp_path).bot_strength == DEFAULT_BOT_STRENGTH
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("42", MAX_BOT_STRENGTH),
+        ("21", MAX_BOT_STRENGTH),
+        ("-3", MIN_BOT_STRENGTH),
+        ('{"strength": 18}', MAX_BOT_STRENGTH),
+    ],
+)
+def test_out_of_range_bot_strength_is_clamped(
+    tmp_path: Path, content: str, expected: float
+) -> None:
+    # A legacy file may hold a value from the old 20-point ceiling.  It is
+    # clamped, not accepted: the bot must never play above the humanlike limit.
+    (tmp_path / "bot.json").write_text(content, encoding="utf-8")
+    assert Store(tmp_path).bot_strength == expected
+
+
+def test_store_ceiling_matches_adaptation() -> None:
+    from chess_trainer.adapt import MAX_STRENGTH, MIN_STRENGTH
+
+    assert MAX_BOT_STRENGTH == MAX_STRENGTH == 14.0
+    assert MIN_BOT_STRENGTH == MIN_STRENGTH == 0.0
 
 
 # --- trend view for the stats screen -------------------------------------

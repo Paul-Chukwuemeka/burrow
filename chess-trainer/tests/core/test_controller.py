@@ -105,7 +105,7 @@ class FakeStore:
     the real store does, which is what makes resignations testable.
     """
 
-    def __init__(self, strength: float = 6.0) -> None:
+    def __init__(self, strength: float = DEFAULT_BOT_STRENGTH) -> None:
         self.saved: list[FinishedGame] = []
         self.recorded: list[FinishedGame] = []
         self.records: list[GameRecord] = []
@@ -284,7 +284,7 @@ def test_new_game_resets_the_board_and_pending_state():
 def test_default_bot_strength_is_the_store_default():
     controller, _, _ = make_controller(mode=Mode.CLEAN)
 
-    assert controller.bot_strength == 6.0
+    assert controller.bot_strength == DEFAULT_BOT_STRENGTH
 
 
 def test_the_saved_strength_is_loaded_on_construction(tmp_path):
@@ -371,7 +371,7 @@ def test_bot_reply_is_appended_and_annotated():
     assert bot_annotation.move_uci == "e7e5"
     assert bot_annotation.verdict is CoachVerdict.SILENT
     assert bot_annotation.message is None
-    assert bot.calls == [(play_uci("e2e4").fen(), 6.0)]
+    assert bot.calls == [(play_uci("e2e4").fen(), DEFAULT_BOT_STRENGTH)]
     # The coach only looks at the player's moves.
     assert len(coach.calls) == calls_before
 
@@ -615,7 +615,7 @@ def test_resign_finishes_a_practice_game_as_a_player_loss():
     assert finished.result is RESIGNATION
     assert finished.is_practice is True
     assert finished.player_white is True
-    assert finished.bot_strength == 6.0
+    assert finished.bot_strength == DEFAULT_BOT_STRENGTH
     assert [a.move_uci for a in finished.annotations] == ["e2e4"]
     assert '[Result "0-1"]' in finished.pgn
     assert "1. e4" in finished.pgn
@@ -763,8 +763,8 @@ def test_resign_saves_records_and_retunes_the_strength(tmp_path):
     assert stats.practice_total == 0
     # The record carries the strength the game was played at; the live dial
     # has already moved down after the loss.
-    assert finished.bot_strength == 6.0
-    assert controller.bot_strength < 6.0
+    assert finished.bot_strength == DEFAULT_BOT_STRENGTH
+    assert controller.bot_strength < DEFAULT_BOT_STRENGTH
     assert store.bot_strength == controller.bot_strength
     assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
 
@@ -785,7 +785,7 @@ def test_the_game_is_recorded_when_the_player_is_checkmated(tmp_path):
     stats = store.load_stats()
     assert stats.total == 1
     assert stats.losses == 1
-    assert store.bot_strength < 6.0
+    assert store.bot_strength < DEFAULT_BOT_STRENGTH
 
 
 def test_the_game_is_recorded_when_the_player_wins(tmp_path):
@@ -803,7 +803,7 @@ def test_the_game_is_recorded_when_the_player_wins(tmp_path):
     stats = store.load_stats()
     assert stats.total == 1
     assert stats.wins == 1
-    assert store.bot_strength > 6.0
+    assert store.bot_strength > DEFAULT_BOT_STRENGTH
 
 
 def test_finished_game_finalises_only_once(tmp_path):
@@ -833,7 +833,7 @@ def test_the_adapted_strength_survives_a_controller_restart(tmp_path):
 
     restarted = GameController(ScriptedBot(), StubCoach(), store)
 
-    assert adapted < 6.0
+    assert adapted < DEFAULT_BOT_STRENGTH
     assert restarted.bot_strength == adapted
 
 

@@ -10,6 +10,7 @@ import pytest
 
 from chess_trainer.bot import Bot, slack, weak_prob
 from chess_trainer.engine import Engine, EngineMove
+from chess_trainer.store import DEFAULT_BOT_STRENGTH
 
 #: At strength 20 the bot must stay close to the engine's first choice.
 HIGH_STRENGTH_SLACK = 45
@@ -83,6 +84,14 @@ def test_estimate_elo_tracks_strength():
     ratings = [bot.estimate_elo(strength) for strength in range(21)]
     assert ratings == sorted(ratings)
     assert ratings[10] == 1500
+
+
+def test_default_strength_lands_in_the_spec_band():
+    # Spec: starts near rapid ~570-700, displayed as "Bot ≈ 640".
+    assert DEFAULT_BOT_STRENGTH == 1.8
+    elo = Bot.estimate_elo(DEFAULT_BOT_STRENGTH)
+    assert elo == 639
+    assert 570 <= elo <= 700
 
 
 def test_weak_prob_climbs_as_strength_falls():
