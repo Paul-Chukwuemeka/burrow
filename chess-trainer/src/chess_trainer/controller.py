@@ -19,26 +19,37 @@ client of this module, so the state machine here is the contract:
 * ``finished_game`` packages the PGN plus annotations for the store.
 
 A taken-back move leaves no annotation behind, so confirming a retry cannot
-double-record the blunder.  Annotations store the coach's sentence next to
+double-record the blunder.  It is not forgotten, though: the rollback counts
+one ``attempted_blunders`` on the finished game, because the spec says a move
+the player blundered and took back is still recorded as made.  Annotations
+store the coach's sentence next to
 the move: the coach's analysis cache is single-entry and unsynchronised, so
 the controller always calls ``evaluate`` immediately followed by ``message``
 for the same position and persists the text rather than regenerating it.
 
 ``GameAnnotation.fen`` is the position the move was played *in* (before the
-move), which lets review apply ``move_uci`` to it.  Bot moves and clean-mode
-player moves are recorded with :attr:`CoachVerdict.SILENT` and no message.
+move), which lets review apply ``move_uci`` to it.  While a game is in
+progress, bot moves and clean-mode player moves are recorded with
+:attr:`CoachVerdict.SILENT` and no message.  At finalisation a review pass
+re-evaluates every move that still lacks a non-silent note -- all plies in a
+clean game, and the bot's plies in a practice game -- at the review depth and
+writes the verdict and sentence into the annotation.  Player moves the live
+coach already evaluated keep their sentence verbatim; the pass never
+regenerates them (and never opens a new take-back offer).
 
 Ending a game has a side effect: the first time the controller notices that
-play is over, :meth:`GameController._finalize_game` packages the PGN, saves it
-and its stats through the store, asks :func:`chess_trainer.adapt.retune` for the
-next strength and writes that back through :attr:`Store.bot_strength`.  The PGN
-save and the stats record are each marked done as soon as they succeed and are
-never repeated for the same game; the finished record is cached as soon as the
-stats record lands, before the strength is retuned.  A store failure still
-propagates to the caller: a failed save or record is retried (only the failed
-step) on a later call, while a failed strength write leaves the game recorded
-exactly once and the saved dial stale.  ``finished_game`` returns a defensive
-copy of the cached record, and ``new_game`` starts a fresh one.
+play is over, :meth:`GameController._finalize_game` runs the review pass, then
+packages the PGN, saves it and its stats through the store, asks
+:func:`chess_trainer.adapt.retune` for the next strength and writes that back
+through :attr:`Store.bot_strength`.  The review pass, the PGN save and the
+stats record are each marked done as soon as they succeed and are never
+repeated for the same game; the finished record is cached as soon as the stats
+record lands, before the strength is retuned.  A store failure still
+propagates to the caller: a failed review, save or record is retried (only the
+step that failed) on a later call, while a failed strength write leaves the
+game recorded exactly once and the saved dial stale.  ``finished_game``
+returns a defensive copy of the cached record, and ``new_game`` starts a
+fresh one.
 
 The controller is not thread-safe; the slow engine calls
 (``try_player_move``'s coach pass and ``bot_move``) belong on the GUI's worker
@@ -52,6 +63,7 @@ resigning.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -73,6 +85,11 @@ RESIGNATION: chess.Termination = chess.Termination.VARIANT_LOSS
 
 #: Verdicts that make the live coach interrupt and offer a take-back.
 _ACTIONABLE = frozenset({CoachVerdict.NOTABLE, CoachVerdict.BLUNDER})
+
+#: Depth used by the post-game review pass.  Live moves already had the
+#: coach's full depth; the review is a cheaper sweep over the moves that did
+#: not get one (bot replies, and every move in a clean game).
+REVIEW_DEPTH = 8
 
 
 class Mode(StrEnum):
@@ -101,8 +118,9 @@ class GameAnnotation:
     """One move plus the coach's note about it.
 
     ``ply`` is the 1-based ply number of ``move_uci`` in the game, and ``fen``
-    is the position the move was played in (before it was made).  ``verdict``
-    is ``SILENT`` for bot moves and for clean-mode player moves.
+    is the position the move was played in (before it was made).  During play
+    ``verdict`` is ``SILENT`` for bot moves and for clean-mode player moves;
+    the end-of-game review pass may replace that with a coach note.
     """
 
     ply: int
@@ -125,7 +143,13 @@ class BoardSnapshot:
 
 @dataclass
 class FinishedGame:
-    """A completed game, ready for the store."""
+    """A completed game, ready for the store.
+
+    ``attempted_blunders`` counts actionable mistakes the player took back.
+    They have no annotation (the move was rewound) but still count once in
+    the game's stats.  It is last with a default so records built by older
+    callers keep working.
+    """
 
     pgn: str
     annotations: list[GameAnnotation]
@@ -133,16 +157,27 @@ class FinishedGame:
     bot_strength: float
     player_white: bool
     result: chess.Termination
+    attempted_blunders: int = 0
 
 
 class GameController:
     """Owns the board and the rules of a single game against the bot."""
 
-    def __init__(self, bot: Bot, coach: Coach, store: Store) -> None:
+    def __init__(
+        self,
+        bot: Bot,
+        coach: Coach,
+        store: Store,
+        on_review: Callable[[], None] | None = None,
+    ) -> None:
         self.bot = bot
         self.coach = coach
         #: Persistence for the end-of-game save and the adapted strength.
         self._store = store
+        #: Called (on the caller's thread) just before the review pass starts,
+        #: so the GUI can explain why the board stays locked.  Optional: core
+        #: users and tests do not need it.
+        self.on_review = on_review
         #: Loaded from the store so the dial survives a restart, then adapted
         #: after each game; ``new_game`` must not reset it.  Callers may still
         #: override it before the first game starts.  Duck-typed stores that do
@@ -163,10 +198,18 @@ class GameController:
         self._annotations: list[GameAnnotation] = []
         self._resigned = False
         self.awaiting_retry = False
+        #: Blunders the player took back.  The move is gone from the
+        #: annotations, but it still counts once in this game's stats.  It
+        #: deliberately matches the stats definition, which counts BLUNDER
+        #: annotations only (NOTABLE is not a stats blunder even when kept).
+        self._attempted_blunders = 0
         self._finished: FinishedGame | None = None
-        #: Persistence steps already completed for this game.  They are set
-        #: only after the store call returns, so a retry resumes at the step
-        #: that failed instead of writing the game twice.
+        #: Persistence and analysis steps already completed for this game.
+        #: They are set only after the step returns, so a retry resumes at the
+        #: step that failed instead of repeating work or writing the game
+        #: twice.  The review pass is idempotent too, but the flag keeps a
+        #: retried save/record from re-running the engine sweep.
+        self._reviewed = False
         self._saved = False
         self._recorded = False
 
@@ -306,18 +349,24 @@ class GameController:
         """Take back the pending player move, exactly one ply.
 
         Only available while :attr:`awaiting_retry`; the pending annotation is
-        dropped with the move so a confirmed retry is recorded only once.
+        dropped with the move so a confirmed retry is recorded only once.  If
+        that move was a BLUNDER, it is counted as an attempted blunder before
+        it disappears: taking a blunder back must not erase it from the game's
+        record.  NOTABLE is not a stats blunder, so a taken-back notable is
+        not counted (keeping the same definition as the annotations).
         """
         if not self.awaiting_retry or not self._board.move_stack:
             return False
+        last = self._annotations[-1] if self._annotations else None
         popped = self._board.pop()
         self.awaiting_retry = False
-        last = self._annotations[-1] if self._annotations else None
         if (
             last is not None
             and last.is_player
             and last.move_uci == popped.uci()
         ):
+            if last.verdict is CoachVerdict.BLUNDER:
+                self._attempted_blunders += 1
             self._annotations.pop()
         return True
 
@@ -343,9 +392,9 @@ class GameController:
     def finished_game(self) -> FinishedGame | None:
         """The completed game, or ``None`` while play (or a retry) is pending.
 
-        The game is saved and the bot strength adapted on the first call (or
-        earlier, at the move that ended play).  Each call returns a fresh copy,
-        so callers cannot mutate the record the store already saw.
+        The review pass, save and strength adaptation run on the first call
+        (or earlier, at the move that ended play).  Each call returns a fresh
+        copy, so callers cannot mutate the record the store already saw.
         """
         finished = self._finalize_game()
         if finished is None:
@@ -355,22 +404,28 @@ class GameController:
     # -- internals ---------------------------------------------------------
 
     def _finalize_game(self) -> FinishedGame | None:
-        """Save, record and retune once; ``None`` while play is pending.
+        """Review, save, record and retune once; ``None`` while play is pending.
 
-        The record is built before the strength changes, so its
-        ``bot_strength`` is the strength the game was actually played at.
-        Save and record are skipped once they have succeeded, so a failure in
-        either is retried on a later call without repeating the other.  The
-        record is cached as soon as the stats record lands, before the
-        strength is read or written: if adapting or writing fails, the game
-        still stays recorded exactly once and the saved dial is simply left
-        unchanged.
+        The review pass runs first so the game that is saved and counted is
+        the fully annotated one.  The record is built before the strength
+        changes, so its ``bot_strength`` is the strength the game was actually
+        played at.  The review, save and record steps are each skipped once
+        they have succeeded, so a failure in one is retried on a later call
+        without repeating the others.  The record is cached as soon as the
+        stats record lands, before the strength is read or written: if
+        adapting or writing fails, the game still stays recorded exactly once
+        and the saved dial is simply left unchanged.
         """
         if self._finished is not None:
             return self._finished
         result = self._termination()
         if result is None:
             return None
+
+        if not self._reviewed:
+            if self.on_review is not None and self._annotations:
+                self.on_review()
+            self._review_annotations()
 
         game = chess.pgn.Game.from_board(self._board)
         if self._resigned:
@@ -383,6 +438,7 @@ class GameController:
             bot_strength=self.bot_strength,
             player_white=self.player_white,
             result=result,
+            attempted_blunders=self._attempted_blunders,
         )
 
         if not self._saved:
@@ -404,6 +460,55 @@ class GameController:
         self._store.bot_strength = next_strength
         self.bot_strength = next_strength
         return finished
+
+    def _review_annotations(self) -> None:
+        """Fill in the notes the live pass did not produce.
+
+        Every ply without a non-silent note is analysed at
+        :data:`REVIEW_DEPTH`: all of them in a clean game, and the bot's moves
+        in a practice game.  Player moves the live coach already evaluated
+        keep their saved sentence verbatim -- re-running them would be slower,
+        shallower and could change the text the player saw.  Review never
+        opens a take-back offer.
+        """
+        previous_depth = getattr(self.coach, "depth", None)
+        if isinstance(previous_depth, int):
+            self.coach.depth = REVIEW_DEPTH
+        try:
+            reviewed: list[GameAnnotation] = []
+            for annotation in self._annotations:
+                if not self._needs_review(annotation):
+                    reviewed.append(annotation)
+                    continue
+                reviewed.append(self._review_annotation(annotation))
+            self._annotations = reviewed
+        finally:
+            if isinstance(previous_depth, int):
+                self.coach.depth = previous_depth
+        self._reviewed = True
+
+    def _needs_review(self, annotation: GameAnnotation) -> bool:
+        """True when this ply still lacks a post-game coach note."""
+        if annotation.verdict is not CoachVerdict.SILENT:
+            return False
+        # Live player moves were already evaluated at the coach's full depth;
+        # even a silent verdict is their recorded answer.
+        if self.mode is Mode.LIVE_COACH and annotation.is_player:
+            return False
+        return True
+
+    def _review_annotation(self, annotation: GameAnnotation) -> GameAnnotation:
+        """Analyse one stored ply and return the annotated replacement."""
+        try:
+            before = chess.Board(annotation.fen)
+        except ValueError:  # pragma: no cover - stored FENs are valid
+            return annotation
+        # Keep the evaluate/message pair adjacent: the coach reuses its
+        # one-entry analysis cache for the second call.
+        verdict = self.coach.evaluate(before, annotation.move_uci)
+        text = self.coach.message(before, annotation.move_uci)
+        message = None if verdict is CoachVerdict.SILENT else (text or None)
+        return replace(annotation, verdict=verdict, message=message)
 
     @property
     def _player_color(self) -> chess.Color:

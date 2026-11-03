@@ -24,6 +24,7 @@ Two corrections to the brief, both forced by the installed python-chess
 from __future__ import annotations
 
 import io
+import json
 
 import chess
 import chess.pgn
@@ -32,6 +33,7 @@ import pytest
 from chess_trainer.coach import CoachVerdict
 from chess_trainer.controller import (
     RESIGNATION,
+    REVIEW_DEPTH,
     BoardSnapshot,
     FinishedGame,
     GameAnnotation,
@@ -96,6 +98,23 @@ class StubCoach:
         return self.messages.get(played_uci, f"stub note for {played_uci}.")
 
 
+class DepthCoach(StubCoach):
+    """Stub coach that also records the depth in force for each call."""
+
+    def __init__(self, *args, depth: int = 12, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.depth = depth
+        self.depths: list[int] = []
+
+    def evaluate(self, board: chess.Board, played_uci: str) -> CoachVerdict:
+        self.depths.append(self.depth)
+        return super().evaluate(board, played_uci)
+
+    def message(self, board: chess.Board, played_uci: str) -> str:
+        self.depths.append(self.depth)
+        return super().message(board, played_uci)
+
+
 class FakeStore:
     """In-memory stand-in for the parts of ``Store`` the controller uses.
 
@@ -105,7 +124,7 @@ class FakeStore:
     the real store does, which is what makes resignations testable.
     """
 
-    def __init__(self, strength: float = 6.0) -> None:
+    def __init__(self, strength: float = DEFAULT_BOT_STRENGTH) -> None:
         self.saved: list[FinishedGame] = []
         self.recorded: list[FinishedGame] = []
         self.records: list[GameRecord] = []
@@ -284,7 +303,7 @@ def test_new_game_resets_the_board_and_pending_state():
 def test_default_bot_strength_is_the_store_default():
     controller, _, _ = make_controller(mode=Mode.CLEAN)
 
-    assert controller.bot_strength == 6.0
+    assert controller.bot_strength == DEFAULT_BOT_STRENGTH
 
 
 def test_the_saved_strength_is_loaded_on_construction(tmp_path):
@@ -371,7 +390,7 @@ def test_bot_reply_is_appended_and_annotated():
     assert bot_annotation.move_uci == "e7e5"
     assert bot_annotation.verdict is CoachVerdict.SILENT
     assert bot_annotation.message is None
-    assert bot.calls == [(play_uci("e2e4").fen(), 6.0)]
+    assert bot.calls == [(play_uci("e2e4").fen(), DEFAULT_BOT_STRENGTH)]
     # The coach only looks at the player's moves.
     assert len(coach.calls) == calls_before
 
@@ -615,7 +634,7 @@ def test_resign_finishes_a_practice_game_as_a_player_loss():
     assert finished.result is RESIGNATION
     assert finished.is_practice is True
     assert finished.player_white is True
-    assert finished.bot_strength == 6.0
+    assert finished.bot_strength == DEFAULT_BOT_STRENGTH
     assert [a.move_uci for a in finished.annotations] == ["e2e4"]
     assert '[Result "0-1"]' in finished.pgn
     assert "1. e4" in finished.pgn
@@ -690,7 +709,10 @@ def test_player_move_can_end_the_game():
     assert '[Result "1-0"]' in finished.pgn
     assert "Qh5#" in finished.pgn
     assert [a.ply for a in finished.annotations] == [1, 2, 3, 4, 5]
-    assert coach.calls == []
+    # The end-of-game review pass is the only coach work a clean game sees,
+    # and every move here is genuinely silent.
+    assert len(coach.calls) == 2 * 5
+    assert {a.verdict for a in finished.annotations} == {CoachVerdict.SILENT}
     # Nothing can be played now.
     assert controller.try_player_move("a7a6").accepted is False
     with pytest.raises(RuntimeError):
@@ -760,8 +782,8 @@ def test_resign_saves_records_and_retunes_the_strength(tmp_path):
     assert stats.practice_total == 0
     # The record carries the strength the game was played at; the live dial
     # has already moved down after the loss.
-    assert finished.bot_strength == 6.0
-    assert controller.bot_strength < 6.0
+    assert finished.bot_strength == DEFAULT_BOT_STRENGTH
+    assert controller.bot_strength < DEFAULT_BOT_STRENGTH
     assert store.bot_strength == controller.bot_strength
     assert len(list((tmp_path / "games").rglob("*.pgn"))) == 1
 
@@ -782,7 +804,7 @@ def test_the_game_is_recorded_when_the_player_is_checkmated(tmp_path):
     stats = store.load_stats()
     assert stats.total == 1
     assert stats.losses == 1
-    assert store.bot_strength < 6.0
+    assert store.bot_strength < DEFAULT_BOT_STRENGTH
 
 
 def test_the_game_is_recorded_when_the_player_wins(tmp_path):
@@ -800,7 +822,7 @@ def test_the_game_is_recorded_when_the_player_wins(tmp_path):
     stats = store.load_stats()
     assert stats.total == 1
     assert stats.wins == 1
-    assert store.bot_strength > 6.0
+    assert store.bot_strength > DEFAULT_BOT_STRENGTH
 
 
 def test_finished_game_finalises_only_once(tmp_path):
@@ -830,7 +852,7 @@ def test_the_adapted_strength_survives_a_controller_restart(tmp_path):
 
     restarted = GameController(ScriptedBot(), StubCoach(), store)
 
-    assert adapted < 6.0
+    assert adapted < DEFAULT_BOT_STRENGTH
     assert restarted.bot_strength == adapted
 
 
@@ -902,6 +924,182 @@ def test_practice_games_are_saved_with_the_practice_flag(tmp_path):
     assert store.load_game_records()[0].practice is True
     sidecars = list((tmp_path / "games").rglob("*.annotations.json"))
     assert len(sidecars) == 1
+
+
+# --- the post-game review pass (C1 / I3) -----------------------------------
+
+
+def test_clean_game_review_pass_annotates_moves_and_counts_blunders(tmp_path):
+    # A clean game records no live notes; finalisation must review every ply
+    # so the saved game and its stats carry the player's mistakes.
+    store = Store(tmp_path)
+    message = "that loses your queen on d5."
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": message},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.CLEAN)
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    assert [a.move_uci for a in finished.annotations] == ["e2e4", "e7e5"]
+    player_note = finished.annotations[0]
+    assert player_note.is_player is True
+    assert player_note.verdict is CoachVerdict.BLUNDER
+    assert player_note.message == message
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 1
+    assert stats.blunders_per_game == [1.0]
+
+
+def test_review_pass_uses_the_review_depth_then_restores_it(tmp_path):
+    store = Store(tmp_path)
+    coach = DepthCoach(depth=12)
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.CLEAN)
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    controller.resign()
+    controller.finished_game()
+
+    assert coach.depths, "the review pass must actually evaluate moves"
+    assert set(coach.depths) == {REVIEW_DEPTH}
+    assert coach.depth == 12, "the live coach's depth is restored"
+
+
+def test_live_game_review_pass_annotates_a_bot_slip(tmp_path):
+    # The live coach never watched the bot; the review pass adds the one-line
+    # note, and a bot slip never counts as the player's blunder.
+    store = Store(tmp_path)
+    message = "that leaves your knight on f6 where it can be taken."
+    coach = StubCoach(
+        verdicts={"e7e5": CoachVerdict.BLUNDER},
+        messages={"e7e5": message},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    bot_note = finished.annotations[1]
+    assert bot_note.is_player is False
+    assert bot_note.verdict is CoachVerdict.BLUNDER
+    assert bot_note.message == message
+    assert controller.awaiting_retry is False, "review never offers a take-back"
+    assert store.load_stats().games[0].blunders == 0
+
+
+def test_a_taken_back_blunder_still_counts_once(tmp_path):
+    # Spec: a move the player blundered and took back is recorded as made.
+    # The move leaves the board and its annotation, but the mistake survives
+    # as an attempted blunder in the finished game and in stats.
+    store = Store(tmp_path)
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": "that loses your queen on d5."},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+
+    assert controller.try_player_move("e2e4").can_undo is True
+    assert controller.undo_player_move() is True
+    assert controller.try_player_move("d2d4").accepted is True
+    assert controller.bot_move() == "e7e5"
+    controller.resign()
+
+    finished = controller.finished_game()
+    assert finished is not None
+    assert finished.attempted_blunders == 1
+    assert [a.move_uci for a in finished.annotations] == ["d2d4", "e7e5"]
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 1
+    assert stats.blunders_per_game == [1.0]
+
+    sidecar = next((tmp_path / "games").rglob("*.annotations.json"))
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["attempted_blunders"] == 1
+    assert payload["blunders"] == 1
+
+
+def test_a_taken_back_notable_does_not_count_as_a_blunder(tmp_path):
+    # NOTABLE is not a stats blunder even when kept, so taking one back must
+    # not turn it into one either.
+    store = Store(tmp_path)
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.NOTABLE},
+        messages={"e2e4": "that leaves your knight on f6 where it can be taken."},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+
+    assert controller.try_player_move("e2e4").can_undo is True
+    assert controller.undo_player_move() is True
+    assert controller.try_player_move("d2d4").accepted is True
+    assert controller.bot_move() == "e7e5"
+    controller.resign()
+
+    finished = controller.finished_game()
+    assert finished is not None
+    assert finished.attempted_blunders == 0
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 0
+    assert stats.blunders_per_game == [0.0]
+
+
+def test_a_confirmed_blunder_is_not_double_counted(tmp_path):
+    store = Store(tmp_path)
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": "that loses your queen on d5."},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+    assert controller.try_player_move("e2e4").can_undo is True
+    controller.confirm_move()
+    controller.bot_move()
+    controller.resign()
+
+    finished = controller.finished_game()
+    assert finished is not None
+    assert finished.attempted_blunders == 0
+    assert store.load_stats().games[0].blunders == 1
+
+
+def test_live_annotations_are_preserved_verbatim_by_the_review_pass(tmp_path):
+    store = Store(tmp_path)
+    message = "that hands the initiative to your opponent."
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": message},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+    outcome = controller.try_player_move("e2e4")
+    assert outcome.message == message
+    live_calls = list(coach.calls)
+
+    controller.confirm_move()
+    controller.bot_move()
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    assert finished.annotations[0].verdict is CoachVerdict.BLUNDER
+    assert finished.annotations[0].message == message
+    # The live sentence was not regenerated: the review only looked at the
+    # bot's reply.
+    assert coach.calls[: len(live_calls)] == live_calls
+    assert [call for call in coach.calls if call[2] == "e2e4"] == live_calls
 
 
 # --- take-back restores special moves exactly ------------------------------
@@ -1055,7 +1253,9 @@ def test_finished_game_fields_are_the_pinned_interface():
         "bot_strength",
         "player_white",
         "result",
+        "attempted_blunders",
     }
+    assert finished.attempted_blunders == 0
     assert set(PlayerMoveOutcome.__dataclass_fields__) == {
         "accepted",
         "verdict",

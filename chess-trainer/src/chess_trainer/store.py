@@ -49,17 +49,19 @@ from typing import TYPE_CHECKING, Any
 import chess
 import chess.pgn
 
+from chess_trainer.adapt import MAX_STRENGTH, MIN_STRENGTH
 from chess_trainer.coach import CoachVerdict
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from chess_trainer.controller import FinishedGame
 
-#: Starting / fallback bot strength (Stockfish skill 6.0, roughly 640 Elo).
-DEFAULT_BOT_STRENGTH = 6.0
+#: Starting / fallback bot strength (Stockfish skill 1.8, roughly 640 Elo).
+DEFAULT_BOT_STRENGTH = 1.8
 
-#: Stockfish ``Skill Level`` range, the scale stored in ``bot.json``.
-MIN_BOT_STRENGTH = 0.0
-MAX_BOT_STRENGTH = 20.0
+#: Stockfish ``Skill Level`` range, the scale stored in ``bot.json``.  The
+#: ceiling is adaptation's humanlike limit, the single source of truth.
+MIN_BOT_STRENGTH = MIN_STRENGTH
+MAX_BOT_STRENGTH = MAX_STRENGTH
 
 #: The one default location, resolved relative to the package::
 #:
@@ -110,11 +112,15 @@ def _as_float(value: object, *, default: float) -> float:
 
 
 def _as_strength(value: object, *, default: float) -> float:
-    """``value`` as a strength on the Stockfish skill scale, or ``default``."""
+    """``value`` as a strength on the skill scale, clamped to the range.
+
+    A non-numeric or non-finite value falls back to ``default``.  A finite
+    number is clamped into ``[MIN_BOT_STRENGTH, MAX_BOT_STRENGTH]`` instead of
+    being rejected, so legacy records written under the old 20-point ceiling
+    display the humanlike limit rather than resetting to the default.
+    """
     number = _as_float(value, default=default)
-    if not MIN_BOT_STRENGTH <= number <= MAX_BOT_STRENGTH:
-        return default
-    return number
+    return min(max(number, MIN_BOT_STRENGTH), MAX_BOT_STRENGTH)
 
 
 def _verdict_value(verdict: object) -> str:
@@ -194,8 +200,9 @@ class StatsFile:
 
     ``total`` includes practice games; ``practice_total`` is the subset that
     was played with the live coach on.  ``blunders_per_game`` holds one entry
-    per game (the player's confirmed blunders).  ``strength`` is the strength
-    of the most recently recorded game; the live value lives in ``bot.json``.
+    per game (the player's blunders, including mistakes taken back).
+    ``strength`` is the strength of the most recently recorded game; the live
+    value lives in ``bot.json``.
     """
 
     total: int = 0
@@ -354,12 +361,22 @@ def _margin(outcome: str, material: float) -> float:
 
 
 def _player_blunders(finished: FinishedGame) -> int:
-    """Confirmed player blunders; a taken-back move never reaches here."""
-    return sum(
+    """Player blunders in the final annotations plus attempted ones.
+
+    A blunder the player took back has no annotation left (the move was
+    rewound), but the controller carries it in ``attempted_blunders`` so the
+    spec's "recorded as made" rule still shows in stats and adaptation.  Only
+    the player's confirmed moves and attempts count; bot slips are notes.
+    """
+    confirmed = sum(
         1
         for annotation in finished.annotations
         if annotation.is_player and annotation.verdict == CoachVerdict.BLUNDER
     )
+    attempted = _as_int(
+        getattr(finished, "attempted_blunders", 0), default=0, minimum=0
+    )
+    return confirmed + attempted
 
 
 def _summarise(finished: FinishedGame) -> _Summary:
@@ -456,6 +473,11 @@ class Store:
             "player_white": bool(finished.player_white),
             "player_color": "white" if finished.player_white else "black",
             "blunders": summary.blunders,
+            "attempted_blunders": _as_int(
+                getattr(finished, "attempted_blunders", 0),
+                default=0,
+                minimum=0,
+            ),
             "margin": summary.margin,
             "annotations": [
                 _annotation_payload(annotation)
@@ -518,7 +540,14 @@ class Store:
 
     @property
     def bot_strength(self) -> float:
-        """The saved strength, or the 640-Elo default when unreadable."""
+        """The saved strength, clamped to the humanlike range.
+
+        An unreadable or non-numeric file falls back to the 640-Elo default.
+        A finite number -- including a legacy file written under the old
+        20-point ceiling -- is clamped into ``[0.0, 14.0]`` instead of being
+        rejected, so a corrupt or stale ``bot.json`` cannot field an
+        above-ceiling bot for one game.
+        """
         try:
             raw = json.loads(self._bot_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
