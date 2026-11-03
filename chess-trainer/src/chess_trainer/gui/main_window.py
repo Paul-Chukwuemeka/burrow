@@ -40,6 +40,12 @@ from chess_trainer.bot import Bot
 from chess_trainer.controller import RESIGNATION, Mode, PlayerMoveOutcome
 from chess_trainer.gui.board_widget import BoardWidget
 from chess_trainer.gui.coach_panel import CoachPanel
+from chess_trainer.gui.review_window import (
+    ReviewGame,
+    ReviewWindow,
+    review_from_finished,
+)
+from chess_trainer.gui.stats_dialog import StatsDialog
 
 #: Glyphs for the captured-pieces tray (independent of the board's SVG choice).
 _TRAY_GLYPHS = {
@@ -118,6 +124,10 @@ class MainWindow(QMainWindow):
         self._busy = False
         self._awaiting_retry = False
         self._game_over = False
+        #: Review windows outlive the game they show; keep Python references so
+        #: PyQt does not collect them while they are on screen.
+        self._review_windows: list[ReviewWindow] = []
+        self._stats_dialog: StatsDialog | None = None
 
         self._worker = EngineWorker(self)
         self._worker.job_done.connect(self._on_job_done)
@@ -125,6 +135,9 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
         self._build_ui()
+
+        # Task 10: a finished game opens its review automatically.
+        self.game_finished.connect(self._on_game_finished)
 
         # Default: live coach ON, player is White.
         self._controller.new_game(self._mode())
@@ -165,12 +178,15 @@ class MainWindow(QMainWindow):
 
         self._resign_btn = QPushButton("Resign")
         self._new_game_btn = QPushButton("New Game")
+        self._stats_btn = QPushButton("Stats")
         self._resign_btn.clicked.connect(self._on_resign)
         self._new_game_btn.clicked.connect(self._on_new_game)
+        self._stats_btn.clicked.connect(self._on_stats)
 
         buttons = QHBoxLayout()
         buttons.addWidget(self._resign_btn)
         buttons.addWidget(self._new_game_btn)
+        buttons.addWidget(self._stats_btn)
 
         left = QVBoxLayout()
         left.addWidget(self._board_widget, 1)
@@ -507,9 +523,49 @@ class MainWindow(QMainWindow):
         # Task 10's review window hangs off this signal.
         self.game_finished.emit(finished)
 
+    # -- review and stats --------------------------------------------------
+
+    def _on_game_finished(self, finished) -> None:
+        """Open the review for a successfully saved game.
+
+        ``finished`` is ``None`` when eager finalisation could not write the
+        game; the main window already explains that, and there is no reliable
+        review to open.
+        """
+        if finished is None:
+            return
+        self._show_review(review_from_finished(finished))
+
+    def _show_review(self, game: ReviewGame) -> None:
+        # Drop references to windows the player has closed, then keep the new
+        # one alive for as long as it is on screen.
+        self._review_windows = [
+            window for window in self._review_windows if window.isVisible()
+        ]
+        window = ReviewWindow(game, parent=self)
+        self._review_windows.append(window)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def _on_stats(self) -> None:
+        if self._stats_dialog is None:
+            self._stats_dialog = StatsDialog(self._store, parent=self)
+            self._stats_dialog.review_requested.connect(self._show_review)
+        else:
+            self._stats_dialog.refresh()
+        self._stats_dialog.show()
+        self._stats_dialog.raise_()
+        self._stats_dialog.activateWindow()
+
     # -- shutdown ----------------------------------------------------------
 
     def closeEvent(self, event) -> None:
+        for window in self._review_windows:
+            window.close()
+        self._review_windows.clear()
+        if self._stats_dialog is not None:
+            self._stats_dialog.close()
         self._worker.stop()
         self._worker.wait()
         if self._engine is not None:
