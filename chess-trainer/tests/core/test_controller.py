@@ -690,7 +690,10 @@ def test_player_move_can_end_the_game():
     assert '[Result "1-0"]' in finished.pgn
     assert "Qh5#" in finished.pgn
     assert [a.ply for a in finished.annotations] == [1, 2, 3, 4, 5]
-    assert coach.calls == []
+    # The end-of-game review pass is the only coach work a clean game sees,
+    # and every move here is genuinely silent.
+    assert len(coach.calls) == 2 * 5
+    assert {a.verdict for a in finished.annotations} == {CoachVerdict.SILENT}
     # Nothing can be played now.
     assert controller.try_player_move("a7a6").accepted is False
     with pytest.raises(RuntimeError):
@@ -902,6 +905,90 @@ def test_practice_games_are_saved_with_the_practice_flag(tmp_path):
     assert store.load_game_records()[0].practice is True
     sidecars = list((tmp_path / "games").rglob("*.annotations.json"))
     assert len(sidecars) == 1
+
+
+# --- the post-game review pass (C1 / I3) -----------------------------------
+
+
+def test_clean_game_review_pass_annotates_moves_and_counts_blunders(tmp_path):
+    # A clean game records no live notes; finalisation must review every ply
+    # so the saved game and its stats carry the player's mistakes.
+    store = Store(tmp_path)
+    message = "that loses your queen on d5."
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": message},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.CLEAN)
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    assert [a.move_uci for a in finished.annotations] == ["e2e4", "e7e5"]
+    player_note = finished.annotations[0]
+    assert player_note.is_player is True
+    assert player_note.verdict is CoachVerdict.BLUNDER
+    assert player_note.message == message
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 1
+    assert stats.blunders_per_game == [1.0]
+
+
+def test_live_game_review_pass_annotates_a_bot_slip(tmp_path):
+    # The live coach never watched the bot; the review pass adds the one-line
+    # note, and a bot slip never counts as the player's blunder.
+    store = Store(tmp_path)
+    message = "that leaves your knight on f6 where it can be taken."
+    coach = StubCoach(
+        verdicts={"e7e5": CoachVerdict.BLUNDER},
+        messages={"e7e5": message},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    bot_note = finished.annotations[1]
+    assert bot_note.is_player is False
+    assert bot_note.verdict is CoachVerdict.BLUNDER
+    assert bot_note.message == message
+    assert controller.awaiting_retry is False, "review never offers a take-back"
+    assert store.load_stats().games[0].blunders == 0
+
+
+def test_live_annotations_are_preserved_verbatim_by_the_review_pass(tmp_path):
+    store = Store(tmp_path)
+    message = "that hands the initiative to your opponent."
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": message},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+    outcome = controller.try_player_move("e2e4")
+    assert outcome.message == message
+    live_calls = list(coach.calls)
+
+    controller.confirm_move()
+    controller.bot_move()
+    controller.resign()
+    finished = controller.finished_game()
+
+    assert finished is not None
+    assert finished.annotations[0].verdict is CoachVerdict.BLUNDER
+    assert finished.annotations[0].message == message
+    # The live sentence was not regenerated: the review only looked at the
+    # bot's reply.
+    assert coach.calls[: len(live_calls)] == live_calls
+    assert [call for call in coach.calls if call[2] == "e2e4"] == live_calls
 
 
 # --- take-back restores special moves exactly ------------------------------

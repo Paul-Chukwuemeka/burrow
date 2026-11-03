@@ -9,9 +9,12 @@ a queue), so the coach interrupt and the bot reply are strictly serialized and
 the event loop keeps painting.  The GUI thread only ever reads the controller
 between jobs (via ``snapshot()`` / ``board``), never while a job is in flight.
 
-End-of-game finalisation is eager and may raise ``OSError`` when the data
-directory is unwritable (Task 8).  The window catches that, shows a friendly
-"couldn't save" note, and does not replay the final move.
+End-of-game finalisation is eager: the controller's review pass and the store
+writes run inside the move's worker job.  A ``review_started`` signal puts
+"Reviewing your game..." in the status line while that happens.  Finalisation
+may raise ``OSError`` when the data directory is unwritable (Task 8); the
+window catches that, shows a friendly "couldn't save" note, and does not
+replay the final move.
 
 Task 10 hooks in through :attr:`MainWindow.game_finished`, emitted with the
 :class:`~chess_trainer.controller.FinishedGame` (or ``None`` if saving failed)
@@ -109,6 +112,9 @@ class MainWindow(QMainWindow):
 
     #: Emitted when a game ends, with the FinishedGame (or None on save failure).
     game_finished = pyqtSignal(object)
+    #: Emitted (from the worker thread) when finalisation starts the review
+    #: pass, so the GUI can explain why the board is locked.
+    review_started = pyqtSignal()
 
     def __init__(
         self,
@@ -135,6 +141,11 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
         self._build_ui()
+
+        # The controller runs the post-game review pass inside the worker; a
+        # queued signal lets the window show why the board stays locked.
+        self.review_started.connect(self._show_reviewing_status)
+        self._controller.on_review = self.review_started.emit
 
         # Task 10: a finished game opens its review automatically.
         self.game_finished.connect(self._on_game_finished)
@@ -345,6 +356,10 @@ class MainWindow(QMainWindow):
     def _set_status(self, text: str) -> None:
         self._status.setText(text)
 
+    def _show_reviewing_status(self) -> None:
+        """Tell the player why the board is still locked at game end."""
+        self._set_status("Reviewing your game\u2026")
+
     def _result_text(self, snapshot) -> str:
         if snapshot.result is None:
             return ""
@@ -510,6 +525,10 @@ class MainWindow(QMainWindow):
         self._refresh_move_list()
         self._refresh_captured()
         status = self._result_text(snapshot)
+        # Eager finalisation normally already ran on the worker; this also
+        # covers a retry (after a failed save) that finishes here.
+        self._set_status("Reviewing your game\u2026")
+        self._refresh_board()
         finished = None
         try:
             finished = self._controller.finished_game()

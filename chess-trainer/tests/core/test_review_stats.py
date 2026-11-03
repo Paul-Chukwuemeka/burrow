@@ -476,3 +476,16 @@ def test_main_window_opens_review_on_game_finished(tmp_path: Path, qapp) -> None
         assert "Practice" in window._review_windows[0].windowTitle()
     finally:
         window.close()
+
+
+def test_main_window_explains_the_review_pass(tmp_path: Path, qapp) -> None:
+    from chess_trainer.gui.main_window import MainWindow
+
+    window = MainWindow(_StubController(), Store(tmp_path))
+    try:
+        # The controller calls this hook on the worker thread; the window
+        # wires it to a queued signal that sets the status line.
+        window._controller.on_review()
+        assert window._status.text() == "Reviewing your game\u2026"
+    finally:
+        window.close()
