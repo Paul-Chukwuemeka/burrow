@@ -28,9 +28,12 @@ fn corpus() -> Vec<&'static str> {
         "dual-toc.epub",
         "embedded-font.epub",
         "external-css.epub",
+        "inbook-links.epub",
         "malformed.epub",
         "minimal.epub",
         "missing-image.epub",
+        "multipage-punct.epub",
+        "multipage.epub",
         "nav.epub",
         "ncx.epub",
         "no-spine.epub",
@@ -42,6 +45,7 @@ fn corpus() -> Vec<&'static str> {
         "rich-meta.epub",
         "scripted.epub",
         "svg-image.epub",
+        "tall-image.epub",
     ]
 }
 
