@@ -33,6 +33,7 @@ import pytest
 from chess_trainer.coach import CoachVerdict
 from chess_trainer.controller import (
     RESIGNATION,
+    REVIEW_DEPTH,
     BoardSnapshot,
     FinishedGame,
     GameAnnotation,
@@ -95,6 +96,23 @@ class StubCoach:
         if self.verdict_for(played_uci) is CoachVerdict.SILENT:
             return ""
         return self.messages.get(played_uci, f"stub note for {played_uci}.")
+
+
+class DepthCoach(StubCoach):
+    """Stub coach that also records the depth in force for each call."""
+
+    def __init__(self, *args, depth: int = 12, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.depth = depth
+        self.depths: list[int] = []
+
+    def evaluate(self, board: chess.Board, played_uci: str) -> CoachVerdict:
+        self.depths.append(self.depth)
+        return super().evaluate(board, played_uci)
+
+    def message(self, board: chess.Board, played_uci: str) -> str:
+        self.depths.append(self.depth)
+        return super().message(board, played_uci)
 
 
 class FakeStore:
@@ -937,6 +955,22 @@ def test_clean_game_review_pass_annotates_moves_and_counts_blunders(tmp_path):
     stats = store.load_stats()
     assert stats.games[0].blunders == 1
     assert stats.blunders_per_game == [1.0]
+
+
+def test_review_pass_uses_the_review_depth_then_restores_it(tmp_path):
+    store = Store(tmp_path)
+    coach = DepthCoach(depth=12)
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.CLEAN)
+    assert controller.try_player_move("e2e4").accepted is True
+    assert controller.bot_move() == "e7e5"
+
+    controller.resign()
+    controller.finished_game()
+
+    assert coach.depths, "the review pass must actually evaluate moves"
+    assert set(coach.depths) == {REVIEW_DEPTH}
+    assert coach.depth == 12, "the live coach's depth is restored"
 
 
 def test_live_game_review_pass_annotates_a_bot_slip(tmp_path):
