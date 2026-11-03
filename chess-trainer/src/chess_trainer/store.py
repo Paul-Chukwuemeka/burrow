@@ -196,8 +196,9 @@ class StatsFile:
 
     ``total`` includes practice games; ``practice_total`` is the subset that
     was played with the live coach on.  ``blunders_per_game`` holds one entry
-    per game (the player's confirmed blunders).  ``strength`` is the strength
-    of the most recently recorded game; the live value lives in ``bot.json``.
+    per game (the player's blunders, including mistakes taken back).
+    ``strength`` is the strength of the most recently recorded game; the live
+    value lives in ``bot.json``.
     """
 
     total: int = 0
@@ -356,12 +357,22 @@ def _margin(outcome: str, material: float) -> float:
 
 
 def _player_blunders(finished: FinishedGame) -> int:
-    """Confirmed player blunders; a taken-back move never reaches here."""
-    return sum(
+    """Player blunders in the final annotations plus attempted ones.
+
+    A blunder the player took back has no annotation left (the move was
+    rewound), but the controller carries it in ``attempted_blunders`` so the
+    spec's "recorded as made" rule still shows in stats and adaptation.  Only
+    the player's confirmed moves and attempts count; bot slips are notes.
+    """
+    confirmed = sum(
         1
         for annotation in finished.annotations
         if annotation.is_player and annotation.verdict == CoachVerdict.BLUNDER
     )
+    attempted = _as_int(
+        getattr(finished, "attempted_blunders", 0), default=0, minimum=0
+    )
+    return confirmed + attempted
 
 
 def _summarise(finished: FinishedGame) -> _Summary:
@@ -458,6 +469,11 @@ class Store:
             "player_white": bool(finished.player_white),
             "player_color": "white" if finished.player_white else "black",
             "blunders": summary.blunders,
+            "attempted_blunders": _as_int(
+                getattr(finished, "attempted_blunders", 0),
+                default=0,
+                minimum=0,
+            ),
             "margin": summary.margin,
             "annotations": [
                 _annotation_payload(annotation)

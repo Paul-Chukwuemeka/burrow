@@ -24,6 +24,7 @@ Two corrections to the brief, both forced by the installed python-chess
 from __future__ import annotations
 
 import io
+import json
 
 import chess
 import chess.pgn
@@ -964,6 +965,57 @@ def test_live_game_review_pass_annotates_a_bot_slip(tmp_path):
     assert store.load_stats().games[0].blunders == 0
 
 
+def test_a_taken_back_blunder_still_counts_once(tmp_path):
+    # Spec: a move the player blundered and took back is recorded as made.
+    # The move leaves the board and its annotation, but the mistake survives
+    # as an attempted blunder in the finished game and in stats.
+    store = Store(tmp_path)
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": "that loses your queen on d5."},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+
+    assert controller.try_player_move("e2e4").can_undo is True
+    assert controller.undo_player_move() is True
+    assert controller.try_player_move("d2d4").accepted is True
+    assert controller.bot_move() == "e7e5"
+    controller.resign()
+
+    finished = controller.finished_game()
+    assert finished is not None
+    assert finished.attempted_blunders == 1
+    assert [a.move_uci for a in finished.annotations] == ["d2d4", "e7e5"]
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 1
+    assert stats.blunders_per_game == [1.0]
+
+    sidecar = next((tmp_path / "games").rglob("*.annotations.json"))
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["attempted_blunders"] == 1
+    assert payload["blunders"] == 1
+
+
+def test_a_confirmed_blunder_is_not_double_counted(tmp_path):
+    store = Store(tmp_path)
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.BLUNDER},
+        messages={"e2e4": "that loses your queen on d5."},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+    assert controller.try_player_move("e2e4").can_undo is True
+    controller.confirm_move()
+    controller.bot_move()
+    controller.resign()
+
+    finished = controller.finished_game()
+    assert finished is not None
+    assert finished.attempted_blunders == 0
+    assert store.load_stats().games[0].blunders == 1
+
+
 def test_live_annotations_are_preserved_verbatim_by_the_review_pass(tmp_path):
     store = Store(tmp_path)
     message = "that hands the initiative to your opponent."
@@ -1142,7 +1194,9 @@ def test_finished_game_fields_are_the_pinned_interface():
         "bot_strength",
         "player_white",
         "result",
+        "attempted_blunders",
     }
+    assert finished.attempted_blunders == 0
     assert set(PlayerMoveOutcome.__dataclass_fields__) == {
         "accepted",
         "verdict",

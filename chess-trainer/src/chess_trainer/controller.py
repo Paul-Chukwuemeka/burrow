@@ -19,7 +19,10 @@ client of this module, so the state machine here is the contract:
 * ``finished_game`` packages the PGN plus annotations for the store.
 
 A taken-back move leaves no annotation behind, so confirming a retry cannot
-double-record the blunder.  Annotations store the coach's sentence next to
+double-record the blunder.  It is not forgotten, though: the rollback counts
+one ``attempted_blunders`` on the finished game, because the spec says a move
+the player blundered and took back is still recorded as made.  Annotations
+store the coach's sentence next to
 the move: the coach's analysis cache is single-entry and unsynchronised, so
 the controller always calls ``evaluate`` immediately followed by ``message``
 for the same position and persists the text rather than regenerating it.
@@ -140,7 +143,13 @@ class BoardSnapshot:
 
 @dataclass
 class FinishedGame:
-    """A completed game, ready for the store."""
+    """A completed game, ready for the store.
+
+    ``attempted_blunders`` counts actionable mistakes the player took back.
+    They have no annotation (the move was rewound) but still count once in
+    the game's stats.  It is last with a default so records built by older
+    callers keep working.
+    """
 
     pgn: str
     annotations: list[GameAnnotation]
@@ -148,6 +157,7 @@ class FinishedGame:
     bot_strength: float
     player_white: bool
     result: chess.Termination
+    attempted_blunders: int = 0
 
 
 class GameController:
@@ -188,6 +198,9 @@ class GameController:
         self._annotations: list[GameAnnotation] = []
         self._resigned = False
         self.awaiting_retry = False
+        #: Actionable mistakes the player took back.  The move is gone from
+        #: the annotations, but it still counts once in this game's stats.
+        self._attempted_blunders = 0
         self._finished: FinishedGame | None = None
         #: Persistence and analysis steps already completed for this game.
         #: They are set only after the step returns, so a retry resumes at the
@@ -334,18 +347,23 @@ class GameController:
         """Take back the pending player move, exactly one ply.
 
         Only available while :attr:`awaiting_retry`; the pending annotation is
-        dropped with the move so a confirmed retry is recorded only once.
+        dropped with the move so a confirmed retry is recorded only once.  If
+        that move was an actionable mistake, it is counted as an attempted
+        blunder before it disappears: taking a blunder back must not erase it
+        from the game's record.
         """
         if not self.awaiting_retry or not self._board.move_stack:
             return False
+        last = self._annotations[-1] if self._annotations else None
         popped = self._board.pop()
         self.awaiting_retry = False
-        last = self._annotations[-1] if self._annotations else None
         if (
             last is not None
             and last.is_player
             and last.move_uci == popped.uci()
         ):
+            if last.verdict in _ACTIONABLE:
+                self._attempted_blunders += 1
             self._annotations.pop()
         return True
 
@@ -417,6 +435,7 @@ class GameController:
             bot_strength=self.bot_strength,
             player_white=self.player_white,
             result=result,
+            attempted_blunders=self._attempted_blunders,
         )
 
         if not self._saved:

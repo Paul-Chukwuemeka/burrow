@@ -86,6 +86,7 @@ def finished_game(
     result: chess.Termination = chess.Termination.CHECKMATE,
     pgn_result: str | None = None,
     annotations: list[GameAnnotation] | None = None,
+    attempted_blunders: int = 0,
 ) -> FinishedGame:
     """Build a :class:`FinishedGame` the way the controller does."""
     board = chess.Board()
@@ -106,6 +107,7 @@ def finished_game(
         bot_strength=bot_strength,
         player_white=player_white,
         result=result,
+        attempted_blunders=attempted_blunders,
     )
 
 
@@ -202,6 +204,7 @@ def test_save_writes_parallel_annotation_json(tmp_path: Path) -> None:
     assert payload["player_color"] == "black"
     assert payload["result"] == "loss"
     assert payload["resignation"] is False
+    assert payload["attempted_blunders"] == 0
     assert len(payload["annotations"]) == 3
 
     first = payload["annotations"][0]
@@ -370,6 +373,32 @@ def test_record_to_stats_counts_practice_win(tmp_path: Path) -> None:
     assert record.margin > 0
     assert record.strength == 7.0
     assert record.date
+
+
+def test_attempted_blunders_count_in_stats_and_the_sidecar(
+    tmp_path: Path,
+) -> None:
+    # The move was taken back, so the annotations contain no blunder; the
+    # carried counter must still make the game count once.
+    store = Store(tmp_path)
+    game = finished_game(
+        ("d2d4", "e7e5"),
+        annotations=[
+            annotation(1, "d2d4"),
+            annotation(2, "e7e5", is_player=False),
+        ],
+        attempted_blunders=1,
+    )
+
+    path = store.save(game)
+    store.record_to_stats(game)
+
+    payload = read_sidecar(path)
+    assert payload["attempted_blunders"] == 1
+    assert payload["blunders"] == 1
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 1
+    assert stats.blunders_per_game == [1.0]
 
 
 def test_record_to_stats_appends_across_store_instances(
