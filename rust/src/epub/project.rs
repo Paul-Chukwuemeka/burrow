@@ -440,14 +440,15 @@ fn is_trim_ws(ch: char) -> bool {
     matches!(ch, ' ' | '\t' | '\n' | '\r')
 }
 
-/// True for the horizontal whitespace class the body tokenizer splits on.
+/// True for HTML collapsible whitespace (space, tab, CR, LF, FF, VT), the
+/// class the body tokenizer splits on.
+///
+/// A newline inside a text node is *not* a block break: EPUB XHTML is routinely
+/// hard-wrapped mid-paragraph, and browsers collapse those source newlines to a
+/// single space. Leaving `\n` out of this class made a `"\nword"` token look
+/// like pending whitespace and dropped `word` entirely.
 fn is_ws_token_char(ch: char) -> bool {
-    matches!(ch, ' ' | '\t' | '\r' | '\u{0C}' | '\u{0B}')
-}
-
-/// True for a token's first character that Dart treats as pending whitespace.
-fn is_pending_ws_head(ch: char) -> bool {
-    matches!(ch, ' ' | '\t' | '\n' | '\r')
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{0C}' | '\u{0B}')
 }
 
 /// An action on the explicit walk stack (keeps deep nesting off the call stack).
@@ -710,7 +711,7 @@ where
         let Some(head) = token.chars().next() else {
             return;
         };
-        if is_pending_ws_head(head) {
+        if is_ws_token_char(head) {
             self.pending_space = true;
             return;
         }
@@ -2048,6 +2049,30 @@ mod tests {
         let tree = styled("<body><h1>One</h1><p>The first chapter.</p></body>", "");
         let dto = project(&tree);
         assert_eq!(dto.body, "One\n\nThe first chapter.");
+    }
+
+    #[test]
+    fn newlines_inside_text_collapse_to_a_space() {
+        // EPUB XHTML is commonly hard-wrapped inside a single text node. A
+        // source newline is collapsible whitespace, not a token separator: the
+        // word following it must survive, whether or not the wrap is preceded
+        // by a space.
+        let spaced = styled(
+            "<body><p>his middle \nlike a bloated sausage. Below the waterbag</p></body>",
+            "",
+        );
+        assert_eq!(
+            project(&spaced).body,
+            "his middle like a bloated sausage. Below the waterbag"
+        );
+        let tight = styled("<body><p>his middle\nlike a bloated sausage</p></body>", "");
+        assert_eq!(project(&tight).body, "his middle like a bloated sausage");
+    }
+
+    #[test]
+    fn form_feed_and_vertical_tab_collapse_to_a_space() {
+        let tree = styled("<body><p>a\u{0C}b\u{0B}c</p></body>", "");
+        assert_eq!(project(&tree).body, "a b c");
     }
 
     #[test]
