@@ -34,8 +34,10 @@ from chess_trainer.controller import (
 from chess_trainer.gui.review_window import (
     ReviewGame,
     ReviewWindow,
+    SavedGameRef,
     build_steps,
     list_saved_games,
+    load_saved_game,
     review_from_finished,
 )
 from chess_trainer.gui.stats_dialog import StatsDialog
@@ -175,6 +177,55 @@ def test_corrupt_sidecar_is_skipped(tmp_path: Path, qapp) -> None:
     )
 
     assert list_saved_games(store) == []
+
+
+def test_non_utf8_pgn_is_skipped_and_stats_still_opens(tmp_path: Path, qapp) -> None:
+    store = Store(tmp_path)
+    good_path = store.save(make_finished(("e2e4", "e7e5")))
+
+    # A valid JSON sidecar with no usable result, next to a PGN whose bytes
+    # are not UTF-8.  Reading the PGN used to raise UnicodeDecodeError out of
+    # list_saved_games() and crash StatsDialog.refresh().
+    games_dir = tmp_path / "games" / "2026-11-03"
+    games_dir.mkdir(parents=True, exist_ok=True)
+    broken_path = games_dir / "20261103T235959000000-broken.pgn"
+    broken_path.write_bytes(b"\xff\xfe\x00not a UTF-8 PGN")
+    broken_path.with_name(broken_path.stem + ".annotations.json").write_text(
+        json.dumps(
+            {
+                "date": "2026-11-03T23:59:59+00:00",
+                "practice": False,
+                "annotations": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    refs = list_saved_games(store)
+    assert [ref.path for ref in refs] == [good_path]
+
+    dialog = StatsDialog(store)
+    try:
+        assert dialog._history.count() == 1
+        assert dialog.saved_games[0].path == good_path
+    finally:
+        dialog.close()
+
+    # Opening the corrupt pair directly also degrades instead of raising; the
+    # saved annotations still render and the PGN fallback is simply absent.
+    broken_ref = SavedGameRef(
+        path=broken_path,
+        date="2026-11-03T23:59:59+00:00",
+        result="",
+        practice=False,
+        blunders=0,
+        bot_strength=6.0,
+        player_white=True,
+        resignation=False,
+    )
+    loaded = load_saved_game(broken_ref)
+    assert loaded.pgn is None
+    assert loaded.annotations == []
 
 
 def test_missing_annotation_list_falls_back_to_pgn(tmp_path: Path, qapp) -> None:

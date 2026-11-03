@@ -241,14 +241,18 @@ def _read_payload(path: Path) -> dict[str, object] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _ref_from_payload(path: Path, payload: dict[str, object]) -> SavedGameRef:
+def _ref_from_payload(path: Path, payload: dict[str, object]) -> SavedGameRef | None:
+    # Read the PGN up front: unreadable bytes (including UnicodeDecodeError,
+    # a ValueError) mean this is not a usable PGN/sidecar pair.  Skipping it
+    # keeps a corrupt file from breaking the whole history list.
+    try:
+        pgn = path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return None
     player_white = payload.get("player_white") is not False
     result = payload.get("result")
     if result not in _RESULTS:
-        try:
-            result = _result_from_pgn(path.read_text(encoding="utf-8"), player_white)
-        except OSError:
-            result = ""
+        result = _result_from_pgn(pgn, player_white)
     date = payload.get("date")
     if not isinstance(date, str) or not date:
         date = path.parent.name
@@ -286,7 +290,10 @@ def list_saved_games(store: Store) -> list[SavedGameRef]:
         payload = _read_payload(path)
         if payload is None:
             continue
-        refs.append(_ref_from_payload(path, payload))
+        ref = _ref_from_payload(path, payload)
+        if ref is None:
+            continue
+        refs.append(ref)
     refs.sort(key=lambda ref: (ref.date, str(ref.path)), reverse=True)
     return refs
 
@@ -297,7 +304,9 @@ def load_saved_game(ref: SavedGameRef) -> ReviewGame:
     annotations = _annotations_from_payload(payload)
     try:
         pgn = ref.path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, ValueError):
+        # Same tolerance as listing: an unreadable/corrupt PGN still opens
+        # with its saved annotations, just without the PGN fallback.
         pgn = None
     return ReviewGame(
         annotations=annotations,
