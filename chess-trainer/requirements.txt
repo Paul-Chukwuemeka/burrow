@@ -1,2 +1,2 @@
-python-chess
-PyQt6
+python-chess==1.999
+PyQt6==6.8.1
