@@ -1031,6 +1031,31 @@ def test_a_taken_back_blunder_still_counts_once(tmp_path):
     assert payload["blunders"] == 1
 
 
+def test_a_taken_back_notable_does_not_count_as_a_blunder(tmp_path):
+    # NOTABLE is not a stats blunder even when kept, so taking one back must
+    # not turn it into one either.
+    store = Store(tmp_path)
+    coach = StubCoach(
+        verdicts={"e2e4": CoachVerdict.NOTABLE},
+        messages={"e2e4": "that leaves your knight on f6 where it can be taken."},
+    )
+    controller = GameController(ScriptedBot("e7e5"), coach, store)
+    controller.new_game(Mode.LIVE_COACH)
+
+    assert controller.try_player_move("e2e4").can_undo is True
+    assert controller.undo_player_move() is True
+    assert controller.try_player_move("d2d4").accepted is True
+    assert controller.bot_move() == "e7e5"
+    controller.resign()
+
+    finished = controller.finished_game()
+    assert finished is not None
+    assert finished.attempted_blunders == 0
+    stats = store.load_stats()
+    assert stats.games[0].blunders == 0
+    assert stats.blunders_per_game == [0.0]
+
+
 def test_a_confirmed_blunder_is_not_double_counted(tmp_path):
     store = Store(tmp_path)
     coach = StubCoach(

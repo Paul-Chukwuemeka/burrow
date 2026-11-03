@@ -310,7 +310,7 @@ def test_stats_with_bad_values_are_repaired_field_by_field(
                         "practice": False,
                         "blunders": 2,
                         "margin": 1.0,
-                        "strength": 6.0,
+                        "strength": 18.0,
                         "date": "2026-11-01",
                     },
                     {"result": "nonsense"},
@@ -329,9 +329,10 @@ def test_stats_with_bad_values_are_repaired_field_by_field(
     assert stats.wins == 0  # negative counts are treated as corrupt
     assert stats.draws == 0
     assert stats.blunders_per_game == [2.0, 3.5]
-    assert stats.strength == DEFAULT_BOT_STRENGTH  # out of skill range
+    assert stats.strength == MAX_BOT_STRENGTH  # legacy 99 clamps to the ceiling
     assert len(stats.games) == 1
     assert stats.games[0].result == "win"
+    assert stats.games[0].strength == MAX_BOT_STRENGTH  # 18 clamps as well
 
 
 def test_load_game_records_degrades_to_empty(tmp_path: Path) -> None:

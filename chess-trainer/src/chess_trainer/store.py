@@ -112,11 +112,15 @@ def _as_float(value: object, *, default: float) -> float:
 
 
 def _as_strength(value: object, *, default: float) -> float:
-    """``value`` as a strength on the Stockfish skill scale, or ``default``."""
+    """``value`` as a strength on the skill scale, clamped to the range.
+
+    A non-numeric or non-finite value falls back to ``default``.  A finite
+    number is clamped into ``[MIN_BOT_STRENGTH, MAX_BOT_STRENGTH]`` instead of
+    being rejected, so legacy records written under the old 20-point ceiling
+    display the humanlike limit rather than resetting to the default.
+    """
     number = _as_float(value, default=default)
-    if not MIN_BOT_STRENGTH <= number <= MAX_BOT_STRENGTH:
-        return default
-    return number
+    return min(max(number, MIN_BOT_STRENGTH), MAX_BOT_STRENGTH)
 
 
 def _verdict_value(verdict: object) -> str:
@@ -551,8 +555,7 @@ class Store:
         if isinstance(raw, dict):
             # Tolerate a future ``{"strength": ...}`` shape.
             raw = raw.get("strength")
-        number = _as_float(raw, default=DEFAULT_BOT_STRENGTH)
-        return min(max(number, MIN_BOT_STRENGTH), MAX_BOT_STRENGTH)
+        return _as_strength(raw, default=DEFAULT_BOT_STRENGTH)
 
     @bot_strength.setter
     def bot_strength(self, value: float) -> None:

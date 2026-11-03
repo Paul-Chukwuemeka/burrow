@@ -198,8 +198,10 @@ class GameController:
         self._annotations: list[GameAnnotation] = []
         self._resigned = False
         self.awaiting_retry = False
-        #: Actionable mistakes the player took back.  The move is gone from
-        #: the annotations, but it still counts once in this game's stats.
+        #: Blunders the player took back.  The move is gone from the
+        #: annotations, but it still counts once in this game's stats.  It
+        #: deliberately matches the stats definition, which counts BLUNDER
+        #: annotations only (NOTABLE is not a stats blunder even when kept).
         self._attempted_blunders = 0
         self._finished: FinishedGame | None = None
         #: Persistence and analysis steps already completed for this game.
@@ -348,9 +350,10 @@ class GameController:
 
         Only available while :attr:`awaiting_retry`; the pending annotation is
         dropped with the move so a confirmed retry is recorded only once.  If
-        that move was an actionable mistake, it is counted as an attempted
-        blunder before it disappears: taking a blunder back must not erase it
-        from the game's record.
+        that move was a BLUNDER, it is counted as an attempted blunder before
+        it disappears: taking a blunder back must not erase it from the game's
+        record.  NOTABLE is not a stats blunder, so a taken-back notable is
+        not counted (keeping the same definition as the annotations).
         """
         if not self.awaiting_retry or not self._board.move_stack:
             return False
@@ -362,7 +365,7 @@ class GameController:
             and last.is_player
             and last.move_uci == popped.uci()
         ):
-            if last.verdict in _ACTIONABLE:
+            if last.verdict is CoachVerdict.BLUNDER:
                 self._attempted_blunders += 1
             self._annotations.pop()
         return True
