@@ -332,7 +332,9 @@ fn inner_text(el: &El) -> String {
     }
     let mut out = String::new();
     walk(el, &mut out);
-    out.trim().to_string()
+    // TOC source files routinely wrap titles across lines; collapse every
+    // whitespace run (not just the ends) so the reader shows one clean line.
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

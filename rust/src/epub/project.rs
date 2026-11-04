@@ -536,10 +536,10 @@ struct OpenNode {
 /// against the projected body (`href` is the raw attribute value). Still
 /// unresolved: `resolve_split_links` maps each to a global chapter index.
 #[derive(Debug, Clone)]
-struct RawLink {
-    start: u32,
-    end: u32,
-    href: String,
+pub struct RawLink {
+    pub start: u32,
+    pub end: u32,
+    pub href: String,
 }
 
 /// Whitespace handling for the current element. CSS `white-space` is
@@ -734,7 +734,7 @@ where
                 // first linked character. Empty anchors (image-only or pure
                 // whitespace) produce nothing.
                 if tag == "a" && node.href.is_some() {
-                    let mut bytes = self.body.as_bytes();
+                    let bytes = self.body.as_bytes();
                     let mut first_text = start;
                     while first_text < bytes.len()
                         && matches!(bytes[first_text], b' ' | b'\n')
@@ -1459,7 +1459,7 @@ pub fn resolve_split_links(docs: Vec<SplitDoc>) -> Vec<ChapterDto> {
 
     let mut out: Vec<ChapterDto> = Vec::with_capacity(total as usize);
     for doc in docs {
-        for (ci, mut ch) in doc.chapters.into_iter().enumerate() {
+        for mut ch in doc.chapters {
             ch.links = std::mem::take(&mut resolved[out.len()]);
             out.push(ch);
         }
@@ -1724,37 +1724,63 @@ fn parse_plain_number(value: &str) -> Option<f64> {
     value.trim().parse::<f64>().ok()
 }
 
-/// `em`/`rem`/`pt`/unitless lengths as pixels, matching `_parseLength`.
+/// `em`/`rem`/`pt`/`pc`/`in`/`cm`/`mm`/`q`/`ex`/`ch`/`px`/unitless lengths
+/// as pixels.
 ///
-/// Percentages are *not* resolved here (Dart treats them as a bare number for
-/// these properties, where CSS would resolve them against the font/container).
+/// Unsupported units return `None` instead of silently dropping the unit (the
+/// old `strip_units` made `1cm` a 1px length). Percentages and viewport units
+/// are handled symbolically by [`parse_css_length`].
 fn parse_length(value: &str) -> Option<f64> {
-    let trimmed = value.trim();
-    let number = strip_units(trimmed)?;
-    let lower = trimmed.to_lowercase();
-    if lower.ends_with("em") || lower.ends_with("rem") {
-        Some(number * 16.0)
-    } else if lower.ends_with("pt") {
-        Some(number * 1.333)
-    } else {
-        Some(number)
-    }
+    length_px(value)
 }
 
-/// `font-size`, with percentage and `em` resolution, matching `_parseFontSize`.
-fn parse_font_size(value: &str) -> Option<f64> {
+/// Splits a CSS dimension into its numeric part and unit.
+fn split_number_unit(value: &str) -> Option<(&str, &str)> {
     let trimmed = value.trim();
-    let number = strip_units(trimmed)?;
-    let lower = trimmed.to_lowercase();
-    if lower.ends_with('%') {
-        Some(number * 16.0 / 100.0)
-    } else if lower.ends_with("em") || lower.ends_with("rem") {
-        Some(number * 16.0)
-    } else if lower.ends_with("pt") {
-        Some(number * 1.333)
-    } else {
-        Some(number)
+    if trimmed.is_empty() {
+        return None;
     }
+    let end = trimmed
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == '+'))
+        .unwrap_or(trimmed.len());
+    if end == 0 {
+        return None;
+    }
+    let (number, unit) = trimmed.split_at(end);
+    if matches!(number, "-" | "+" | ".") {
+        return None;
+    }
+    Some((number, unit))
+}
+
+/// Converts a CSS length to pixels, or `None` for an unsupported unit/keyword.
+fn length_px(value: &str) -> Option<f64> {
+    let (number, unit) = split_number_unit(value)?;
+    let number: f64 = number.parse().ok()?;
+    let factor = match unit.to_ascii_lowercase().as_str() {
+        "" | "px" => 1.0,
+        "em" | "rem" => 16.0,
+        "ex" | "ch" => 8.0,
+        "pt" => 1.333,
+        "pc" => 16.0,
+        "in" => 96.0,
+        "cm" => 96.0 / 2.54,
+        "mm" => 96.0 / 25.4,
+        "q" => 96.0 / 101.6,
+        "%" | "vw" | "vh" | "vmin" | "vmax" => return None,
+        _ => return None,
+    };
+    Some(number * factor)
+}
+
+/// `font-size`, with percentage and `em` resolution.
+fn parse_font_size(value: &str) -> Option<f64> {
+    let (number, unit) = split_number_unit(value)?;
+    let number: f64 = number.parse().ok()?;
+    if unit.eq_ignore_ascii_case("%") {
+        return Some(number * 16.0 / 100.0);
+    }
+    length_px(value)
 }
 
 /// `line-height`, matching `_parseLineHeight` (percent and `em` stay multipliers).
@@ -1782,8 +1808,7 @@ fn parse_line_height(value: &str) -> Option<f64> {
     parse_length(trimmed)
 }
 
-/// Box-model lengths, keeping `%` (and viewport units) symbolic, matching
-/// `_parseCssLength`.
+/// Box-model lengths, keeping `%` (and viewport units) symbolic.
 fn parse_css_length(value: &str) -> Option<CssLengthDto> {
     let trimmed = value.trim();
     let lower = trimmed.to_lowercase();
@@ -1804,44 +1829,18 @@ fn parse_css_length(value: &str) -> Option<CssLengthDto> {
     if let Some(body) = lower
         .strip_suffix("vw")
         .or_else(|| lower.strip_suffix("vh"))
+        .or_else(|| lower.strip_suffix("vmin"))
+        .or_else(|| lower.strip_suffix("vmax"))
     {
         return body.trim().parse::<f64>().ok().map(|value| CssLengthDto {
             value,
             is_percent: true,
         });
     }
-    let number: f64 = strip_trailing_letters(trimmed).parse().ok()?;
-    if lower.ends_with("em") || lower.ends_with("rem") {
-        Some(CssLengthDto {
-            value: number * 16.0,
-            is_percent: false,
-        })
-    } else if lower.ends_with("pt") {
-        Some(CssLengthDto {
-            value: number * 1.333,
-            is_percent: false,
-        })
-    } else {
-        Some(CssLengthDto {
-            value: number,
-            is_percent: false,
-        })
-    }
-}
-
-/// Strips every ASCII letter and `%` then parses the number, matching the Dart
-/// `replaceAll(RegExp(r'[a-zA-Z%]'), '')`.
-fn strip_units(value: &str) -> Option<f64> {
-    let numeric: String = value
-        .chars()
-        .filter(|ch| !ch.is_ascii_alphabetic() && *ch != '%')
-        .collect();
-    numeric.trim().parse::<f64>().ok()
-}
-
-/// Strips trailing ASCII letters, matching `replaceAll(RegExp(r'[a-z]+$'), '')`.
-fn strip_trailing_letters(value: &str) -> &str {
-    value.trim_end_matches(|ch: char| ch.is_ascii_alphabetic())
+    length_px(trimmed).map(|value| CssLengthDto {
+        value,
+        is_percent: false,
+    })
 }
 
 fn parse_text_align(value: &str) -> Option<String> {
@@ -1929,7 +1928,16 @@ fn parse_color(value: &str) -> Option<u32> {
                     let rgb = u32::from_str_radix(hex, 16).ok()?;
                     Some(0xFF00_0000 | rgb)
                 }
-                8 => u32::from_str_radix(hex, 16).ok(),
+                8 => {
+                    // CSS Color 4 writes 8-digit hex as #RRGGBBAA; the reader
+                    // uses packed ARGB, so rotate the alpha to the top byte.
+                    let rgba = u32::from_str_radix(hex, 16).ok()?;
+                    let r = (rgba >> 24) & 0xFF;
+                    let g = (rgba >> 16) & 0xFF;
+                    let b = (rgba >> 8) & 0xFF;
+                    let a = rgba & 0xFF;
+                    Some((a << 24) | (r << 16) | (g << 8) | b)
+                }
                 _ => None,
             };
         }

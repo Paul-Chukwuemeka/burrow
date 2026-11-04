@@ -10,8 +10,8 @@
 //! margins/padding, colour, width/height. Unsupported selectors are dropped
 //! per comma-part rather than failing the stylesheet, matching the Dart
 //! parser's tolerance for commercial EPUBs full of `::-webkit-*` and
-//! `::first-letter` rules. Shorthand expansion, `@media`, and `@import` are
-//! out of scope for phase 1.
+//! `::first-letter` rules. `margin`/`padding` shorthands are expanded and
+//! screen `@media` blocks are applied; `@import` remains out of scope.
 
 use std::fmt;
 
@@ -267,21 +267,8 @@ impl Stylesheet {
         {
             let rules = StyleSheetParser::new(&mut input, &mut parser);
             for item in rules {
-                match item {
-                    Ok(RuleOutput::Style {
-                        selectors,
-                        declarations,
-                    }) => {
-                        for (selector, specificity) in selectors {
-                            sheet.rules.push(StyleRule {
-                                selector,
-                                specificity,
-                                declarations: declarations.clone(),
-                            });
-                        }
-                    }
-                    Ok(RuleOutput::FontFace(face)) => sheet.font_faces.push(face),
-                    Ok(RuleOutput::None) | Err(_) => {}
+                if let Ok(output) = item {
+                    add_rule_output(output, &mut sheet);
                 }
             }
         }
@@ -299,7 +286,32 @@ pub fn extract_font_faces(css: &str, css_key: &str) -> Vec<FontFaceDto> {
 pub fn parse_inline_declarations(style: &str) -> Vec<Declaration> {
     let mut input = CssParser::new(style);
     let mut parser = StyleDeclarationParser;
-    parse_declarations(&mut input, &mut parser)
+    expand_shorthands(parse_declarations(&mut input, &mut parser))
+}
+
+/// Adds one parsed rule (or a group of rules from `@media`) to `sheet`.
+fn add_rule_output(output: RuleOutput, sheet: &mut Stylesheet) {
+    match output {
+        RuleOutput::None => {}
+        RuleOutput::Style {
+            selectors,
+            declarations,
+        } => {
+            for (selector, specificity) in selectors {
+                sheet.rules.push(StyleRule {
+                    selector,
+                    specificity,
+                    declarations: declarations.clone(),
+                });
+            }
+        }
+        RuleOutput::FontFace(face) => sheet.font_faces.push(face),
+        RuleOutput::Many(items) => {
+            for item in items {
+                add_rule_output(item, sheet);
+            }
+        }
+    }
 }
 
 /// The finished output of one top-level rule.
@@ -310,11 +322,14 @@ enum RuleOutput {
         declarations: Vec<Declaration>,
     },
     FontFace(FontFaceDto),
+    /// Rules nested inside an applied `@media` block.
+    Many(Vec<RuleOutput>),
 }
 
 /// The prelude kind of a top-level at-rule.
 enum AtKind {
     FontFace,
+    Media { apply: bool },
     Ignored,
 }
 
@@ -330,15 +345,21 @@ impl<'i> AtRuleParser<'i> for StylesheetParserImpl {
     fn parse_prelude(
         &mut self,
         name: CowRcStr<'i>,
-        _input: &mut CssParser<'i>,
+        input: &mut CssParser<'i>,
     ) -> Result<AtKind, ParseError<()>> {
         if name.eq_ignore_ascii_case("font-face") {
-            Ok(AtKind::FontFace)
-        } else {
-            // `@media`, `@import`, `@page`, `@charset`, … are out of the pinned
-            // subset; their blocks are skipped without failing the stylesheet.
-            Ok(AtKind::Ignored)
+            return Ok(AtKind::FontFace);
         }
+        // Consume the prelude for every other at-rule. `@media screen` keeps
+        // its rules when the query targets the reader's screen; `print` and
+        // unknown blocks are skipped without failing the stylesheet.
+        let prelude = read_raw_value(input)?;
+        if name.eq_ignore_ascii_case("media") {
+            return Ok(AtKind::Media {
+                apply: media_applies(prelude),
+            });
+        }
+        Ok(AtKind::Ignored)
     }
 
     fn rule_without_block(
@@ -360,6 +381,21 @@ impl<'i> AtRuleParser<'i> for StylesheetParserImpl {
                 let mut parser = FontFaceParser::default();
                 let _: Vec<()> = parse_declarations(input, &mut parser);
                 Ok(parser.finish(&self.base_dir))
+            }
+            AtKind::Media { apply } => {
+                if !apply {
+                    return Ok(RuleOutput::None);
+                }
+                let mut items = Vec::new();
+                {
+                    let rules = StyleSheetParser::new(input, self);
+                    for item in rules {
+                        if let Ok(output) = item {
+                            items.push(output);
+                        }
+                    }
+                }
+                Ok(RuleOutput::Many(items))
             }
             // The block is skipped wholesale; cssparser consumes it on the next
             // `StyleSheetParser::next` call.
@@ -389,7 +425,8 @@ impl<'i> QualifiedRuleParser<'i> for StylesheetParserImpl {
         _start: &ParserState,
         input: &mut CssParser<'i>,
     ) -> Result<RuleOutput, ParseError<()>> {
-        let declarations = parse_declarations(input, &mut StyleDeclarationParser);
+        let declarations =
+            expand_shorthands(parse_declarations(input, &mut StyleDeclarationParser));
         if declarations.is_empty() {
             return Ok(RuleOutput::None);
         }
@@ -533,6 +570,82 @@ fn read_raw_value<'i>(input: &mut CssParser<'i>) -> Result<&'i str, ParseError<(
     let start = input.position();
     while input.next().is_ok() {}
     Ok(input.slice_from(start).trim())
+}
+
+/// Expands the box-model shorthands the cascade understands.
+///
+/// `margin`/`padding` follow the CSS 1-to-4 value rule; the computed style only
+/// stores longhands, so a shorthand left unexpanded would be silently ignored.
+fn expand_shorthands(declarations: Vec<Declaration>) -> Vec<Declaration> {
+    let mut out = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let longhands: &[&str] = match declaration.property.as_str() {
+            "margin" => &["margin-top", "margin-right", "margin-bottom", "margin-left"],
+            "padding" => &[
+                "padding-top",
+                "padding-right",
+                "padding-bottom",
+                "padding-left",
+            ],
+            _ => {
+                out.push(declaration);
+                continue;
+            }
+        };
+        let parts: Vec<&str> = declaration.value.split_whitespace().collect();
+        let (top, right, bottom, left) = match parts.as_slice() {
+            [all] => (*all, *all, *all, *all),
+            [vertical, horizontal] => (*vertical, *horizontal, *vertical, *horizontal),
+            [top, horizontal, bottom] => (*top, *horizontal, *bottom, *horizontal),
+            [top, right, bottom, left] => (*top, *right, *bottom, *left),
+            _ => {
+                // Malformed (or `var(...)`); leave it for the cascade to drop.
+                out.push(declaration);
+                continue;
+            }
+        };
+        for (property, value) in longhands.iter().zip([top, right, bottom, left].into_iter()) {
+            out.push(Declaration {
+                property: (*property).to_string(),
+                value: value.to_string(),
+                important: declaration.important,
+            });
+        }
+    }
+    out
+}
+
+/// Whether a `@media` query list applies to the reader.
+///
+/// Only `print` is excluded: an e-reader renders screen-like media, and a
+/// feature query (`min-width`, `prefers-color-scheme`, …) is treated as
+/// matching rather than dropping typography.
+fn media_applies(prelude: &str) -> bool {
+    let queries = split_top_level_commas(prelude);
+    if queries.is_empty() {
+        return true;
+    }
+    queries.iter().any(|query| {
+        let lower = query.trim().to_ascii_lowercase();
+        if lower.is_empty() {
+            return true;
+        }
+        // `only print` is still print; `not print` matches this screen, while
+        // `not screen`/`not all` does not.
+        if let Some(negated) = lower.strip_prefix("not ") {
+            let negated = negated
+                .split(|c: char| c.is_whitespace() || c == '(')
+                .next()
+                .unwrap_or("");
+            return !matches!(negated, "screen" | "all");
+        }
+        let normalized = lower.strip_prefix("only ").unwrap_or(&lower);
+        let media_type = normalized
+            .split(|c: char| c.is_whitespace() || c == '(')
+            .next()
+            .unwrap_or("");
+        media_type != "print"
+    })
 }
 
 /// Splits a trailing `!important` off a raw declaration value.

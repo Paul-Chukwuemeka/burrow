@@ -355,14 +355,16 @@ fn svg_width_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // Dart's `\d` is ASCII-only, hence `[0-9]` (see `txt.rs`).
     RE.get_or_init(|| {
-        Regex::new(r#"\bwidth\s*=\s*["']([0-9.]+)"#).expect("svg width regex")
+        // `\b` matches after the hyphen in `stroke-width`/`data-width`, so
+        // require a non-name, non-hyphen character before `width`.
+        Regex::new(r#"(?:^|[^-\w])width\s*=\s*["']([0-9.]+)"#).expect("svg width regex")
     })
 }
 
 fn svg_height_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r#"\bheight\s*=\s*["']([0-9.]+)"#).expect("svg height regex")
+        Regex::new(r#"(?:^|[^-\w])height\s*=\s*["']([0-9.]+)"#).expect("svg height regex")
     })
 }
 

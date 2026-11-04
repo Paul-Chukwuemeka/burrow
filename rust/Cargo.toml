@@ -15,14 +15,15 @@ flutter_rust_bridge = "=2.13.0"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # OPF/container/Nav XML.
 quick-xml = "0.42"
-# Href percent-decoding.
-percent-encoding = "2"
 # Plain-text chapter splitting (`txt`): Dart-`RegExp` heading/blank-run
 # patterns. MIT/Apache-2.0, allowed by `deny.toml`.
 regex = "1"
 # XHTML byte decoding: honours the XML/HTML encoding declaration (windows-1252,
 # UTF-16 without a BOM, …) instead of assuming UTF-8. Apache-2.0/MIT.
 encoding_rs = "0.8"
+# NFC normalisation for archive keys: macOS-produced EPUBs store NFD names
+# while their hrefs are NFC (or vice versa). MIT/Apache-2.0.
+unicode-normalization = "0.1"
 # Browser-grade XHTML parsing with HTML5 error recovery (G1/D5). The `dom`
 # module lowers the result into our own block tree; the RcDom is never exposed.
 # `markup5ever_rcdom` 0.39 must stay in lockstep with `html5ever` 0.39 — both

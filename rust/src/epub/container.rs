@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Mutex;
 
+use unicode_normalization::UnicodeNormalization;
 use zip::ZipArchive;
 
 use super::model::EpubError;
@@ -146,13 +147,28 @@ impl EpubArchive {
     }
 
     /// Reads one raw zip entry by its exact stored name.
+    ///
+    /// The entry is read through a hard cap: the central directory's size is
+    /// attacker-controlled, so a header that under-reports its size must not be
+    /// able to inflate an unbounded amount of memory.
     pub fn read(&self, raw_name: &str) -> Option<Vec<u8>> {
         let Ok(mut archive) = self.archive.lock() else {
             return None;
         };
         let mut file = archive.by_name(raw_name).ok()?;
-        let mut buf = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut buf).ok()?;
+        let declared = file.size();
+        if declared > MAX_DECOMPRESSED_BYTES as u64 {
+            return None;
+        }
+        // Do not trust the declared size for the allocation either; start
+        // small and let `read_to_end` grow only as real bytes arrive.
+        let capacity = declared.min(16 * 1024 * 1024) as usize;
+        let mut buf = Vec::with_capacity(capacity);
+        let mut limited = file.by_ref().take(MAX_DECOMPRESSED_BYTES as u64 + 1);
+        limited.read_to_end(&mut buf).ok()?;
+        if buf.len() as u128 > MAX_DECOMPRESSED_BYTES {
+            return None;
+        }
         Some(buf)
     }
 
@@ -239,29 +255,43 @@ pub(crate) fn attr(
     None
 }
 
-/// Lowercase + percent-decode an archive path for use as a lookup key.
+/// Lowercase + percent-decode + NFC-normalise an archive path for use as a
+/// lookup key.
+///
+/// Backslashes are treated as separators: some Windows-produced EPUBs store
+/// `Text\ch1.xhtml` in both the manifest and the ZIP.
 pub fn normalize_key(path: &str) -> String {
-    decode_percent(path).to_lowercase()
+    decode_percent(path)
+        .replace('\\', "/")
+        .nfc()
+        .collect::<String>()
+        .to_lowercase()
 }
 
 /// Resolves `href` against `base_dir` into a normalised lookup key.
 ///
-/// Handles fragments, `..`/`.` segments, percent-encoding, and indirection
-/// through nested directories. Never panics on malformed escapes.
+/// Handles fragments, `..`/`.` segments, percent-encoding, backslash
+/// separators, Unicode normalisation, and indirection through nested
+/// directories. Never panics on malformed escapes.
 ///
 /// The result is **lowercased** to match [`normalize_key`], which is how the
 /// key map is stored. Returning a mixed-case path here was a bug: the stored
 /// keys are lowercased, so lookups silently missed unless the fallback scan
 /// happened to find the entry.
 pub fn resolve_href(base_dir: &str, href: &str) -> String {
-    let clean = href.split('#').next().unwrap_or("").trim();
-    let decoded = decode_percent(clean);
+    let clean = href
+        .split('#')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .replace('\\', "/");
+    let decoded = decode_percent(&clean);
     let joined = if base_dir.is_empty() {
         decoded
     } else {
         format!("{base_dir}/{decoded}")
     };
-    normalize_path(&joined).to_lowercase()
+    normalize_key(&normalize_path(&joined))
 }
 
 /// Collapses `.`/`..`/empty segments and joins with `/`.
@@ -279,38 +309,37 @@ fn normalize_path(path: &str) -> String {
     out.join("/")
 }
 
-/// Percent-decodes `s`, returning it unchanged when it is not valid
-/// percent-encoding (e.g. a literal `%` in `100%_cover.xhtml`).
+/// Percent-decodes `s`, decoding every valid `%XX` escape and leaving a stray
+/// `%` literal.
 ///
-/// This mirrors Dart's all-or-nothing `_safeDecode`: a single stray `%` must
-/// not abort the whole book, and decoding must be consistent between the href
-/// and the entry name so the two still match.
+/// The old all-or-nothing behaviour (mirroring Dart's `_safeDecode`) meant a
+/// single literal `%` in a filename — `100%_cover.xhtml` — left *every* other
+/// escape encoded, so the href no longer matched the archive entry. Decoding
+/// the valid escapes keeps the common case working; the invalid `%` survives
+/// as a literal, which matches the entry name.
 pub fn decode_percent(s: &str) -> String {
-    if !is_valid_percent(s) {
+    if !s.contains('%') {
         return s.to_string();
     }
-    percent_encoding::percent_decode_str(s)
-        .decode_utf8_lossy()
-        .into_owned()
-}
-
-fn is_valid_percent(s: &str) -> bool {
-    let b = s.as_bytes();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' {
-            if i + 2 >= b.len()
-                || !b[i + 1].is_ascii_hexdigit()
-                || !b[i + 2].is_ascii_hexdigit()
-            {
-                return false;
-            }
-            i += 3;
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && bytes[index + 1].is_ascii_hexdigit()
+            && bytes[index + 2].is_ascii_hexdigit()
+        {
+            let high = (bytes[index + 1] as char).to_digit(16).unwrap();
+            let low = (bytes[index + 2] as char).to_digit(16).unwrap();
+            out.push((high * 16 + low) as u8);
+            index += 3;
         } else {
-            i += 1;
+            out.push(bytes[index]);
+            index += 1;
         }
     }
-    true
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]

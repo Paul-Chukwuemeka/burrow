@@ -120,20 +120,9 @@ fn parse_navigation(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Navigat
     }
 
     // Spine order. An idref is resolved through the manifest to its href, not
-    // treated as a path (bug class #116).
-    let mut spine: Vec<String> = Vec::new();
-    for idref in &opf.spine {
-        if let Some(key) = manifest.get(idref) {
-            if !spine.contains(key) {
-                spine.push(key.clone());
-            }
-        }
-    }
-    if spine.is_empty() {
-        // Fallback: every XHTML/HTML manifest entry, in natural order. This
-        // covers both an absent `<spine>` and a spine whose idrefs all miss.
-        spine = html_manifest_keys(opf, &base);
-    }
+    // treated as a path (bug class #116). `linear="no"` items are auxiliary
+    // content and are not chapters.
+    let (mut spine, fallback_spine) = resolve_spine(opf, &manifest, &base, nav_key.as_deref());
 
     // TOC: the EPUB3 nav document first, then the EPUB2 NCX, then a last-resort
     // scan for any document that actually contains a `<nav>`.
@@ -174,6 +163,11 @@ fn parse_navigation(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Navigat
                 let entries = nav::parse_nav(&String::from_utf8_lossy(&bytes), &key, true);
                 if !entries.is_empty() {
                     toc = entries;
+                    // A nav document is not a chapter; drop it from a
+                    // manifest-order fallback spine if it slipped in.
+                    if fallback_spine {
+                        spine.retain(|k| k != &key);
+                    }
                     break;
                 }
             }
@@ -185,6 +179,46 @@ fn parse_navigation(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Navigat
         spine,
         toc,
         cover_hrefs: cover_hrefs(opf, opf_path),
+    }
+}
+
+/// Resolves the spine, filtering `linear="no"` items.
+///
+/// Returns the chapter keys plus whether the manifest-order fallback was used,
+/// so the caller can drop a nav document discovered later.
+fn resolve_spine(
+    opf: &Opf,
+    manifest: &HashMap<String, String>,
+    base: &str,
+    nav_key: Option<&str>,
+) -> (Vec<String>, bool) {
+    let mut spine = Vec::new();
+    let mut had_linear = false;
+    for idref in &opf.spine {
+        if opf.non_linear.contains(idref) {
+            continue;
+        }
+        had_linear = true;
+        if let Some(key) = manifest.get(idref) {
+            if !spine.contains(key) {
+                spine.push(key.clone());
+            }
+        }
+    }
+    // A spine whose entries are *all* non-linear deliberately yields no
+    // chapters; falling back to the manifest would resurrect them.
+    let all_non_linear = !opf.spine.is_empty() && !had_linear;
+    if spine.is_empty() && !all_non_linear {
+        // Fallback: every XHTML/HTML manifest entry, in natural order. This
+        // covers both an absent `<spine>` and a spine whose idrefs all miss.
+        // The EPUB3 nav document is never a chapter.
+        let mut keys = html_manifest_keys(opf, base);
+        if let Some(nav_key) = nav_key {
+            keys.retain(|key| key != nav_key);
+        }
+        (keys, true)
+    } else {
+        (spine, false)
     }
 }
 
@@ -312,6 +346,9 @@ struct Opf {
     items: Vec<Item>,
     /// `<itemref idref>` values, in spine order.
     spine: Vec<String>,
+    /// Idrefs carrying `linear="no"`: auxiliary content (notes, ads, the nav
+    /// document) that is not part of the primary reading order.
+    non_linear: HashSet<String>,
     /// `<spine toc="...">` — the manifest id of the NCX document, if declared.
     toc_id: Option<String>,
 }
@@ -553,6 +590,12 @@ fn handle(out: &mut Opf, frame: &Frame) {
         }
         "itemref" => {
             if let Some(idref) = get(&frame.attrs, "idref") {
+                if get(&frame.attrs, "linear")
+                    .map(|v| v.eq_ignore_ascii_case("no"))
+                    .unwrap_or(false)
+                {
+                    out.non_linear.insert(idref.to_string());
+                }
                 out.spine.push(idref.to_string());
             }
         }
@@ -589,7 +632,7 @@ fn pick_isbn(ids: &[(Option<String>, String)]) -> Option<String> {
         if scheme == "isbn" {
             return Some(raw.clone());
         }
-        if isbn.is_none() && is_isbn10(&stripped) {
+        if isbn.is_none() && (is_isbn10(&stripped) || is_isbn13(&stripped)) {
             isbn = Some(raw.clone());
         }
     }
@@ -601,6 +644,27 @@ fn is_isbn10(v: &str) -> bool {
     b.len() == 10
         && b[..9].iter().all(u8::is_ascii_digit)
         && (b[9].is_ascii_digit() || b[9] == b'X' || b[9] == b'x')
+}
+
+/// ISBN-13 with a valid check digit (weights alternate 1 and 3).
+fn is_isbn13(v: &str) -> bool {
+    let b = v.as_bytes();
+    if b.len() != 13 || !b.iter().all(u8::is_ascii_digit) {
+        return false;
+    }
+    let sum: u32 = b
+        .iter()
+        .enumerate()
+        .map(|(index, byte)| {
+            let digit = u32::from(byte - b'0');
+            if index % 2 == 0 {
+                digit
+            } else {
+                digit * 3
+            }
+        })
+        .sum();
+    sum % 10 == 0
 }
 
 /// Calibre's `calibre:series` / `calibre:series_index` metas (matched
@@ -1510,5 +1574,55 @@ mod tests {
             </metadata></package>"##,
         );
         assert_eq!(opf.title, "Inner");
+    }
+
+    #[test]
+    fn isbn13_without_a_scheme_is_recognised() {
+        let ids = vec![(None, "978-0-306-40615-7".to_string())];
+        assert_eq!(super::pick_isbn(&ids).as_deref(), Some("978-0-306-40615-7"));
+    }
+
+    #[test]
+    fn spine_linear_no_items_are_excluded() {
+        let opf = super::parse_opf(
+            r##"<package>
+            <manifest>
+              <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+              <item id="b" href="b.xhtml" media-type="application/xhtml+xml"/>
+              <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+            </manifest>
+            <spine>
+              <itemref idref="a"/>
+              <itemref idref="b" linear="no"/>
+            </spine>
+            </package>"##,
+        );
+        assert!(opf.non_linear.contains("b"));
+        let mut manifest = HashMap::new();
+        manifest.insert("a".to_string(), "oebps/a.xhtml".to_string());
+        manifest.insert("b".to_string(), "oebps/b.xhtml".to_string());
+        manifest.insert("nav".to_string(), "oebps/nav.xhtml".to_string());
+        let (spine, fallback) =
+            super::resolve_spine(&opf, &manifest, "OEBPS", Some("oebps/nav.xhtml"));
+        assert_eq!(spine, vec!["oebps/a.xhtml"]);
+        assert!(!fallback);
+    }
+
+    #[test]
+    fn fallback_spine_excludes_the_nav_document() {
+        let opf = super::parse_opf(
+            r##"<package>
+            <manifest>
+              <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+              <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+            </manifest>
+            <spine/>
+            </package>"##,
+        );
+        let manifest = HashMap::new();
+        let (spine, fallback) =
+            super::resolve_spine(&opf, &manifest, "OEBPS", Some("oebps/nav.xhtml"));
+        assert!(fallback);
+        assert_eq!(spine, vec!["oebps/a.xhtml"]);
     }
 }

@@ -648,7 +648,13 @@ impl<'a> Element for BlockElement<'a> {
     }
 
     fn has_local_name(&self, local_name: &Atom) -> bool {
-        self.node().attrs.tag.eq_ignore_ascii_case(local_name.as_str())
+        let name = local_name.as_str();
+        // The synthetic root carries the `<body>` tag, but CSS authors also
+        // target `html` for inherited typography. Treat the root as both.
+        if name.eq_ignore_ascii_case("html") {
+            return self.index == 0;
+        }
+        self.node().attrs.tag.eq_ignore_ascii_case(name)
     }
 
     fn has_namespace(&self, namespace: &Atom) -> bool {
