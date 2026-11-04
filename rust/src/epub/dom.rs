@@ -145,6 +145,77 @@ pub fn attributes(node: &Handle) -> Vec<(String, String)> {
     }
 }
 
+/// One styling input collected from the document, in document order.
+///
+/// The cascade applies `<link rel="stylesheet">` and `<style>` in the order
+/// they appear (head and body), mirroring how a browser resolves them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StyleEvent {
+    /// The text contents of a `<style>` element.
+    Style(String),
+    /// The `href` of a `<link rel="stylesheet">`, exactly as written.
+    Link(String),
+}
+
+/// The document's `<link rel="stylesheet">` and `<style>` inputs in document
+/// order (`<head>` and `<body>`).
+///
+/// `rel` is matched case-insensitively on whitespace-separated tokens; an
+/// `alternate stylesheet` is not applied, and the href is not resolved here
+/// (the caller knows the document's archive directory).
+pub fn style_events(node: &Handle) -> Vec<StyleEvent> {
+    let mut out = Vec::new();
+    collect_style_events(node, &mut out, 0);
+    out
+}
+
+fn collect_style_events(node: &Handle, out: &mut Vec<StyleEvent>, depth: usize) {
+    if depth > MAX_DOM_DEPTH {
+        return;
+    }
+    for child in children(node) {
+        match element_name(&child).as_deref() {
+            Some("style") => {
+                let mut text = String::new();
+                gather_text(&child, &mut text, depth + 1);
+                out.push(StyleEvent::Style(text));
+            }
+            Some("link") => {
+                if let Some(href) = stylesheet_href(&child) {
+                    out.push(StyleEvent::Link(href));
+                }
+            }
+            _ => collect_style_events(&child, out, depth + 1),
+        }
+    }
+}
+
+fn stylesheet_href(node: &Handle) -> Option<String> {
+    let mut rel = None;
+    let mut href = None;
+    for (name, value) in attributes(node) {
+        match name.as_str() {
+            "rel" => rel = Some(value),
+            "href" => href = Some(value),
+            _ => {}
+        }
+    }
+    let rel = rel?;
+    let mut is_alternate = false;
+    let mut is_stylesheet = false;
+    for token in rel.split_whitespace() {
+        match token.to_ascii_lowercase().as_str() {
+            "alternate" => is_alternate = true,
+            "stylesheet" => is_stylesheet = true,
+            _ => {}
+        }
+    }
+    if is_alternate || !is_stylesheet {
+        return None;
+    }
+    href.map(|h| h.trim().to_string()).filter(|h| !h.is_empty())
+}
+
 /// The contents of a text node, or `None` for any other node.
 pub fn text(node: &Handle) -> Option<String> {
     match &node.data {

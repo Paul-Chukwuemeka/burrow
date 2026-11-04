@@ -15,7 +15,7 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
 use super::container::{self, normalize_key, resolve_href, EpubArchive};
-use super::css;
+use super::cascade;
 use super::model::{EpubError, FontFaceDto, MetadataDto, TocEntryDto};
 use super::nav;
 
@@ -902,26 +902,21 @@ fn extract_cover(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Option<Vec
 
 /// `@font-face` declarations from the book's external stylesheets.
 ///
-/// Mirrors `EpubCssParser`: only manifest `.css` files are scanned (inline
-/// `<style>` blocks are not), and each font `url()` resolves against the
-/// stylesheet's own directory.
+/// Only manifest `.css` files are scanned (inline `<style>` blocks are not),
+/// and each font `url()` resolves against the stylesheet's own directory.
+/// `@import`ed sheets are followed recursively, mirroring the cascade.
 fn extract_font_faces(archive: &EpubArchive, opf: &Opf, opf_path: &str) -> Vec<FontFaceDto> {
     let base = opf_dir(opf_path);
     let mut faces: Vec<FontFaceDto> = Vec::new();
+    let mut seen = HashSet::new();
+    let read = |key: &str| archive.read_by_key(key);
     for item in &opf.items {
         let Some(href) = &item.href else { continue };
         if !href.to_ascii_lowercase().ends_with(".css") {
             continue;
         }
         let key = resolve_href(&base, href);
-        if let Some(bytes) = archive.read_by_key(&key) {
-            let text = String::from_utf8_lossy(&bytes);
-            for face in css::extract_font_faces(&text, &key) {
-                if !faces.contains(&face) {
-                    faces.push(face);
-                }
-            }
-        }
+        cascade::font_faces_from_entry(&key, &read, &mut faces, &mut seen, 0);
     }
     faces
 }

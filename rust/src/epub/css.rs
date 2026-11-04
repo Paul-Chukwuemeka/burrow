@@ -11,7 +11,9 @@
 //! per comma-part rather than failing the stylesheet, matching the Dart
 //! parser's tolerance for commercial EPUBs full of `::-webkit-*` and
 //! `::first-letter` rules. `margin`/`padding` shorthands are expanded and
-//! screen `@media` blocks are applied; `@import` remains out of scope.
+//! screen `@media` blocks are applied; `@import`ed sheets are followed (in
+//! cascade order, screen-only) with a depth cap. `@charset`, `@layer`,
+//! `@supports`, and remote (`http:`/`data:`) imports remain out of scope.
 
 use std::fmt;
 
@@ -249,11 +251,17 @@ pub struct StyleRule {
     pub declarations: Vec<Declaration>,
 }
 
-/// A parsed stylesheet's rules and `@font-face` list.
+/// A parsed stylesheet's rules, `@font-face` list, and `@import` hrefs.
+///
+/// `@import` targets are **not** resolved here — the reader/importer can fetch
+/// them — so this stays a pure parser. The cascade resolves and loads them in
+/// document order before the importing sheet's own rules.
 #[derive(Clone, Debug, Default)]
 pub struct Stylesheet {
     pub rules: Vec<StyleRule>,
     pub font_faces: Vec<FontFaceDto>,
+    /// `@import` hrefs in document order, exactly as written.
+    pub imports: Vec<String>,
 }
 
 impl Stylesheet {
@@ -306,6 +314,7 @@ fn add_rule_output(output: RuleOutput, sheet: &mut Stylesheet) {
             }
         }
         RuleOutput::FontFace(face) => sheet.font_faces.push(face),
+        RuleOutput::Import(href) => sheet.imports.push(href),
         RuleOutput::Many(items) => {
             for item in items {
                 add_rule_output(item, sheet);
@@ -324,12 +333,15 @@ enum RuleOutput {
     FontFace(FontFaceDto),
     /// Rules nested inside an applied `@media` block.
     Many(Vec<RuleOutput>),
+    /// An `@import` rule, holding the href to apply ahead of this sheet.
+    Import(String),
 }
 
 /// The prelude kind of a top-level at-rule.
 enum AtKind {
     FontFace,
     Media { apply: bool },
+    Import { href: String, apply: bool },
     Ignored,
 }
 
@@ -359,15 +371,28 @@ impl<'i> AtRuleParser<'i> for StylesheetParserImpl {
                 apply: media_applies(prelude),
             });
         }
+        if name.eq_ignore_ascii_case("import") {
+            return match parse_import_prelude(prelude) {
+                Some((href, apply)) => Ok(AtKind::Import { href, apply }),
+                None => Ok(AtKind::Ignored),
+            };
+        }
         Ok(AtKind::Ignored)
     }
 
     fn rule_without_block(
         &mut self,
-        _prelude: AtKind,
+        prelude: AtKind,
         _start: &ParserState,
     ) -> Result<RuleOutput, ()> {
-        Ok(RuleOutput::None)
+        match prelude {
+            AtKind::Import { href, apply } => Ok(if apply {
+                RuleOutput::Import(href)
+            } else {
+                RuleOutput::None
+            }),
+            _ => Ok(RuleOutput::None),
+        }
     }
 
     fn parse_block(
@@ -382,6 +407,11 @@ impl<'i> AtRuleParser<'i> for StylesheetParserImpl {
                 let _: Vec<()> = parse_declarations(input, &mut parser);
                 Ok(parser.finish(&self.base_dir))
             }
+            AtKind::Import { href, apply } => Ok(if apply {
+                RuleOutput::Import(href)
+            } else {
+                RuleOutput::None
+            }),
             AtKind::Media { apply } => {
                 if !apply {
                     return Ok(RuleOutput::None);
@@ -613,6 +643,48 @@ fn expand_shorthands(declarations: Vec<Declaration>) -> Vec<Declaration> {
         }
     }
     out
+}
+
+/// Parses the prelude of an `@import` rule into its href and whether its
+/// media query applies, or `None` for remote/unreadable targets.
+///
+/// Grammar: `@import [ <url> | <string> ] <media-query-list>?`. A remote
+/// (`http:`/`https:`/`//`) or `data:` target is rejected — the engine never
+/// fetches.
+fn parse_import_prelude(prelude: &str) -> Option<(String, bool)> {
+    let trimmed = prelude.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let (href, after) = if lower.starts_with("url(") {
+        let rest = &trimmed[4..];
+        let end = rest.find(')')?;
+        let href = unquote(rest[..end].trim());
+        (href, rest[end + 1..].trim())
+    } else if trimmed.starts_with(['"', '\'']) {
+        let quote = trimmed.chars().next()?;
+        let body = &trimmed[quote.len_utf8()..];
+        let end = body.find(quote)?;
+        let href = body[..end].trim().to_string();
+        (href, body[end + quote.len_utf8()..].trim())
+    } else {
+        // Bare unquoted token (rare, but the spec allows it).
+        let end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+        (trimmed[..end].to_string(), trimmed[end..].trim())
+    };
+    if href.is_empty() {
+        return None;
+    }
+    let lower_href = href.to_ascii_lowercase();
+    if lower_href.starts_with("http://")
+        || lower_href.starts_with("https://")
+        || lower_href.starts_with("//")
+        || lower_href.starts_with("data:")
+    {
+        return None;
+    }
+    Some((href, media_applies(after)))
 }
 
 /// Whether a `@media` query list applies to the reader.

@@ -14,7 +14,7 @@
 //! Inherited properties (font, colour, text-align, …) flow from a parent to its
 //! children; non-inherited ones (margins, width, …) reset per element.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
@@ -27,8 +27,9 @@ use selectors::parser::Selector;
 use selectors::{Element, OpaqueElement};
 
 use crate::epub::block;
-use crate::epub::container::EpubArchive;
+use crate::epub::container::{resolve_href, EpubArchive};
 use crate::epub::css::{self, Atom, BurrowSelectorImpl, Declaration, PseudoClass, Stylesheet};
+use crate::epub::dom;
 use crate::epub::model::{BlockNode, BlockTree, EpubError, FontFaceDto};
 
 /// The HTML5 suggested-rendering defaults (design D10/D12).
@@ -274,8 +275,9 @@ impl ComputedStyleTable {
 /// is read through `read_entry`, decoded as UTF-8 with malformed bytes replaced
 /// (matching the Dart parser), and parsed. `inline_styles` are the chapter's
 /// `<style>` blocks, parsed after the external sheets (document order).
-/// External hrefs — including `@font-face` sources — resolve against the CSS
-/// file's own directory.
+/// External hrefs — including `@font-face` sources and `@import`s — resolve
+/// against the CSS file's own directory; `@import`ed sheets are applied
+/// before the importing sheet, following the cascade order of the reader.
 pub fn resolve_stylesheets<F>(
     manifest: &HashMap<String, String>,
     read_entry: F,
@@ -285,6 +287,7 @@ pub fn resolve_stylesheets<F>(
 where
     F: Fn(&str) -> Option<Vec<u8>>,
 {
+    let mut seen = HashSet::new();
     let mut sheets = Vec::new();
 
     let mut css_keys: Vec<&str> = manifest
@@ -296,17 +299,118 @@ where
     css_keys.dedup();
 
     for key in css_keys {
-        if let Some(bytes) = read_entry(key) {
-            let css = String::from_utf8_lossy(&bytes);
-            sheets.push(Stylesheet::parse(&css, key));
-        }
+        load_external_sheet(key, &read_entry, &mut sheets, 0, &mut seen);
     }
 
     for inline in inline_styles {
-        sheets.push(Stylesheet::parse(inline, ""));
+        load_inline_sheet(inline, "", &read_entry, &mut sheets, 0, &mut seen);
     }
 
     compute(&sheets, tree)
+}
+
+/// Resolves the computed styles for `tree` using the chapter's own styling
+/// inputs — `<link rel="stylesheet">` and `<style>` — in document order.
+///
+/// `chapter_key` is the normalised archive key of the chapter document, used
+/// as the base directory for resolving relative link and `@import` hrefs. A
+/// chapter that declares **no** styling input falls back to every `.css` in
+/// the manifest, alphabetically (the pre-link behaviour), so books that never
+/// `<link>` a stylesheet stay styled.
+pub fn resolve_stylesheets_ordered<F>(
+    manifest: &HashMap<String, String>,
+    read_entry: F,
+    events: &[dom::StyleEvent],
+    chapter_key: &str,
+    tree: &BlockTree,
+) -> ComputedStyleTable
+where
+    F: Fn(&str) -> Option<Vec<u8>>,
+{
+    let mut seen = HashSet::new();
+    let mut sheets = Vec::new();
+
+    if events.is_empty() {
+        // No styling input of the chapter's own: apply the manifest in natural
+        // order, as before.
+        let mut css_keys: Vec<&str> = manifest
+            .values()
+            .map(String::as_str)
+            .filter(|key| key.ends_with(".css"))
+            .collect();
+        css_keys.sort_unstable();
+        css_keys.dedup();
+        for key in css_keys {
+            load_external_sheet(key, &read_entry, &mut sheets, 0, &mut seen);
+        }
+        return compute(&sheets, tree);
+    }
+
+    let chapter_base = dir_of(chapter_key);
+    for event in events {
+        match event {
+            dom::StyleEvent::Style(css) => {
+                load_inline_sheet(css, chapter_key, &read_entry, &mut sheets, 0, &mut seen);
+            }
+            dom::StyleEvent::Link(href) => {
+                let key = resolve_href(&chapter_base, href);
+                load_external_sheet(&key, &read_entry, &mut sheets, 0, &mut seen);
+            }
+        }
+    }
+
+    compute(&sheets, tree)
+}
+
+/// Maximum `@import` chain depth (cycles are also broken by `seen`).
+const MAX_IMPORT_DEPTH: usize = 4;
+
+fn load_external_sheet<F>(
+    key: &str,
+    read_entry: &F,
+    out: &mut Vec<Stylesheet>,
+    depth: usize,
+    seen: &mut HashSet<String>,
+) where
+    F: Fn(&str) -> Option<Vec<u8>>,
+{
+    if depth > MAX_IMPORT_DEPTH || !seen.insert(key.to_string()) {
+        return;
+    }
+    let Some(bytes) = read_entry(key) else {
+        return;
+    };
+    let css = String::from_utf8_lossy(&bytes);
+    load_inline_sheet(&css, key, read_entry, out, depth, seen);
+}
+
+fn load_inline_sheet<F>(
+    css: &str,
+    css_key: &str,
+    read_entry: &F,
+    out: &mut Vec<Stylesheet>,
+    depth: usize,
+    seen: &mut HashSet<String>,
+) where
+    F: Fn(&str) -> Option<Vec<u8>>,
+{
+    if depth > MAX_IMPORT_DEPTH {
+        return;
+    }
+    let sheet = Stylesheet::parse(css, css_key);
+    let base = dir_of(css_key);
+    for href in sheet.imports.clone() {
+        let import_key = resolve_href(&base, &href);
+        load_external_sheet(&import_key, read_entry, out, depth + 1, seen);
+    }
+    out.push(sheet);
+}
+
+fn dir_of(path: &str) -> String {
+    match path.rfind('/') {
+        Some(index) => path[..index].to_string(),
+        None => String::new(),
+    }
 }
 
 /// Parses `doc_path` into a block tree and attaches its computed styles.
@@ -315,11 +419,13 @@ pub fn parse_styled_document(
     manifest: &HashMap<String, String>,
     doc_path: &str,
 ) -> Result<BlockTree, EpubError> {
-    let (mut tree, inline_styles) = block::parse_xhtml_document_parts(archive, doc_path)?;
-    let table = resolve_stylesheets(
+    let (mut tree, events, chapter_key) =
+        block::parse_xhtml_document_parts_with_links(archive, doc_path)?;
+    let table = resolve_stylesheets_ordered(
         manifest,
         |key| archive.read_by_key(key),
-        &inline_styles,
+        &events,
+        &chapter_key,
         &tree,
     );
     table.attach(&mut tree);
@@ -340,13 +446,43 @@ where
     keys.dedup();
 
     let mut faces: Vec<FontFaceDto> = Vec::new();
+    let mut seen = HashSet::new();
     for key in keys {
-        if let Some(bytes) = read_entry(key) {
-            let css = String::from_utf8_lossy(&bytes);
-            faces.extend(css::extract_font_faces(&css, key));
-        }
+        font_faces_from_entry(key, &read_entry, &mut faces, &mut seen, 0);
     }
     faces
+}
+
+/// Collects the `@font-face` declarations from `key` and, recursively, from
+/// every `@import`ed sheet (resolved against the importing sheet's directory,
+/// depth-capped).
+pub(crate) fn font_faces_from_entry<F>(
+    key: &str,
+    read_entry: &F,
+    faces: &mut Vec<FontFaceDto>,
+    seen: &mut HashSet<String>,
+    depth: usize,
+) where
+    F: Fn(&str) -> Option<Vec<u8>>,
+{
+    if depth > MAX_IMPORT_DEPTH || !seen.insert(key.to_string()) {
+        return;
+    }
+    let Some(bytes) = read_entry(key) else {
+        return;
+    };
+    let css = String::from_utf8_lossy(&bytes);
+    let sheet = Stylesheet::parse(&css, key);
+    for face in sheet.font_faces {
+        if !faces.contains(&face) {
+            faces.push(face);
+        }
+    }
+    let base = dir_of(key);
+    for href in sheet.imports {
+        let import_key = resolve_href(&base, &href);
+        font_faces_from_entry(&import_key, read_entry, faces, seen, depth + 1);
+    }
 }
 
 /// A matched declaration together with its cascade key.

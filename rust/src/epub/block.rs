@@ -11,9 +11,9 @@
 //!
 //! - `<script>` (and `<style>`) subtrees are **dropped** during the build, so
 //!   scripted content is never represented, let alone executed. `<style>` text
-//!   is harvested for the cascade by [`parse_xhtml_bytes_parts`] (it is CSS
-//!   text, not a node, and never enters the tree), while `<script>` text is
-//!   discarded entirely;
+//!   is harvested for the cascade by [`parse_xhtml_bytes_parts_with_links`]
+//!   (it is CSS text, not a node, and never enters the tree), while `<script>`
+//!   text is discarded entirely;
 //! - absolute URLs are kept **raw** in `attrs` and never resolved or fetched —
 //!   the engine has no fetch capability, so [`BlockTree::remote_fetch_count`]
 //!   is zero by construction.
@@ -32,15 +32,31 @@ pub fn parse_xhtml_bytes(bytes: &[u8]) -> BlockTree {
     parse_xhtml_bytes_parts(bytes).0
 }
 
-/// Parses an XHTML document from `bytes` into a block tree plus its inline
-/// `<style>` text (in document order, from `<head>` and `<body>`).
+/// Parses an XHTML document from `bytes` into a block tree plus its `<link
+/// rel="stylesheet">` / `<style>` inputs, in document order.
 ///
 /// The style *elements* are still dropped — nothing style-like enters the tree
-/// (D9) — but their CSS text is the cascade's inline input, which is why it is
-/// returned alongside rather than in the tree (and never crosses the FFI).
-pub fn parse_xhtml_bytes_parts(bytes: &[u8]) -> (BlockTree, Vec<String>) {
+/// (D9) — but their CSS (and link target) is the cascade's input, which is why
+/// it is returned alongside rather than in the tree (and never crosses the
+/// FFI). `<link>` hrefs are returned exactly as written; resolving them
+/// against the chapter's archive directory is the caller's job.
+pub fn parse_xhtml_bytes_parts_with_links(bytes: &[u8]) -> (BlockTree, Vec<dom::StyleEvent>) {
     let document = dom::parse_document(bytes);
     Builder::default().build(document)
+}
+
+/// Parses an XHTML document from `bytes` into a block tree plus its inline
+/// `<style>` text (in document order, from `<head>` and `<body>`).
+pub fn parse_xhtml_bytes_parts(bytes: &[u8]) -> (BlockTree, Vec<String>) {
+    let (tree, events) = parse_xhtml_bytes_parts_with_links(bytes);
+    let styles = events
+        .into_iter()
+        .filter_map(|event| match event {
+            dom::StyleEvent::Style(css) => Some(css),
+            dom::StyleEvent::Link(_) => None,
+        })
+        .collect();
+    (tree, styles)
 }
 
 /// Parses an XHTML document from a string into a block tree.
@@ -58,30 +74,56 @@ pub fn parse_xhtml_document(archive: &EpubArchive, doc_path: &str) -> Result<Blo
     Ok(parse_xhtml_document_parts(archive, doc_path)?.0)
 }
 
+/// Like [`parse_xhtml_document`], but also returns the chapter's styling
+/// inputs (`<link rel="stylesheet">` / `<style>`) in document order, and the
+/// archive key the document was resolved to (used to resolve relative
+/// `@import`/`<link>` hrefs).
+pub fn parse_xhtml_document_parts_with_links(
+    archive: &EpubArchive,
+    doc_path: &str,
+) -> Result<(BlockTree, Vec<dom::StyleEvent>, String), EpubError> {
+    let (bytes, key) = read_chapter(archive, doc_path)?;
+    let (tree, events) = parse_xhtml_bytes_parts_with_links(&bytes);
+    Ok((tree, events, key))
+}
+
 /// Like [`parse_xhtml_document`], but also returns the chapter's inline
 /// `<style>` text for the cascade.
 pub fn parse_xhtml_document_parts(
     archive: &EpubArchive,
     doc_path: &str,
 ) -> Result<(BlockTree, Vec<String>), EpubError> {
-    let bytes = read_chapter(archive, doc_path)?;
-    Ok(parse_xhtml_bytes_parts(&bytes))
+    let (tree, events, _) = parse_xhtml_document_parts_with_links(archive, doc_path)?;
+    let styles = events
+        .into_iter()
+        .filter_map(|event| match event {
+            dom::StyleEvent::Style(css) => Some(css),
+            dom::StyleEvent::Link(_) => None,
+        })
+        .collect();
+    Ok((tree, styles))
 }
 
-/// Reads a chapter's bytes: first relative to the OPF directory, then as an
-/// archive-root key. Percent-encoded and case-varied paths both resolve.
-fn read_chapter(archive: &EpubArchive, doc_path: &str) -> Result<Vec<u8>, EpubError> {
+/// Reads a chapter's bytes and returns the archive key it resolved to: first
+/// relative to the OPF directory, then as an archive-root key. Percent-encoded
+/// and case-varied paths both resolve.
+fn read_chapter(
+    archive: &EpubArchive,
+    doc_path: &str,
+) -> Result<(Vec<u8>, String), EpubError> {
     let base = container_rootfile(archive)
         .ok()
         .map(|opf| dir_of(&opf))
         .unwrap_or_default();
     if !base.is_empty() {
-        if let Some(bytes) = archive.read_by_key(&resolve_href(&base, doc_path)) {
-            return Ok(bytes);
+        let key = resolve_href(&base, doc_path);
+        if let Some(bytes) = archive.read_by_key(&key) {
+            return Ok((bytes, key));
         }
     }
-    if let Some(bytes) = archive.read_by_key(&normalize_key(doc_path)) {
-        return Ok(bytes);
+    let key = normalize_key(doc_path);
+    if let Some(bytes) = archive.read_by_key(&key) {
+        return Ok((bytes, key));
     }
     Err(EpubError::Invalid(format!("Chapter not found: {doc_path}")))
 }
@@ -286,10 +328,11 @@ struct Builder {
 }
 
 impl Builder {
-    fn build(mut self, document: Handle) -> (BlockTree, Vec<String>) {
-        // Harvest every `<style>` block's text before walking: the style
-        // *elements* are dropped (D9), but their CSS text is cascade input.
-        let inline_styles = dom::element_texts(&document, "style");
+    fn build(mut self, document: Handle) -> (BlockTree, Vec<dom::StyleEvent>) {
+        // Harvest the document's styling inputs in document order before
+        // walking: the style *elements* are dropped (D9), but their CSS text
+        // (and the `<link rel="stylesheet">` targets) are cascade input.
+        let style_events = dom::style_events(&document);
 
         // The `<body>` is the content root; `<head>` (title, stylesheets) is
         // not part of the chapter text. The synthetic root carries the body's
@@ -321,7 +364,7 @@ impl Builder {
                 remote_fetches: 0,
                 dropped_scripts: self.dropped_scripts,
             },
-            inline_styles,
+            style_events,
         )
     }
 
