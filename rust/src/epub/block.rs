@@ -23,6 +23,10 @@ use crate::epub::dom;
 use crate::epub::model::{Attrs, BlockKind, BlockNode, BlockTree, EpubError};
 use markup5ever_rcdom::Handle;
 
+/// Maximum element depth walked recursively. Deeper input is truncated rather
+/// than risking a stack overflow on a hostile book.
+const MAX_BLOCK_DEPTH: usize = 512;
+
 /// Parses an XHTML document from `bytes` into a block tree.
 pub fn parse_xhtml_bytes(bytes: &[u8]) -> BlockTree {
     parse_xhtml_bytes_parts(bytes).0
@@ -215,6 +219,7 @@ fn attrs_of(tag: &str, node: &Handle) -> Attrs {
         tag: tag.to_string(),
         ..Default::default()
     };
+    let mut hidden = false;
     for (name, value) in dom::attributes(node) {
         match name.as_str() {
             "id" => attrs.id = Some(value),
@@ -227,8 +232,20 @@ fn attrs_of(tag: &str, node: &Handle) -> Attrs {
             "height" => attrs.height = Some(value),
             "style" => attrs.style = Some(value),
             "align" => attrs.align = Some(value),
+            // The HTML `hidden` attribute is `display: none` in the UA sheet;
+            // fold it into the inline style so the cascade and projection see
+            // one representation.
+            "hidden" => hidden = true,
             _ => {}
         }
+    }
+    if hidden {
+        let style = attrs.style.take().unwrap_or_default();
+        attrs.style = Some(if style.trim().is_empty() {
+            "display:none".to_string()
+        } else {
+            format!("{style};display:none")
+        });
     }
     attrs
 }
@@ -291,8 +308,8 @@ impl Builder {
         let root = self.push(BlockKind::Root, None, (0, 0), root_attrs);
 
         let children = match &body {
-            Some(body) => self.walk_children(body, false),
-            None => self.walk_children(&document, false),
+            Some(body) => self.walk_children(body, false, 0),
+            None => self.walk_children(&document, false, 0),
         };
 
         self.nodes[root].children = children;
@@ -316,7 +333,10 @@ impl Builder {
     /// Inside an inline flow (`<p>a <em>b</em> <em>c</em></p>`) the spaces are
     /// rendered content and must survive, or the node text and the selected
     /// offsets would silently merge words.
-    fn walk_children(&mut self, parent: &Handle, in_pre: bool) -> Vec<u32> {
+    fn walk_children(&mut self, parent: &Handle, in_pre: bool, depth: usize) -> Vec<u32> {
+        if depth > MAX_BLOCK_DEPTH {
+            return Vec::new();
+        }
         let children = dom::children(parent);
         let block_flow = children.iter().any(is_block_element);
 
@@ -333,7 +353,20 @@ impl Builder {
                 self.text.push_str(&text);
                 continue;
             }
-            if let Some(index) = self.walk(child, in_pre) {
+            // XHTML CDATA sections arrive as bogus comments (`[CDATA[...]]`)
+            // from the HTML5 tokenizer; recover their literal text.
+            if let Some(text) = dom::cdata_text(child) {
+                if text.is_empty() {
+                    continue;
+                }
+                if !in_pre && block_flow && text.chars().all(char::is_whitespace) {
+                    continue;
+                }
+                self.utf16_len += text.encode_utf16().count();
+                self.text.push_str(&text);
+                continue;
+            }
+            if let Some(index) = self.walk(child, in_pre, depth + 1) {
                 out.push(index as u32);
             }
         }
@@ -341,7 +374,10 @@ impl Builder {
     }
 
     /// Builds one element node (and its subtree), returning its arena index.
-    fn walk(&mut self, node: &Handle, in_pre: bool) -> Option<usize> {
+    fn walk(&mut self, node: &Handle, in_pre: bool, depth: usize) -> Option<usize> {
+        if depth > MAX_BLOCK_DEPTH {
+            return None;
+        }
         let name = dom::element_name(node)?;
 
         // D9: scripted/styled content is never represented. The subtree is
@@ -350,6 +386,12 @@ impl Builder {
             if name == "script" {
                 self.dropped_scripts += 1;
             }
+            return None;
+        }
+
+        // Ruby annotations are pronunciation aids, not body text. Keeping them
+        // would render `漢(kan)` instead of `漢`.
+        if matches!(name.as_str(), "rt" | "rp" | "rtc") {
             return None;
         }
 
@@ -363,7 +405,7 @@ impl Builder {
         );
 
         let in_pre = in_pre || name == "pre";
-        let children = self.walk_children(node, in_pre);
+        let children = self.walk_children(node, in_pre, depth + 1);
         self.nodes[index].children = children;
         // The node's range now spans every descendant text node appended.
         self.nodes[index].text_range.1 = self.utf16_len as u32;

@@ -20,6 +20,9 @@ percent-encoding = "2"
 # Plain-text chapter splitting (`txt`): Dart-`RegExp` heading/blank-run
 # patterns. MIT/Apache-2.0, allowed by `deny.toml`.
 regex = "1"
+# XHTML byte decoding: honours the XML/HTML encoding declaration (windows-1252,
+# UTF-16 without a BOM, …) instead of assuming UTF-8. Apache-2.0/MIT.
+encoding_rs = "0.8"
 # Browser-grade XHTML parsing with HTML5 error recovery (G1/D5). The `dom`
 # module lowers the result into our own block tree; the RcDom is never exposed.
 # `markup5ever_rcdom` 0.39 must stay in lockstep with `html5ever` 0.39 — both
