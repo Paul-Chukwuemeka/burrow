@@ -315,6 +315,28 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     requiredDuringInsert: false,
   );
   @override
+  late final GeneratedColumnWithTypeConverter<ArchiveTier, int> archiveTier =
+      GeneratedColumn<int>(
+        'archive_tier',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      ).withConverter<ArchiveTier>($BooksTable.$converterarchiveTier);
+  static const VerificationMeta _archivedAtMeta = const VerificationMeta(
+    'archivedAt',
+  );
+  @override
+  late final GeneratedColumn<int> archivedAt = GeneratedColumn<int>(
+    'archived_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
   List<GeneratedColumn> get $columns => [
     id,
     title,
@@ -345,6 +367,8 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     metadataComplete,
     fileSize,
     mtimeMs,
+    archiveTier,
+    archivedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -549,6 +573,12 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         mtimeMs.isAcceptableOrUnknown(data['mtime_ms']!, _mtimeMsMeta),
       );
     }
+    if (data.containsKey('archived_at')) {
+      context.handle(
+        _archivedAtMeta,
+        archivedAt.isAcceptableOrUnknown(data['archived_at']!, _archivedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -676,6 +706,16 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         DriftSqlType.int,
         data['${effectivePrefix}mtime_ms'],
       ),
+      archiveTier: $BooksTable.$converterarchiveTier.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}archive_tier'],
+        )!,
+      ),
+      archivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}archived_at'],
+      )!,
     );
   }
 
@@ -686,6 +726,8 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
 
   static JsonTypeConverter2<BookFormat, int, int> $converterformat =
       const EnumIndexConverter<BookFormat>(BookFormat.values);
+  static JsonTypeConverter2<ArchiveTier, int, int> $converterarchiveTier =
+      const EnumIndexConverter<ArchiveTier>(ArchiveTier.values);
 }
 
 class BookRow extends DataClass implements Insertable<BookRow> {
@@ -718,6 +760,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   final bool metadataComplete;
   final int? fileSize;
   final int? mtimeMs;
+  final ArchiveTier archiveTier;
+  final int archivedAt;
   const BookRow({
     required this.id,
     required this.title,
@@ -748,6 +792,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     required this.metadataComplete,
     this.fileSize,
     this.mtimeMs,
+    required this.archiveTier,
+    required this.archivedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -819,6 +865,12 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     if (!nullToAbsent || mtimeMs != null) {
       map['mtime_ms'] = Variable<int>(mtimeMs);
     }
+    {
+      map['archive_tier'] = Variable<int>(
+        $BooksTable.$converterarchiveTier.toSql(archiveTier),
+      );
+    }
+    map['archived_at'] = Variable<int>(archivedAt);
     return map;
   }
 
@@ -885,6 +937,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       mtimeMs: mtimeMs == null && nullToAbsent
           ? const Value.absent()
           : Value(mtimeMs),
+      archiveTier: Value(archiveTier),
+      archivedAt: Value(archivedAt),
     );
   }
 
@@ -925,6 +979,10 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       metadataComplete: serializer.fromJson<bool>(json['metadataComplete']),
       fileSize: serializer.fromJson<int?>(json['fileSize']),
       mtimeMs: serializer.fromJson<int?>(json['mtimeMs']),
+      archiveTier: $BooksTable.$converterarchiveTier.fromJson(
+        serializer.fromJson<int>(json['archiveTier']),
+      ),
+      archivedAt: serializer.fromJson<int>(json['archivedAt']),
     );
   }
   @override
@@ -962,6 +1020,10 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       'metadataComplete': serializer.toJson<bool>(metadataComplete),
       'fileSize': serializer.toJson<int?>(fileSize),
       'mtimeMs': serializer.toJson<int?>(mtimeMs),
+      'archiveTier': serializer.toJson<int>(
+        $BooksTable.$converterarchiveTier.toJson(archiveTier),
+      ),
+      'archivedAt': serializer.toJson<int>(archivedAt),
     };
   }
 
@@ -995,6 +1057,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     bool? metadataComplete,
     Value<int?> fileSize = const Value.absent(),
     Value<int?> mtimeMs = const Value.absent(),
+    ArchiveTier? archiveTier,
+    int? archivedAt,
   }) => BookRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -1027,6 +1091,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     metadataComplete: metadataComplete ?? this.metadataComplete,
     fileSize: fileSize.present ? fileSize.value : this.fileSize,
     mtimeMs: mtimeMs.present ? mtimeMs.value : this.mtimeMs,
+    archiveTier: archiveTier ?? this.archiveTier,
+    archivedAt: archivedAt ?? this.archivedAt,
   );
   BookRow copyWithCompanion(BooksCompanion data) {
     return BookRow(
@@ -1079,6 +1145,12 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           : this.metadataComplete,
       fileSize: data.fileSize.present ? data.fileSize.value : this.fileSize,
       mtimeMs: data.mtimeMs.present ? data.mtimeMs.value : this.mtimeMs,
+      archiveTier: data.archiveTier.present
+          ? data.archiveTier.value
+          : this.archiveTier,
+      archivedAt: data.archivedAt.present
+          ? data.archivedAt.value
+          : this.archivedAt,
     );
   }
 
@@ -1113,7 +1185,9 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           ..write('authorSort: $authorSort, ')
           ..write('metadataComplete: $metadataComplete, ')
           ..write('fileSize: $fileSize, ')
-          ..write('mtimeMs: $mtimeMs')
+          ..write('mtimeMs: $mtimeMs, ')
+          ..write('archiveTier: $archiveTier, ')
+          ..write('archivedAt: $archivedAt')
           ..write(')'))
         .toString();
   }
@@ -1149,6 +1223,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     metadataComplete,
     fileSize,
     mtimeMs,
+    archiveTier,
+    archivedAt,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1182,7 +1258,9 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           other.authorSort == this.authorSort &&
           other.metadataComplete == this.metadataComplete &&
           other.fileSize == this.fileSize &&
-          other.mtimeMs == this.mtimeMs);
+          other.mtimeMs == this.mtimeMs &&
+          other.archiveTier == this.archiveTier &&
+          other.archivedAt == this.archivedAt);
 }
 
 class BooksCompanion extends UpdateCompanion<BookRow> {
@@ -1215,6 +1293,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   final Value<bool> metadataComplete;
   final Value<int?> fileSize;
   final Value<int?> mtimeMs;
+  final Value<ArchiveTier> archiveTier;
+  final Value<int> archivedAt;
   final Value<int> rowid;
   const BooksCompanion({
     this.id = const Value.absent(),
@@ -1246,6 +1326,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     this.metadataComplete = const Value.absent(),
     this.fileSize = const Value.absent(),
     this.mtimeMs = const Value.absent(),
+    this.archiveTier = const Value.absent(),
+    this.archivedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BooksCompanion.insert({
@@ -1278,6 +1360,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     this.metadataComplete = const Value.absent(),
     this.fileSize = const Value.absent(),
     this.mtimeMs = const Value.absent(),
+    this.archiveTier = const Value.absent(),
+    this.archivedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -1314,6 +1398,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     Expression<bool>? metadataComplete,
     Expression<int>? fileSize,
     Expression<int>? mtimeMs,
+    Expression<int>? archiveTier,
+    Expression<int>? archivedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1346,6 +1432,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
       if (metadataComplete != null) 'metadata_complete': metadataComplete,
       if (fileSize != null) 'file_size': fileSize,
       if (mtimeMs != null) 'mtime_ms': mtimeMs,
+      if (archiveTier != null) 'archive_tier': archiveTier,
+      if (archivedAt != null) 'archived_at': archivedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1380,6 +1468,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     Value<bool>? metadataComplete,
     Value<int?>? fileSize,
     Value<int?>? mtimeMs,
+    Value<ArchiveTier>? archiveTier,
+    Value<int>? archivedAt,
     Value<int>? rowid,
   }) {
     return BooksCompanion(
@@ -1412,6 +1502,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
       metadataComplete: metadataComplete ?? this.metadataComplete,
       fileSize: fileSize ?? this.fileSize,
       mtimeMs: mtimeMs ?? this.mtimeMs,
+      archiveTier: archiveTier ?? this.archiveTier,
+      archivedAt: archivedAt ?? this.archivedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1508,6 +1600,14 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     if (mtimeMs.present) {
       map['mtime_ms'] = Variable<int>(mtimeMs.value);
     }
+    if (archiveTier.present) {
+      map['archive_tier'] = Variable<int>(
+        $BooksTable.$converterarchiveTier.toSql(archiveTier.value),
+      );
+    }
+    if (archivedAt.present) {
+      map['archived_at'] = Variable<int>(archivedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1546,6 +1646,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
           ..write('metadataComplete: $metadataComplete, ')
           ..write('fileSize: $fileSize, ')
           ..write('mtimeMs: $mtimeMs, ')
+          ..write('archiveTier: $archiveTier, ')
+          ..write('archivedAt: $archivedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3238,6 +3340,8 @@ typedef $$BooksTableCreateCompanionBuilder =
       Value<bool> metadataComplete,
       Value<int?> fileSize,
       Value<int?> mtimeMs,
+      Value<ArchiveTier> archiveTier,
+      Value<int> archivedAt,
       Value<int> rowid,
     });
 typedef $$BooksTableUpdateCompanionBuilder =
@@ -3271,6 +3375,8 @@ typedef $$BooksTableUpdateCompanionBuilder =
       Value<bool> metadataComplete,
       Value<int?> fileSize,
       Value<int?> mtimeMs,
+      Value<ArchiveTier> archiveTier,
+      Value<int> archivedAt,
       Value<int> rowid,
     });
 
@@ -3488,6 +3594,17 @@ class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
 
   ColumnFilters<int> get mtimeMs => $composableBuilder(
     column: $table.mtimeMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<ArchiveTier, ArchiveTier, int>
+  get archiveTier => $composableBuilder(
+    column: $table.archiveTier,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<int> get archivedAt => $composableBuilder(
+    column: $table.archivedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3720,6 +3837,16 @@ class $$BooksTableOrderingComposer
     column: $table.mtimeMs,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get archiveTier => $composableBuilder(
+    column: $table.archiveTier,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get archivedAt => $composableBuilder(
+    column: $table.archivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BooksTableAnnotationComposer
@@ -3837,6 +3964,17 @@ class $$BooksTableAnnotationComposer
 
   GeneratedColumn<int> get mtimeMs =>
       $composableBuilder(column: $table.mtimeMs, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<ArchiveTier, int> get archiveTier =>
+      $composableBuilder(
+        column: $table.archiveTier,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<int> get archivedAt => $composableBuilder(
+    column: $table.archivedAt,
+    builder: (column) => column,
+  );
 
   Expression<T> bookmarksRefs<T extends Object>(
     Expression<T> Function($$BookmarksTableAnnotationComposer a) f,
@@ -3975,6 +4113,8 @@ class $$BooksTableTableManager
                 Value<bool> metadataComplete = const Value.absent(),
                 Value<int?> fileSize = const Value.absent(),
                 Value<int?> mtimeMs = const Value.absent(),
+                Value<ArchiveTier> archiveTier = const Value.absent(),
+                Value<int> archivedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BooksCompanion(
                 id: id,
@@ -4006,6 +4146,8 @@ class $$BooksTableTableManager
                 metadataComplete: metadataComplete,
                 fileSize: fileSize,
                 mtimeMs: mtimeMs,
+                archiveTier: archiveTier,
+                archivedAt: archivedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4039,6 +4181,8 @@ class $$BooksTableTableManager
                 Value<bool> metadataComplete = const Value.absent(),
                 Value<int?> fileSize = const Value.absent(),
                 Value<int?> mtimeMs = const Value.absent(),
+                Value<ArchiveTier> archiveTier = const Value.absent(),
+                Value<int> archivedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BooksCompanion.insert(
                 id: id,
@@ -4070,6 +4214,8 @@ class $$BooksTableTableManager
                 metadataComplete: metadataComplete,
                 fileSize: fileSize,
                 mtimeMs: mtimeMs,
+                archiveTier: archiveTier,
+                archivedAt: archivedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

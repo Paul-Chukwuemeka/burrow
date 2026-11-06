@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database.dart' as db;
 import '../models/book.dart';
 import '../models/book_stats.dart';
+import '../models/library_enums.dart';
 import 'package:drift/drift.dart' show Value;
 import '../models/reader_settings.dart';
 import '../services/pdf_cover.dart';
@@ -209,7 +210,27 @@ class LibraryService extends ChangeNotifier {
 
   Directory? _coversDir;
 
+  /// Every book, including both archive tiers.
   List<Book> get books => List.unmodifiable(_books);
+
+  /// Books shown in the normal library, search, collections and stats.
+  List<Book> get activeBooks =>
+      List.unmodifiable(_books.where((b) => !b.isArchived));
+
+  /// Books in the normal Archive tier.
+  List<Book> get archivedBooks => List.unmodifiable(
+    _books.where((b) => b.archiveTier == ArchiveTier.archive),
+  );
+
+  /// Books in the PIN-gated Hidden Archive tier.
+  List<Book> get hiddenArchiveBooks => List.unmodifiable(
+    _books.where((b) => b.archiveTier == ArchiveTier.hidden),
+  );
+
+  /// Missing books that are still part of the active library.
+  Set<String> get missingActiveIds => Set.unmodifiable(
+    _missingIds.where((id) => bookById(id)?.isArchived != true),
+  );
 
   List<db.Collection> get collections => List.unmodifiable(_collections);
 
@@ -238,7 +259,7 @@ class LibraryService extends ChangeNotifier {
 
   Book? get mostRecent {
     for (final b in sorted) {
-      if (b.isStarted && !b.isFinished) return b;
+      if (!b.isArchived && b.isStarted && !b.isFinished) return b;
     }
     return null;
   }
@@ -476,6 +497,61 @@ class LibraryService extends ChangeNotifier {
   bool containsPath(String path) => _books.any((b) => b.path == path);
 
   Book? bookById(String id) => _books.where((b) => b.id == id).firstOrNull;
+
+  /// Moves [ids] into [tier] (normal Archive by default), returning how many
+  /// books changed. Files, covers, progress, bookmarks and collection links
+  /// are untouched; only the active-library view changes.
+  Future<int> archiveBooks(
+    Iterable<String> ids, {
+    ArchiveTier tier = ArchiveTier.archive,
+  }) async {
+    if (tier == ArchiveTier.none) return restoreBooks(ids);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var changed = 0;
+    for (final id in ids.toSet()) {
+      final book = bookById(id);
+      if (book == null || book.archiveTier == tier) continue;
+      book
+        ..archiveTier = tier
+        ..archivedAt = now;
+      if (_db != null) {
+        await _db!.updateBook(db.bookToCompanionForUpdate(book));
+      }
+      changed++;
+    }
+    if (changed > 0) {
+      _invalidateSortCache();
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  /// Returns archived [ids] to the active library.
+  Future<int> restoreBooks(Iterable<String> ids) async {
+    var changed = 0;
+    for (final id in ids.toSet()) {
+      final book = bookById(id);
+      if (book == null || !book.isArchived) continue;
+      book
+        ..archiveTier = ArchiveTier.none
+        ..archivedAt = 0;
+      if (_db != null) {
+        await _db!.updateBook(db.bookToCompanionForUpdate(book));
+      }
+      changed++;
+    }
+    if (changed > 0) {
+      _invalidateSortCache();
+      notifyListeners();
+    }
+    return changed;
+  }
+
+  /// Moves already-archived books to the other archive tier.
+  Future<int> moveArchiveBooks(Iterable<String> ids, ArchiveTier tier) {
+    if (tier == ArchiveTier.none) return restoreBooks(ids);
+    return archiveBooks(ids, tier: tier);
+  }
 
   @visibleForTesting
   void debugMarkMissing(String id) {
@@ -1501,12 +1577,17 @@ class LibraryService extends ChangeNotifier {
     if (_db == null) return [];
     final links = await _db!.getBooksForCollection(collectionId);
     final bookIds = links.map((l) => l.bookId).toSet();
-    return _books.where((b) => bookIds.contains(b.id)).toList();
+    return activeBooks.where((b) => bookIds.contains(b.id)).toList();
   }
 
   Future<int> getCollectionBookCount(String collectionId) async {
     if (_db == null) return 0;
-    return _db!.getCollectionBookCount(collectionId);
+    final links = await _db!.getBooksForCollection(collectionId);
+    final archived = _books
+        .where((b) => b.isArchived)
+        .map((b) => b.id)
+        .toSet();
+    return links.where((l) => !archived.contains(l.bookId)).length;
   }
 
   Future<List<db.Collection>> getCollectionsForBook(String bookId) async {
@@ -1533,20 +1614,22 @@ class LibraryService extends ChangeNotifier {
   // Author helpers
   // ---------------------------------------------------------------------------
 
-  /// Returns a sorted list of unique author names from all books.
+  /// Returns a sorted list of unique author names from active books.
   List<String> get uniqueAuthors {
     final authors = <String>{};
-    for (final b in _books) {
+    for (final b in activeBooks) {
       if (b.author.isNotEmpty) authors.add(b.author);
     }
     final sorted = authors.toList()..sort();
     return sorted;
   }
 
-  /// Returns books by a specific author (case-insensitive match).
+  /// Returns active books by a specific author (case-insensitive match).
   List<Book> booksByAuthor(String author) {
     final lower = author.toLowerCase();
-    return _books.where((b) => b.author.toLowerCase() == lower).toList();
+    return activeBooks
+        .where((b) => b.author.toLowerCase() == lower)
+        .toList();
   }
 
   /// Returns the number of books by a specific author.
@@ -1556,10 +1639,10 @@ class LibraryService extends ChangeNotifier {
   // Series helpers
   // ---------------------------------------------------------------------------
 
-  /// Returns a sorted list of unique series names from all books.
+  /// Returns a sorted list of unique series names from active books.
   List<String> get uniqueSeries {
     final series = <String>{};
-    for (final b in _books) {
+    for (final b in activeBooks) {
       if (b.seriesName != null && b.seriesName!.isNotEmpty) {
         series.add(b.seriesName!);
       }
@@ -1568,10 +1651,12 @@ class LibraryService extends ChangeNotifier {
     return sorted;
   }
 
-  /// Returns books in a specific series (case-insensitive match).
+  /// Returns active books in a specific series (case-insensitive match).
   List<Book> booksBySeries(String series) {
     final lower = series.toLowerCase();
-    return _books.where((b) => b.seriesName?.toLowerCase() == lower).toList();
+    return activeBooks
+        .where((b) => b.seriesName?.toLowerCase() == lower)
+        .toList();
   }
 
   /// Returns the number of books in a specific series.
@@ -1581,11 +1666,11 @@ class LibraryService extends ChangeNotifier {
   // Genre helpers
   // ---------------------------------------------------------------------------
 
-  /// Returns a sorted list of unique genre names from all books.
+  /// Returns a sorted list of unique genre names from active books.
   /// Genres are stored as comma-separated strings, so this splits them.
   List<String> get uniqueGenres {
     final genres = <String>{};
-    for (final b in _books) {
+    for (final b in activeBooks) {
       if (b.genre != null) {
         for (final g in b.genre!.split(',')) {
           final trimmed = g.trim();
@@ -1597,10 +1682,11 @@ class LibraryService extends ChangeNotifier {
     return sorted;
   }
 
-  /// Returns books that include [genre] in their comma-separated genre field.
+  /// Returns active books that include [genre] in their comma-separated genre
+  /// field.
   List<Book> booksByGenre(String genre) {
     final lower = genre.toLowerCase();
-    return _books.where((b) {
+    return activeBooks.where((b) {
       if (b.genre == null) return false;
       for (final g in b.genre!.split(',')) {
         if (g.trim().toLowerCase() == lower) return true;

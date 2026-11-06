@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'library_enums.dart';
+
 enum BookFormat { epub, txt, pdf, cbz, cbr }
 
 /// Extensions that map cleanly to a supported format.
@@ -55,6 +57,8 @@ class Book {
     this.metadataComplete = false,
     this.fileSize,
     this.mtimeMs,
+    this.archiveTier = ArchiveTier.none,
+    this.archivedAt = 0,
   });
 
   final String id;
@@ -104,6 +108,14 @@ class Book {
   int? fileSize;
   int? mtimeMs;
 
+  /// Archive tier; [ArchiveTier.none] while the book is in the active library.
+  ArchiveTier archiveTier;
+
+  /// Epoch-ms when the book was archived; 0 while active.
+  int archivedAt;
+
+  bool get isArchived => archiveTier != ArchiveTier.none;
+
   bool get isStarted => lastReadAt > 0;
   bool get isFinished => progress >= 0.999;
 
@@ -137,6 +149,8 @@ class Book {
     'metadataComplete': metadataComplete,
     'fileSize': fileSize,
     'mtimeMs': mtimeMs,
+    'archiveTier': archiveTier.name,
+    'archivedAt': archivedAt,
   };
 
   static Book fromJson(Map<String, dynamic> json) {
@@ -180,7 +194,17 @@ class Book {
       metadataComplete: json['metadataComplete'] as bool? ?? false,
       fileSize: json['fileSize'] as int?,
       mtimeMs: json['mtimeMs'] as int?,
+      archiveTier: _archiveTierFromName(json['archiveTier']),
+      archivedAt: json['archivedAt'] as int? ?? 0,
     );
+  }
+
+  static ArchiveTier _archiveTierFromName(Object? raw) {
+    if (raw is! String) return ArchiveTier.none;
+    for (final tier in ArchiveTier.values) {
+      if (tier.name == raw) return tier;
+    }
+    return ArchiveTier.none;
   }
 
   /// Pretty-printed progress, e.g. "42%" or "New".
