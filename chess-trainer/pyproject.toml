@@ -1,7 +1,0 @@
-[project]
-name = "chess_trainer"
-requires-python = ">=3.11"
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]

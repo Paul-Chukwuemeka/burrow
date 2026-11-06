@@ -1,1 +1,0 @@
-"""Chess trainer package."""
