@@ -42,9 +42,8 @@ Future<bool> changeHiddenArchivePin(BuildContext context) async {
   if (!context.mounted) return false;
   return await showDialog<bool>(
         context: context,
-        builder: (_) => const _ArchivePinSetupDialog(
-          title: 'Set a new hidden archive PIN',
-        ),
+        builder: (_) =>
+            const _ArchivePinSetupDialog(title: 'Set a new hidden archive PIN'),
       ) ??
       false;
 }

@@ -16,15 +16,14 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final service = LibraryService();
-    await tester.pumpWidget(MaterialApp(home: SettingsScreen(library: service)));
+    await tester.pumpWidget(
+      MaterialApp(home: SettingsScreen(library: service)),
+    );
     await tester.pumpAndSettle();
 
     final tile = find.text('Hidden archive PIN');
     for (var i = 0; i < 12 && tester.widgetList(tile).isEmpty; i++) {
-      await tester.drag(
-        find.byType(ListView).first,
-        const Offset(0, -250),
-      );
+      await tester.drag(find.byType(ListView).first, const Offset(0, -250));
       await tester.pumpAndSettle();
     }
     expect(tile, findsOneWidget);

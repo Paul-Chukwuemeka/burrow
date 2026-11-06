@@ -14,11 +14,7 @@ import '../widgets/book_cover.dart';
 /// [ArchiveTier.hidden] is only reached after the PIN gate in the library
 /// header; this screen does not prompt again.
 class ArchiveScreen extends StatefulWidget {
-  const ArchiveScreen({
-    super.key,
-    required this.library,
-    required this.tier,
-  });
+  const ArchiveScreen({super.key, required this.library, required this.tier});
 
   final LibraryService library;
   final ArchiveTier tier;
@@ -80,11 +76,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
     _selection.clear();
     if (!mounted) return;
     setState(() {});
-    _snack(
-      count == 1
-          ? 'Restored 1 book'
-          : 'Restored $count books',
-    );
+    _snack(count == 1 ? 'Restored 1 book' : 'Restored $count books');
   }
 
   Future<void> _move(Iterable<String> ids) async {
@@ -94,7 +86,9 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
     if (!mounted) return;
     setState(() {});
     final label = target == ArchiveTier.hidden ? 'hidden archive' : 'archive';
-    _snack(count == 1 ? 'Moved 1 book to $label' : 'Moved $count books to $label');
+    _snack(
+      count == 1 ? 'Moved 1 book to $label' : 'Moved $count books to $label',
+    );
   }
 
   Future<void> _delete(Iterable<String> ids) async {
@@ -238,8 +232,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
             IconButton(
               icon: const Icon(Icons.select_all_rounded),
               tooltip: 'Select all',
-              onPressed: () =>
-                  _selection.selectAll(books.map((b) => b.id)),
+              onPressed: () => _selection.selectAll(books.map((b) => b.id)),
             ),
             IconButton(
               icon: const Icon(Icons.restore_rounded),

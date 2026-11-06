@@ -26,8 +26,7 @@ class SettingsScreen extends StatefulWidget {
   /// Seeded by tests; production picks a folder via the system picker.
   final Future<String?> Function() pickFolder;
 
-  static Future<String?> _defaultPickFolder() =>
-      FilePicker.getDirectoryPath();
+  static Future<String?> _defaultPickFolder() => FilePicker.getDirectoryPath();
 
   static void show(
     BuildContext context, {
@@ -268,20 +267,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: scheme.onSurfaceVariant,
             ),
             title: const Text('Scan type', softWrap: false),
-            subtitle: Text(
-              switch (_s.scanMode) {
-                ScanMode.device => 'Walk the whole device for new books',
-                ScanMode.folder =>
-                  _s.scanFolder.isEmpty
-                      ? 'Scan a single folder you pick'
-                      : 'Scanning: ${_s.scanFolder.split('/').last}',
-                ScanMode.quick => 'Only re-check your library folders',
-              },
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
+            subtitle: Text(switch (_s.scanMode) {
+              ScanMode.device => 'Walk the whole device for new books',
+              ScanMode.folder =>
+                _s.scanFolder.isEmpty
+                    ? 'Scan a single folder you pick'
+                    : 'Scanning: ${_s.scanFolder.split('/').last}',
+              ScanMode.quick => 'Only re-check your library folders',
+            }, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             trailing: DropdownButton<ScanMode>(
               value: _s.scanMode,
               underline: const SizedBox.shrink(),
@@ -289,13 +282,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 for (final m in ScanMode.values)
                   DropdownMenuItem(
                     value: m,
-                    child: Text(
-                      switch (m) {
-                        ScanMode.device => 'Full device',
-                        ScanMode.folder => 'Single folder',
-                        ScanMode.quick => 'Quick refresh',
-                      },
-                    ),
+                    child: Text(switch (m) {
+                      ScanMode.device => 'Full device',
+                      ScanMode.folder => 'Single folder',
+                      ScanMode.quick => 'Quick refresh',
+                    }),
                   ),
               ],
               onChanged: (v) {
@@ -318,10 +309,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Dictionary'),
             subtitle: Text(
               _defaultDictionarySubtitle,
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {

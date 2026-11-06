@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('header exposes archive entries and invokes them', (tester) async {
+  testWidgets('header exposes archive entries and invokes them', (
+    tester,
+  ) async {
     var archiveTapped = 0;
     var hiddenTapped = 0;
 
@@ -48,7 +50,9 @@ void main() {
     expect(hiddenTapped, 1);
   });
 
-  testWidgets('header omits counts when the archives are empty', (tester) async {
+  testWidgets('header omits counts when the archives are empty', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: DefaultTabController(

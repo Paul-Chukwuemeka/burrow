@@ -118,42 +118,46 @@ void main() {
       expect(library.hiddenArchiveBooks.map((b) => b.id), ['b1']);
     });
 
-    test('archived books vanish from recent, author, series and genre views', () async {
-      library.debugAddAll([
-        makeBook(
-          id: 'active',
-          author: 'Author',
-          genre: 'Fantasy',
-          seriesName: 'Dune',
-          lastReadAt: 2000,
-          progress: 0.4,
-        ),
-        makeBook(
-          id: 'archived',
-          author: 'Author',
-          genre: 'Fantasy',
-          seriesName: 'Dune',
-          lastReadAt: 3000,
-          progress: 0.4,
-        ),
-      ]);
+    test(
+      'archived books vanish from recent, author, series and genre views',
+      () async {
+        library.debugAddAll([
+          makeBook(
+            id: 'active',
+            author: 'Author',
+            genre: 'Fantasy',
+            seriesName: 'Dune',
+            lastReadAt: 2000,
+            progress: 0.4,
+          ),
+          makeBook(
+            id: 'archived',
+            author: 'Author',
+            genre: 'Fantasy',
+            seriesName: 'Dune',
+            lastReadAt: 3000,
+            progress: 0.4,
+          ),
+        ]);
 
-      expect(library.mostRecent?.id, 'archived');
+        expect(library.mostRecent?.id, 'archived');
 
-      await library.archiveBooks(['archived']);
+        await library.archiveBooks(['archived']);
 
-      expect(library.mostRecent?.id, 'active');
-      expect(library.uniqueAuthors, ['Author']);
-      expect(library.booksByAuthor('Author').map((b) => b.id), ['active']);
-      expect(library.uniqueSeries, ['Dune']);
-      expect(library.booksBySeries('Dune').map((b) => b.id), ['active']);
-      expect(library.uniqueGenres, ['Fantasy']);
-      expect(library.booksByGenre('Fantasy').map((b) => b.id), ['active']);
-    });
+        expect(library.mostRecent?.id, 'active');
+        expect(library.uniqueAuthors, ['Author']);
+        expect(library.booksByAuthor('Author').map((b) => b.id), ['active']);
+        expect(library.uniqueSeries, ['Dune']);
+        expect(library.booksBySeries('Dune').map((b) => b.id), ['active']);
+        expect(library.uniqueGenres, ['Fantasy']);
+        expect(library.booksByGenre('Fantasy').map((b) => b.id), ['active']);
+      },
+    );
 
     test('missingActiveIds ignores archived books', () {
       final active = makeBook(id: 'active');
-      final archived = makeBook(id: 'archived')..archiveTier = ArchiveTier.archive;
+      final archived = makeBook(id: 'archived')
+        ..archiveTier = ArchiveTier.archive;
       library.debugAddAll([active, archived]);
       library.debugMarkMissing('active');
       library.debugMarkMissing('archived');
@@ -205,11 +209,7 @@ void main() {
 
     test('collection lists and counts exclude archived books', () async {
       await db.insertCollection(
-        CollectionsCompanion.insert(
-          id: 'c1',
-          name: 'Collection',
-          createdAt: 1,
-        ),
+        CollectionsCompanion.insert(id: 'c1', name: 'Collection', createdAt: 1),
       );
       final active = makeBook(id: 'active');
       final archived = makeBook(id: 'archived');
@@ -220,10 +220,9 @@ void main() {
       library.debugAddAll([active, archived]);
       await library.archiveBooks(['archived']);
 
-      expect(
-        (await library.getBooksForCollection('c1')).map((b) => b.id),
-        ['active'],
-      );
+      expect((await library.getBooksForCollection('c1')).map((b) => b.id), [
+        'active',
+      ]);
       expect(await library.getCollectionBookCount('c1'), 1);
     });
   });

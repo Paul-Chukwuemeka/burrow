@@ -102,7 +102,9 @@ class CollectionBooks extends Table {
   IntColumn get sortPosition => integer().withDefault(const Constant(0))();
 
   @override
-  List<Set<Column>> get uniqueKeys => [{collectionId, bookId}];
+  List<Set<Column>> get uniqueKeys => [
+    {collectionId, bookId},
+  ];
 }
 
 class _PerBookAggregate {
@@ -158,9 +160,7 @@ class AppDatabase extends _$AppDatabase {
     // if the column already exists — but we avoid that entirely.
     onUpgrade: (m, from, to) async {
       Future<bool> hasColumn(String table, String column) async {
-        final rows = await customSelect(
-          "PRAGMA table_info($table)",
-        ).get();
+        final rows = await customSelect("PRAGMA table_info($table)").get();
         return rows.any((r) => r.data['name'] == column);
       }
 
@@ -173,23 +173,38 @@ class AppDatabase extends _$AppDatabase {
         );
       }
       if (from < 3) {
-        if (!await hasColumn('books', 'description')) await m.addColumn(books, books.description);
-        if (!await hasColumn('books', 'genre')) await m.addColumn(books, books.genre);
-        if (!await hasColumn('books', 'series_name')) await m.addColumn(books, books.seriesName);
-        if (!await hasColumn('books', 'series_index')) await m.addColumn(books, books.seriesIndex);
-        if (!await hasColumn('books', 'publisher')) await m.addColumn(books, books.publisher);
-        if (!await hasColumn('books', 'isbn')) await m.addColumn(books, books.isbn);
-        if (!await hasColumn('books', 'language')) await m.addColumn(books, books.language);
-        if (!await hasColumn('books', 'review')) await m.addColumn(books, books.review);
+        if (!await hasColumn('books', 'description'))
+          await m.addColumn(books, books.description);
+        if (!await hasColumn('books', 'genre'))
+          await m.addColumn(books, books.genre);
+        if (!await hasColumn('books', 'series_name'))
+          await m.addColumn(books, books.seriesName);
+        if (!await hasColumn('books', 'series_index'))
+          await m.addColumn(books, books.seriesIndex);
+        if (!await hasColumn('books', 'publisher'))
+          await m.addColumn(books, books.publisher);
+        if (!await hasColumn('books', 'isbn'))
+          await m.addColumn(books, books.isbn);
+        if (!await hasColumn('books', 'language'))
+          await m.addColumn(books, books.language);
+        if (!await hasColumn('books', 'review'))
+          await m.addColumn(books, books.review);
       }
       if (from < 4) {
-        if (!await hasColumn('books', 'annotation')) await m.addColumn(books, books.annotation);
-        if (!await hasColumn('books', 'publication_date')) await m.addColumn(books, books.publicationDate);
-        if (!await hasColumn('books', 'rights')) await m.addColumn(books, books.rights);
-        if (!await hasColumn('books', 'type')) await m.addColumn(books, books.type);
-        if (!await hasColumn('books', 'source')) await m.addColumn(books, books.source);
-        if (!await hasColumn('books', 'title_sort')) await m.addColumn(books, books.titleSort);
-        if (!await hasColumn('books', 'author_sort')) await m.addColumn(books, books.authorSort);
+        if (!await hasColumn('books', 'annotation'))
+          await m.addColumn(books, books.annotation);
+        if (!await hasColumn('books', 'publication_date'))
+          await m.addColumn(books, books.publicationDate);
+        if (!await hasColumn('books', 'rights'))
+          await m.addColumn(books, books.rights);
+        if (!await hasColumn('books', 'type'))
+          await m.addColumn(books, books.type);
+        if (!await hasColumn('books', 'source'))
+          await m.addColumn(books, books.source);
+        if (!await hasColumn('books', 'title_sort'))
+          await m.addColumn(books, books.titleSort);
+        if (!await hasColumn('books', 'author_sort'))
+          await m.addColumn(books, books.authorSort);
       }
       if (from < 5) {
         if (!await hasColumn('books', 'metadata_complete')) {
@@ -219,10 +234,18 @@ class AppDatabase extends _$AppDatabase {
           SELECT id, collection_id, book_id, added_at, sort_position FROM collection_books;
         ''');
         await customStatement('DROP TABLE collection_books;');
-        await customStatement('ALTER TABLE collection_books_new RENAME TO collection_books;');
-        await customStatement('CREATE INDEX IF NOT EXISTS idx_reading_sessions_book_id ON reading_sessions (book_id);');
-        await customStatement('CREATE INDEX IF NOT EXISTS idx_collection_books_collection_id ON collection_books (collection_id);');
-        await customStatement('CREATE INDEX IF NOT EXISTS idx_collection_books_book_id ON collection_books (book_id);');
+        await customStatement(
+          'ALTER TABLE collection_books_new RENAME TO collection_books;',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_reading_sessions_book_id ON reading_sessions (book_id);',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_collection_books_collection_id ON collection_books (collection_id);',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_collection_books_book_id ON collection_books (book_id);',
+        );
       }
       if (from < 8) {
         if (!await hasColumn('books', 'file_size')) {
@@ -366,9 +389,7 @@ class AppDatabase extends _$AppDatabase {
       'WHERE book_id = ? AND ended_at > 0',
       variables: [Variable.withString(bookId)],
     ).get();
-    return result.isNotEmpty
-        ? result.first.readNullable<int>('total') ?? 0
-        : 0;
+    return result.isNotEmpty ? result.first.readNullable<int>('total') ?? 0 : 0;
   }
 
   Future<int> getTotalPagesRead(String bookId) async {
@@ -376,9 +397,7 @@ class AppDatabase extends _$AppDatabase {
       'SELECT SUM(pages) AS total FROM reading_sessions WHERE book_id = ?',
       variables: [Variable.withString(bookId)],
     ).get();
-    return result.isNotEmpty
-        ? result.first.readNullable<int>('total') ?? 0
-        : 0;
+    return result.isNotEmpty ? result.first.readNullable<int>('total') ?? 0 : 0;
   }
 
   /// Returns sessions grouped by local calendar day with total time in ms.
@@ -460,9 +479,9 @@ class AppDatabase extends _$AppDatabase {
   Future<int> getTodayReadingTimeMs() async {
     final dayStart = localDayKey(DateTime.now().millisecondsSinceEpoch);
     final dayEnd = localDayKey(
-      DateTime.fromMillisecondsSinceEpoch(dayStart)
-          .add(const Duration(days: 1))
-          .millisecondsSinceEpoch,
+      DateTime.fromMillisecondsSinceEpoch(
+        dayStart,
+      ).add(const Duration(days: 1)).millisecondsSinceEpoch,
     );
     final result = await customSelect(
       'SELECT SUM(ended_at - started_at) AS total '
@@ -470,9 +489,7 @@ class AppDatabase extends _$AppDatabase {
       'WHERE ended_at > 0 AND started_at >= ? AND started_at < ?',
       variables: [Variable.withInt(dayStart), Variable.withInt(dayEnd)],
     ).get();
-    return result.isNotEmpty
-        ? result.first.readNullable<int>('total') ?? 0
-        : 0;
+    return result.isNotEmpty ? result.first.readNullable<int>('total') ?? 0 : 0;
   }
 
   /// Returns total reading time in ms for the last 7 days.
@@ -486,9 +503,7 @@ class AppDatabase extends _$AppDatabase {
       'WHERE ended_at > 0 AND started_at >= ?',
       variables: [Variable.withInt(weekAgo)],
     ).get();
-    return result.isNotEmpty
-        ? result.first.readNullable<int>('total') ?? 0
-        : 0;
+    return result.isNotEmpty ? result.first.readNullable<int>('total') ?? 0 : 0;
   }
 
   /// Returns per-book reading stats for all started books, sorted by time desc.

@@ -27,29 +27,28 @@ Future<void> _pumpLibrary(WidgetTester t, LibraryService lib) async {
 }
 
 void main() {
-  testWidgets('selection bar archives books and removes them from the library', (
-    t,
-  ) async {
-    final lib = LibraryService()
-      ..debugAddAll([_book('a'), _book('b')]);
-    addTearDown(lib.dispose);
-    await _pumpLibrary(t, lib);
-    expect(find.byType(BookCard), findsNWidgets(2));
+  testWidgets(
+    'selection bar archives books and removes them from the library',
+    (t) async {
+      final lib = LibraryService()..debugAddAll([_book('a'), _book('b')]);
+      addTearDown(lib.dispose);
+      await _pumpLibrary(t, lib);
+      expect(find.byType(BookCard), findsNWidgets(2));
 
-    await t.longPress(find.byType(BookCard).first);
-    await t.pumpAndSettle();
-    await t.tap(find.byTooltip('Archive'));
-    await t.pumpAndSettle();
+      await t.longPress(find.byType(BookCard).first);
+      await t.pumpAndSettle();
+      await t.tap(find.byTooltip('Archive'));
+      await t.pumpAndSettle();
 
-    expect(find.text('Archived 1 book'), findsOneWidget);
-    expect(find.byType(BookCard), findsOneWidget);
-    expect(lib.archivedBooks.map((b) => b.id), ['a']);
-    expect(lib.activeBooks.map((b) => b.id), ['b']);
-  });
+      expect(find.text('Archived 1 book'), findsOneWidget);
+      expect(find.byType(BookCard), findsOneWidget);
+      expect(lib.archivedBooks.map((b) => b.id), ['a']);
+      expect(lib.activeBooks.map((b) => b.id), ['b']);
+    },
+  );
 
   testWidgets('header archive entry opens the archived books', (t) async {
-    final lib = LibraryService()
-      ..debugAddAll([_book('a'), _book('b')]);
+    final lib = LibraryService()..debugAddAll([_book('a'), _book('b')]);
     addTearDown(lib.dispose);
     await lib.archiveBooks(['a']);
     await _pumpLibrary(t, lib);

@@ -110,11 +110,13 @@ typedef ScanFolderFn =
 
 /// Scan the folders that already contain books (quick refresh).
 typedef ScanFoldersFn =
-    Future<List<String>> Function(Set<String> folders, {Set<String> knownPaths});
+    Future<List<String>> Function(
+      Set<String> folders, {
+      Set<String> knownPaths,
+    });
 
 /// Full-device walk for supported documents.
-typedef ScanDeviceFn =
-    Future<List<String>> Function({Set<String> knownPaths});
+typedef ScanDeviceFn = Future<List<String>> Function({Set<String> knownPaths});
 
 class _LibraryScreenState extends State<LibraryScreen>
     with WidgetsBindingObserver {
@@ -1023,7 +1025,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                           Navigator.pop(sheetContext);
                           _showRemoveBookSheet(book);
                         },
-                        icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 20,
+                        ),
                         label: const Text('Remove'),
                       ),
                     ),
@@ -1662,132 +1667,132 @@ class _LibraryScreenState extends State<LibraryScreen>
           if (!didPop && _selection.isSelecting) _selection.clear();
         },
         child: Scaffold(
-        body: Stack(
-          children: [
-            RefreshIndicator(
-              onRefresh: _onRefresh,
-              child: CustomScrollView(
-                slivers: [
-                  BurrowHeader(
-                    tab: _tab,
-                    onTabChanged: (tab) {
-                      if (_selection.isSelecting) _selection.clear();
-                      setState(() {
-                        _tab = tab;
-                        _query = '';
-                        _searchController.clear();
-                        _searchOpen = false;
-                      });
-                    },
-                    activeFilterCount: _activeFilterCount,
-                    onFilterTap: () => _showFilterSheet(context),
-                    onStats: () =>
-                        StatsScreen.show(context, library: widget.library),
-                    onRemoveAllMissing: _removeAllMissing,
-                    missingCount: widget.library.missingActiveIds.length,
-                    archiveCount: widget.library.archivedBooks.length,
-                    hiddenArchiveCount:
-                        widget.library.hiddenArchiveBooks.length,
-                    onArchive: _openArchive,
-                    onHiddenArchive: _openHiddenArchive,
-                    onSettings: () =>
-                        SettingsScreen.show(context, library: widget.library),
-                    onSearch: () => setState(() {
-                      _searchOpen = !_searchOpen;
-                      if (!_searchOpen) {
-                        _query = '';
-                        _searchController.clear();
-                      }
-                    }),
-                  ),
-                  if (widget.library.settings.scanMode == ScanMode.folder &&
-                      widget.library.settings.scanFolder.isNotEmpty)
-                    SliverToBoxAdapter(child: _folderScopeNote(context)),
-                  if (widget.library.missingActiveIds.isNotEmpty)
-                    SliverToBoxAdapter(child: _missingSnack(context)),
-                  if (_selection.isSelecting) _selectionBar(),
-                  if (hasLibrary && widget.library.isScanning)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                        child: _ScanningBanner(library: widget.library),
-                      ),
+          body: Stack(
+            children: [
+              RefreshIndicator(
+                onRefresh: _onRefresh,
+                child: CustomScrollView(
+                  slivers: [
+                    BurrowHeader(
+                      tab: _tab,
+                      onTabChanged: (tab) {
+                        if (_selection.isSelecting) _selection.clear();
+                        setState(() {
+                          _tab = tab;
+                          _query = '';
+                          _searchController.clear();
+                          _searchOpen = false;
+                        });
+                      },
+                      activeFilterCount: _activeFilterCount,
+                      onFilterTap: () => _showFilterSheet(context),
+                      onStats: () =>
+                          StatsScreen.show(context, library: widget.library),
+                      onRemoveAllMissing: _removeAllMissing,
+                      missingCount: widget.library.missingActiveIds.length,
+                      archiveCount: widget.library.archivedBooks.length,
+                      hiddenArchiveCount:
+                          widget.library.hiddenArchiveBooks.length,
+                      onArchive: _openArchive,
+                      onHiddenArchive: _openHiddenArchive,
+                      onSettings: () =>
+                          SettingsScreen.show(context, library: widget.library),
+                      onSearch: () => setState(() {
+                        _searchOpen = !_searchOpen;
+                        if (!_searchOpen) {
+                          _query = '';
+                          _searchController.clear();
+                        }
+                      }),
                     ),
-                  if (hasLibrary &&
-                      widget.library.storageUnavailable &&
-                      !_storageBannerDismissed)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                        child: MaterialBanner(
-                          content: const Text(
-                            'Storage unavailable — missing check skipped',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => setState(
-                                () => _storageBannerDismissed = true,
-                              ),
-                              child: const Text('Dismiss'),
-                            ),
-                          ],
+                    if (widget.library.settings.scanMode == ScanMode.folder &&
+                        widget.library.settings.scanFolder.isNotEmpty)
+                      SliverToBoxAdapter(child: _folderScopeNote(context)),
+                    if (widget.library.missingActiveIds.isNotEmpty)
+                      SliverToBoxAdapter(child: _missingSnack(context)),
+                    if (_selection.isSelecting) _selectionBar(),
+                    if (hasLibrary && widget.library.isScanning)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                          child: _ScanningBanner(library: widget.library),
                         ),
                       ),
-                    ),
-                  if (hasLibrary)
-                    ..._tabContent(context, books, recent, filtered),
-                  if (!hasLibrary)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _busy || widget.library.isScanning
-                          ? const BusyState()
-                          : EmptyState(
-                              onPickFile: _pickFile,
-                              onScan: _scanPreferred,
+                    if (hasLibrary &&
+                        widget.library.storageUnavailable &&
+                        !_storageBannerDismissed)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                          child: MaterialBanner(
+                            content: const Text(
+                              'Storage unavailable — missing check skipped',
                             ),
-                    ),
-                ],
+                            actions: [
+                              TextButton(
+                                onPressed: () => setState(
+                                  () => _storageBannerDismissed = true,
+                                ),
+                                child: const Text('Dismiss'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (hasLibrary)
+                      ..._tabContent(context, books, recent, filtered),
+                    if (!hasLibrary)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _busy || widget.library.isScanning
+                            ? const BusyState()
+                            : EmptyState(
+                                onPickFile: _pickFile,
+                                onScan: _scanPreferred,
+                              ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: !_fabOpen,
-                child: AnimatedOpacity(
-                  opacity: _fabOpen ? 1 : 0,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.scrim.withValues(alpha: 0.45),
-                    ),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _fabOpen = false),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_fabOpen,
+                  child: AnimatedOpacity(
+                    opacity: _fabOpen ? 1 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.scrim.withValues(alpha: 0.45),
+                      ),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _fabOpen = false),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            if (_activeStatus != null)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: StatusBanner(
-                  status: _activeStatus!,
-                  completed: _statusCompleted,
-                  total: _statusTotal,
-                  bookTitle: _statusBookTitle,
-                  result: _statusResult,
+              if (_activeStatus != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: StatusBanner(
+                    status: _activeStatus!,
+                    completed: _statusCompleted,
+                    total: _statusTotal,
+                    bookTitle: _statusBookTitle,
+                    result: _statusResult,
+                  ),
                 ),
-              ),
-            if (_searchOpen) _buildSearchOverlay(context),
-          ],
-        ),
-        floatingActionButton: _tab == LibraryTab.books
-            ? _buildFab(context)
-            : null,
+              if (_searchOpen) _buildSearchOverlay(context),
+            ],
+          ),
+          floatingActionButton: _tab == LibraryTab.books
+              ? _buildFab(context)
+              : null,
         ),
       ),
     );
@@ -1978,13 +1983,17 @@ class _LibraryScreenState extends State<LibraryScreen>
             SmartGroupTile(
               icon: Icons.check_circle_outline_rounded,
               label: 'Finished',
-              count: widget.library.activeBooks.where((b) => b.isFinished).length,
+              count: widget.library.activeBooks
+                  .where((b) => b.isFinished)
+                  .length,
               onTap: () => _openSmartGroup('Finished'),
             ),
             SmartGroupTile(
               icon: Icons.fiber_new_outlined,
               label: 'New',
-              count: widget.library.activeBooks.where((b) => !b.isStarted).length,
+              count: widget.library.activeBooks
+                  .where((b) => !b.isStarted)
+                  .length,
               onTap: () => _openSmartGroup('New'),
             ),
           ]),
@@ -2395,10 +2404,13 @@ class _LibraryScreenState extends State<LibraryScreen>
     final q = _query.trim().toLowerCase();
     final searchResults = q.isEmpty
         ? <Book>[]
-        : widget.library.activeBooks.where((b) {
-            return b.displayTitle.toLowerCase().contains(q) ||
-                b.author.toLowerCase().contains(q);
-          }).take(10).toList();
+        : widget.library.activeBooks
+              .where((b) {
+                return b.displayTitle.toLowerCase().contains(q) ||
+                    b.author.toLowerCase().contains(q);
+              })
+              .take(10)
+              .toList();
 
     return Positioned.fill(
       child: GestureDetector(
@@ -2445,7 +2457,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 hintText: 'Search your burrow',
                                 suffixIcon: _query.isNotEmpty
                                     ? IconButton(
-                                        icon: const Icon(Icons.close_rounded, size: 20),
+                                        icon: const Icon(
+                                          Icons.close_rounded,
+                                          size: 20,
+                                        ),
                                         onPressed: () {
                                           _searchController.clear();
                                           setState(() => _query = '');
@@ -2455,12 +2470,18 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 filled: true,
                                 fillColor: scheme.surfaceContainerHighest,
                                 isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                  horizontal: 16,
+                                ),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: Burrow.r(Burrow.shapeLg),
-                                  borderSide: BorderSide(color: scheme.primary, width: 2),
+                                  borderSide: BorderSide(
+                                    color: scheme.primary,
+                                    width: 2,
+                                  ),
                                 ),
                               ),
                             ),
@@ -2492,7 +2513,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 leading: SizedBox(
                                   width: 36,
                                   height: 54,
-                                  child: BookCover(book: book, borderRadius: 4, spine: false),
+                                  child: BookCover(
+                                    book: book,
+                                    borderRadius: 4,
+                                    spine: false,
+                                  ),
                                 ),
                                 title: Text(
                                   book.displayTitle,

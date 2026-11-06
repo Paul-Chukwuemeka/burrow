@@ -352,7 +352,9 @@ class LibraryService extends ChangeNotifier {
     // (CollectionScreen._groupedBooks) — no per-series collections.
     if (!(prefs.getBool(_comicsOrganizedKey) ?? false)) {
       unawaited(
-        _autoOrganizeComics().then((_) => prefs.setBool(_comicsOrganizedKey, true)),
+        _autoOrganizeComics().then(
+          (_) => prefs.setBool(_comicsOrganizedKey, true),
+        ),
       );
     }
 
@@ -457,13 +459,16 @@ class LibraryService extends ChangeNotifier {
     required List<String> formats,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_filtersKey, jsonEncode({
-      'sort': sort,
-      'status': status,
-      'genre': genre,
-      'series': series,
-      'formats': formats,
-    }));
+    await prefs.setString(
+      _filtersKey,
+      jsonEncode({
+        'sort': sort,
+        'status': status,
+        'genre': genre,
+        'series': series,
+        'formats': formats,
+      }),
+    );
   }
 
   Future<Map<String, dynamic>?> loadFilters() async {
@@ -605,8 +610,15 @@ class LibraryService extends ChangeNotifier {
       }
       if (probe != null) {
         // Auto re-link: unknown path may be a moved file.
-        final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
-        final hitId = findRelinkCandidate(size: probe.size, mtimeMs: probe.modified.millisecondsSinceEpoch, format: formatFromExtension(path), missing: candidates);
+        final candidates = _books
+            .where((b) => _missingIds.contains(b.id))
+            .toList();
+        final hitId = findRelinkCandidate(
+          size: probe.size,
+          mtimeMs: probe.modified.millisecondsSinceEpoch,
+          format: formatFromExtension(path),
+          missing: candidates,
+        );
         if (hitId != null) {
           // Awaited inside try/finally so _pendingImports still covers the
           // relink: a bare `return relinkToPath(...)` would run finally
@@ -694,7 +706,9 @@ class LibraryService extends ChangeNotifier {
                 st.type != FileSystemEntityType.directory) {
               sz = st.size;
               mt = st.modified.millisecondsSinceEpoch;
-              final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
+              final candidates = _books
+                  .where((b) => _missingIds.contains(b.id))
+                  .toList();
               // Note: batch books are never missing, so only check existing.
               hitId = findRelinkCandidate(
                 size: st.size,
@@ -1039,9 +1053,9 @@ class LibraryService extends ChangeNotifier {
     if (comics.isEmpty) return;
 
     // Ensure "Comics" collection exists and add all comics to it.
-    var comicsCollection = _collections.where(
-      (c) => c.name == 'Comics',
-    ).firstOrNull;
+    var comicsCollection = _collections
+        .where((c) => c.name == 'Comics')
+        .firstOrNull;
     if (comicsCollection == null) {
       final id = await createCollection('Comics');
       if (id.isEmpty) return;
@@ -1072,11 +1086,8 @@ class LibraryService extends ChangeNotifier {
       )) {
         continue;
       }
-      final seriesNames = {
-        for (final b in books) b.effectiveSeriesName,
-      };
-      if (seriesNames.length == 1 &&
-          seriesNames.single == collection.name) {
+      final seriesNames = {for (final b in books) b.effectiveSeriesName};
+      if (seriesNames.length == 1 && seriesNames.single == collection.name) {
         await deleteCollection(collection.id);
       }
     }
@@ -1584,10 +1595,7 @@ class LibraryService extends ChangeNotifier {
   Future<int> getCollectionBookCount(String collectionId) async {
     if (_db == null) return 0;
     final links = await _db!.getBooksForCollection(collectionId);
-    final archived = _books
-        .where((b) => b.isArchived)
-        .map((b) => b.id)
-        .toSet();
+    final archived = _books.where((b) => b.isArchived).map((b) => b.id).toSet();
     return links.where((l) => !archived.contains(l.bookId)).length;
   }
 
@@ -1628,9 +1636,7 @@ class LibraryService extends ChangeNotifier {
   /// Returns active books by a specific author (case-insensitive match).
   List<Book> booksByAuthor(String author) {
     final lower = author.toLowerCase();
-    return activeBooks
-        .where((b) => b.author.toLowerCase() == lower)
-        .toList();
+    return activeBooks.where((b) => b.author.toLowerCase() == lower).toList();
   }
 
   /// Returns the number of books by a specific author.
