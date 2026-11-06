@@ -92,12 +92,16 @@ class _StatsScreenState extends State<StatsScreen> {
     // Snapshot books after the await so header counts agree with the fresh
     // stats even if the library changed mid-load.
     if (!mounted) return;
-    final books = widget.library.books;
+    final books = widget.library.activeBooks;
+    final activeIds = books.map((b) => b.id).toSet();
+    final activePerBookStats = perBookStats
+        .where((s) => activeIds.contains(s.book.id))
+        .toList();
 
     var totalTime = 0;
     var totalPages = 0;
     var totalSessions = 0;
-    for (final s in perBookStats) {
+    for (final s in activePerBookStats) {
       totalTime += s.totalTimeMs;
       totalPages += s.totalPages;
       totalSessions += s.sessionCount;
@@ -118,7 +122,7 @@ class _StatsScreenState extends State<StatsScreen> {
       _dailyTime = dailyTime;
       _hourlyTime = hourlyTime;
       _monthlyTime = monthlyTime;
-      _perBookStats = perBookStats;
+      _perBookStats = activePerBookStats;
       _loading = false;
     });
   }

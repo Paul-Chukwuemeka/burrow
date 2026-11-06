@@ -10,6 +10,7 @@ import '../services/dictionary_service.dart';
 import '../services/external_dictionary_service.dart';
 import '../services/library_service.dart';
 import '../theme/burrow_tokens.dart';
+import '../widgets/archive_pin_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -409,6 +410,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(fontSize: 12, color: scheme.error),
               ),
             ),
+          const SizedBox(height: 24),
+          _sectionHeader('Privacy'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              Icons.lock_outline_rounded,
+              color: scheme.onSurfaceVariant,
+            ),
+            title: const Text('Hidden archive PIN'),
+            subtitle: const Text('Set or change the 4-digit lock'),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: scheme.onSurfaceVariant,
+            ),
+            onTap: () async {
+              final changed = await changeHiddenArchivePin(context);
+              if (changed && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Hidden archive PIN saved')),
+                );
+              }
+            },
+          ),
           const SizedBox(height: 24),
           _sectionHeader('About'),
           ListTile(

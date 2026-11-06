@@ -20,6 +20,7 @@ import '../utils/date_format.dart';
 import '../utils/file_size.dart';
 import '../widgets/book_card.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/archive_pin_dialog.dart';
 import '../widgets/book_grid.dart';
 import '../widgets/library_filter_widgets.dart';
 import '../widgets/library_header.dart';
@@ -27,6 +28,7 @@ import '../widgets/library_sheet_widgets.dart';
 import '../widgets/library_state_widgets.dart';
 import '../widgets/library_tile_widgets.dart';
 import '../widgets/pill_chip.dart';
+import 'archive_screen.dart';
 import 'author_screen.dart';
 import 'book_info_screen.dart';
 import 'collection_screen.dart';
@@ -353,7 +355,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         genreFilter: _genreFilter,
         seriesFilter: _seriesFilter,
         formatFilters: _formatFilters,
-        books: widget.library.books,
+        books: widget.library.activeBooks,
         onStatusChanged: (s) {
           if (_selection.isSelecting) _selection.clear();
           setState(() {
@@ -401,9 +403,9 @@ class _LibraryScreenState extends State<LibraryScreen>
         settings.scanMode == ScanMode.folder && settings.scanFolder.isNotEmpty
         ? '${settings.scanFolder}/'
         : null;
-    final missingCount = widget.library.missingIds.length;
+    final missingCount = widget.library.missingActiveIds.length;
     final key =
-        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.books.length}:${settings.scanMode.index}:$folderScope:$missingCount';
+        '$_formatFilters:$_statusFilter:$_genreFilter:$_seriesFilter:$_query:$_sort:${widget.library.activeBooks.length}:${settings.scanMode.index}:$folderScope:$missingCount';
     if (_cacheKey == key && _cachedVisibleBooks != null) {
       return _cachedVisibleBooks!;
     }
@@ -413,6 +415,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     final q = _query.trim().toLowerCase();
 
     var books = widget.library.sorted.where((b) {
+      // Archive tiers are separate views; only active books belong here.
+      if (b.isArchived) return false;
       // Deleted files move out of the view; the missing snack lists them.
       if (widget.library.isMissing(b.id)) return false;
       // Folder scan type scopes the library to the remembered folder.
@@ -822,6 +826,16 @@ class _LibraryScreenState extends State<LibraryScreen>
                 },
               ),
               SheetAction(
+                icon: Icons.archive_outlined,
+                label: 'Archive',
+                iconColor: scheme.onSecondaryContainer,
+                iconBg: scheme.secondaryContainer,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _archiveBooks([book.id]);
+                },
+              ),
+              SheetAction(
                 icon: Icons.delete_outline_rounded,
                 label: 'Remove from library',
                 iconColor: scheme.onErrorContainer,
@@ -1132,14 +1146,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                     ),
                   ),
                 ),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.select_all_rounded),
+                  color: scheme.onPrimaryContainer,
+                  tooltip: 'Select all',
                   onPressed: _selectAllVisible,
-                  child: const Text('Select all'),
                 ),
                 // Exactly one book: the full single-book sheet stays
                 // reachable (Read now / Edit metadata / Book details / …).
@@ -1156,6 +1167,13 @@ class _LibraryScreenState extends State<LibraryScreen>
                   tooltip: 'Add to collection',
                   onPressed: () =>
                       _showAddBooksToCollectionSheet(_selectedBooks),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.archive_outlined),
+                  color: scheme.onPrimaryContainer,
+                  tooltip: 'Archive',
+                  onPressed: () =>
+                      _archiveBooks(_selectedBooks.map((b) => b.id)),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded),
@@ -1615,7 +1633,7 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   @override
   Widget build(BuildContext context) {
-    final allBooks = widget.library.books;
+    final allBooks = widget.library.activeBooks;
     final books = _visibleBooks;
     final recent =
         (_query.isEmpty &&
@@ -1666,7 +1684,12 @@ class _LibraryScreenState extends State<LibraryScreen>
                     onStats: () =>
                         StatsScreen.show(context, library: widget.library),
                     onRemoveAllMissing: _removeAllMissing,
-                    missingCount: widget.library.missingIds.length,
+                    missingCount: widget.library.missingActiveIds.length,
+                    archiveCount: widget.library.archivedBooks.length,
+                    hiddenArchiveCount:
+                        widget.library.hiddenArchiveBooks.length,
+                    onArchive: _openArchive,
+                    onHiddenArchive: _openHiddenArchive,
                     onSettings: () =>
                         SettingsScreen.show(context, library: widget.library),
                     onSearch: () => setState(() {
@@ -1680,7 +1703,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                   if (widget.library.settings.scanMode == ScanMode.folder &&
                       widget.library.settings.scanFolder.isNotEmpty)
                     SliverToBoxAdapter(child: _folderScopeNote(context)),
-                  if (widget.library.missingIds.isNotEmpty)
+                  if (widget.library.missingActiveIds.isNotEmpty)
                     SliverToBoxAdapter(child: _missingSnack(context)),
                   if (_selection.isSelecting) _selectionBar(),
                   if (hasLibrary && widget.library.isScanning)
@@ -1947,7 +1970,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             SmartGroupTile(
               icon: Icons.auto_stories_outlined,
               label: 'Reading',
-              count: widget.library.books
+              count: widget.library.activeBooks
                   .where((b) => b.isStarted && !b.isFinished)
                   .length,
               onTap: () => _openSmartGroup('Reading'),
@@ -1955,13 +1978,13 @@ class _LibraryScreenState extends State<LibraryScreen>
             SmartGroupTile(
               icon: Icons.check_circle_outline_rounded,
               label: 'Finished',
-              count: widget.library.books.where((b) => b.isFinished).length,
+              count: widget.library.activeBooks.where((b) => b.isFinished).length,
               onTap: () => _openSmartGroup('Finished'),
             ),
             SmartGroupTile(
               icon: Icons.fiber_new_outlined,
               label: 'New',
-              count: widget.library.books.where((b) => !b.isStarted).length,
+              count: widget.library.activeBooks.where((b) => !b.isStarted).length,
               onTap: () => _openSmartGroup('New'),
             ),
           ]),
@@ -2012,6 +2035,48 @@ class _LibraryScreenState extends State<LibraryScreen>
     if (mounted) setState(() {});
   }
 
+  Future<void> _archiveBooks(Iterable<String> ids) async {
+    final list = ids.toList();
+    if (list.isEmpty) return;
+    final count = await widget.library.archiveBooks(list);
+    if (!mounted) return;
+    _selection.clear();
+    setState(() {});
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 1 ? 'Archived 1 book' : 'Archived $count books',
+          ),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () => widget.library.restoreBooks(list),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _openArchive() async {
+    await ArchiveScreen.show(
+      context,
+      library: widget.library,
+      tier: ArchiveTier.archive,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openHiddenArchive() async {
+    if (!await ensureHiddenArchiveUnlocked(context)) return;
+    if (!mounted) return;
+    await ArchiveScreen.show(
+      context,
+      library: widget.library,
+      tier: ArchiveTier.hidden,
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _openCollectionScreen(db.Collection collection) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -2026,13 +2091,13 @@ class _LibraryScreenState extends State<LibraryScreen>
     List<Book> books;
     switch (group) {
       case 'Reading':
-        books = widget.library.books
+        books = widget.library.activeBooks
             .where((b) => b.isStarted && !b.isFinished)
             .toList();
       case 'Finished':
-        books = widget.library.books.where((b) => b.isFinished).toList();
+        books = widget.library.activeBooks.where((b) => b.isFinished).toList();
       case 'New':
-        books = widget.library.books.where((b) => !b.isStarted).toList();
+        books = widget.library.activeBooks.where((b) => !b.isStarted).toList();
       default:
         books = [];
     }
@@ -2330,7 +2395,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     final q = _query.trim().toLowerCase();
     final searchResults = q.isEmpty
         ? <Book>[]
-        : widget.library.books.where((b) {
+        : widget.library.activeBooks.where((b) {
             return b.displayTitle.toLowerCase().contains(q) ||
                 b.author.toLowerCase().contains(q);
           }).take(10).toList();
@@ -2466,7 +2531,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   /// View action that opens the missing sheet.
   Widget _missingSnack(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final count = widget.library.missingIds.length;
+    final count = widget.library.missingActiveIds.length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
       child: Material(
@@ -2508,7 +2573,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   /// Bottom sheet listing the books whose files have vanished. Tapping a
   /// book opens its action sheet (Locate / Remove).
   void _showMissingSheet(BuildContext context) {
-    final missing = widget.library.books
+    final missing = widget.library.activeBooks
         .where((b) => widget.library.isMissing(b.id))
         .toList();
     showModalBottomSheet<void>(

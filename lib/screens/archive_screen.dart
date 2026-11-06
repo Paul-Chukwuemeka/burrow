@@ -68,11 +68,6 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
     if (mounted) setState(() {});
   }
 
-  List<Book> get _selectedBooks {
-    final ids = _selection.selectedIds;
-    return _books.where((b) => ids.contains(b.id)).toList();
-  }
-
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)

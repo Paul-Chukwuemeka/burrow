@@ -5,7 +5,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1248,7 +1247,9 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<int> removeAllMissing() async {
-    final ids = _missingIds.toList();
+    // Archived books are managed from their archive screen; the library's
+    // "remove all missing" action only touches the active view.
+    final ids = missingActiveIds.toList();
     for (final id in ids) {
       await deleteBookWithFile(id, deleteFile: false);
     }
