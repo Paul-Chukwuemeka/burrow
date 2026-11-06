@@ -15,6 +15,10 @@ class BurrowHeader extends StatelessWidget {
     this.missingCount = 0,
     this.onSettings,
     this.onSearch,
+    this.onArchive,
+    this.onHiddenArchive,
+    this.archiveCount = 0,
+    this.hiddenArchiveCount = 0,
   });
 
   final LibraryTab tab;
@@ -26,6 +30,10 @@ class BurrowHeader extends StatelessWidget {
   final int missingCount;
   final VoidCallback? onSettings;
   final VoidCallback? onSearch;
+  final VoidCallback? onArchive;
+  final VoidCallback? onHiddenArchive;
+  final int archiveCount;
+  final int hiddenArchiveCount;
 
   @override
   Widget build(BuildContext context) {
@@ -55,36 +63,65 @@ class BurrowHeader extends StatelessWidget {
             onPressed: onStats,
             tooltip: 'Reading stats',
           ),
-        if (onRemoveAllMissing != null || onSettings != null)
+        if (onArchive != null ||
+            onHiddenArchive != null ||
+            onRemoveAllMissing != null ||
+            onSettings != null)
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert_rounded, color: scheme.onSurface),
             tooltip: 'More options',
             onSelected: (key) {
+              if (key == 'archive') onArchive?.call();
+              if (key == 'hidden-archive') onHiddenArchive?.call();
               if (key == 'remove-missing' && missingCount > 0) {
                 onRemoveAllMissing?.call();
               }
               if (key == 'settings') onSettings?.call();
             },
             itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'remove-missing',
-                enabled: missingCount > 0,
-                child: ListTile(
-                  leading: const Icon(Icons.delete_sweep_outlined),
-                  title: Text(
-                    missingCount > 0
-                        ? 'Remove all missing ($missingCount)'
-                        : 'Remove all missing',
+              if (onArchive != null)
+                PopupMenuItem(
+                  value: 'archive',
+                  child: ListTile(
+                    leading: const Icon(Icons.archive_outlined),
+                    title: Text(
+                      archiveCount > 0 ? 'Archive ($archiveCount)' : 'Archive',
+                    ),
                   ),
                 ),
-              ),
-              const PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
+              if (onHiddenArchive != null)
+                PopupMenuItem(
+                  value: 'hidden-archive',
+                  child: ListTile(
+                    leading: const Icon(Icons.lock_outline_rounded),
+                    title: Text(
+                      hiddenArchiveCount > 0
+                          ? 'Hidden archive ($hiddenArchiveCount)'
+                          : 'Hidden archive',
+                    ),
+                  ),
                 ),
-              ),
+              if (onRemoveAllMissing != null)
+                PopupMenuItem(
+                  value: 'remove-missing',
+                  enabled: missingCount > 0,
+                  child: ListTile(
+                    leading: const Icon(Icons.delete_sweep_outlined),
+                    title: Text(
+                      missingCount > 0
+                          ? 'Remove all missing ($missingCount)'
+                          : 'Remove all missing',
+                    ),
+                  ),
+                ),
+              if (onSettings != null)
+                const PopupMenuItem(
+                  value: 'settings',
+                  child: ListTile(
+                    leading: Icon(Icons.settings_outlined),
+                    title: Text('Settings'),
+                  ),
+                ),
             ],
           ),
       ],
