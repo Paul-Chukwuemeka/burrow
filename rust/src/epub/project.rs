@@ -396,6 +396,7 @@ where
         bold: 0,
         italic: 0,
         quote: 0,
+        ws_stack: Vec::new(),
     };
     projector.walk();
     projector.finish(title)
@@ -429,10 +430,47 @@ const BLOCK_TAGS: &[&str] = &[
     "section",
     "article",
     "blockquote",
+    "pre",
+    // Structure that the old Dart set omitted, which glued words together:
+    // table cells, definition lists, figure captions, rules, and the HTML5
+    // sectioning elements.
+    "table",
+    "caption",
+    "thead",
+    "tbody",
+    "tfoot",
+    "td",
+    "th",
+    "dl",
+    "dt",
+    "dd",
+    "figure",
+    "figcaption",
+    "hr",
+    "nav",
+    "aside",
+    "header",
+    "footer",
+    "main",
+    "center",
+    "address",
+    "details",
+    "summary",
+    "fieldset",
+    "form",
+    "menu",
 ];
 
 fn is_block_tag(tag: &str) -> bool {
     BLOCK_TAGS.contains(&tag)
+}
+
+/// Tags that separate content with a single newline rather than a paragraph
+/// break. Table cells and definition-list items are blocks in the tree, but a
+/// blank line between every cell/term would be wrong; one line break keeps them
+/// on separate lines without the paragraph gap.
+fn is_line_tag(tag: &str) -> bool {
+    matches!(tag, "td" | "th" | "dt" | "dd" | "figcaption")
 }
 
 /// True for whitespace that right-trims the body, matching Dart's `_isWs`.
@@ -440,14 +478,15 @@ fn is_trim_ws(ch: char) -> bool {
     matches!(ch, ' ' | '\t' | '\n' | '\r')
 }
 
-/// True for the horizontal whitespace class the body tokenizer splits on.
+/// True for HTML collapsible whitespace (space, tab, CR, LF, FF, VT), the
+/// class the body tokenizer splits on.
+///
+/// A newline inside a text node is *not* a block break: EPUB XHTML is routinely
+/// hard-wrapped mid-paragraph, and browsers collapse those source newlines to a
+/// single space. Leaving `\n` out of this class made a `"\nword"` token look
+/// like pending whitespace and dropped `word` entirely.
 fn is_ws_token_char(ch: char) -> bool {
-    matches!(ch, ' ' | '\t' | '\r' | '\u{0C}' | '\u{0B}')
-}
-
-/// True for a token's first character that Dart treats as pending whitespace.
-fn is_pending_ws_head(ch: char) -> bool {
-    matches!(ch, ' ' | '\t' | '\n' | '\r')
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{0C}' | '\u{0B}')
 }
 
 /// An action on the explicit walk stack (keeps deep nesting off the call stack).
@@ -503,6 +542,18 @@ struct RawLink {
     href: String,
 }
 
+/// Whitespace handling for the current element. CSS `white-space` is
+/// inherited, so the projector pushes a mode per node and restores it on exit.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WsMode {
+    /// Normal HTML whitespace collapsing (the common case).
+    Collapse,
+    /// `pre` / `pre-wrap` / `break-spaces`: preserve every character.
+    Preserve,
+    /// `pre-line`: preserve newlines, collapse horizontal runs.
+    PreLine,
+}
+
 struct Projector<'a, F> {
     tree: &'a BlockTree,
     read: F,
@@ -528,6 +579,8 @@ struct Projector<'a, F> {
     bold: u32,
     italic: u32,
     quote: u32,
+    /// One entry per open element: the whitespace mode in force inside it.
+    ws_stack: Vec<WsMode>,
 }
 
 impl<'a, F> Projector<'a, F>
@@ -548,7 +601,7 @@ where
     /// Opens node `index`: applies its tag's whitespace/emphasis effect and
     /// schedules its direct text and children in document order.
     fn enter(&mut self, index: usize, stack: &mut Vec<Action>) {
-        let (tag, id, name, text_range, children) = {
+        let (tag, id, name, text_range, children, display, white_space) = {
             let node = &self.tree.nodes[index];
             (
                 node.attrs.tag.clone(),
@@ -556,6 +609,8 @@ where
                 node.attrs.name.clone(),
                 node.text_range,
                 node.children.clone(),
+                node.style.display.clone(),
+                node.style.white_space.clone(),
             )
         };
 
@@ -565,6 +620,25 @@ where
             self.emit_image(index);
             return;
         }
+
+        // Hidden content is not part of the reading text. `display:none` and
+        // the `hidden` attribute (folded into inline style during the block
+        // build) are the common cases.
+        if matches!(display.as_deref(), Some("none")) {
+            return;
+        }
+
+        // `white-space` is inherited, so the computed value already reflects
+        // ancestors. `<pre>` is the fallback when no cascade is attached.
+        let ws_mode = match white_space.as_deref().map(str::to_ascii_lowercase) {
+            Some(value) if value == "pre-line" => WsMode::PreLine,
+            Some(value) if value.starts_with("pre") || value == "break-spaces" => {
+                WsMode::Preserve
+            }
+            _ if tag == "pre" => WsMode::Preserve,
+            _ => WsMode::Collapse,
+        };
+        self.ws_stack.push(ws_mode);
 
         // Anchor targets: `id` on any element, plus legacy `<a name="...">`
         // (matching Dart's `_handleTag`). Registration is deferred: the offset
@@ -579,7 +653,9 @@ where
             }
         }
 
-        if is_block_tag(&tag) {
+        if is_line_tag(&tag) {
+            self.pending_newlines += 1;
+        } else if is_block_tag(&tag) {
             self.newline();
         }
         if tag == "blockquote" {
@@ -629,6 +705,7 @@ where
 
     /// Closes node `index`: undoes its effects and seals its text extent.
     fn exit(&mut self, index: usize) {
+        self.ws_stack.pop();
         let tag = self.tree.nodes[index].attrs.tag.clone();
         if tag == "b" || tag == "strong" {
             self.flush_space();
@@ -641,7 +718,7 @@ where
         if tag == "blockquote" {
             self.quote = self.quote.saturating_sub(1);
         }
-        if is_block_tag(&tag) && tag != "br" {
+        if is_block_tag(&tag) && tag != "br" && !is_line_tag(&tag) {
             self.newline();
         }
         if let Some(node) = self.open.pop() {
@@ -679,6 +756,17 @@ where
         if raw.is_empty() {
             return;
         }
+        match self.ws_stack.last().copied().unwrap_or(WsMode::Collapse) {
+            WsMode::Preserve => {
+                self.emit_preserved(raw);
+                return;
+            }
+            WsMode::PreLine => {
+                self.emit_pre_line(raw);
+                return;
+            }
+            WsMode::Collapse => {}
+        }
         let mut tokens: Vec<&str> = Vec::new();
         let mut run_start = 0usize;
         let mut run_is_ws: Option<bool> = None;
@@ -705,12 +793,63 @@ where
         }
     }
 
+    /// Emits text under `white-space: pre`/`pre-wrap`/`break-spaces` verbatim.
+    fn emit_preserved(&mut self, raw: &str) {
+        // Browsers normalise CRLF/CR to LF before layout; do the same so the
+        // body is stable across platforms.
+        let normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
+        self.emit_raw(&normalized);
+    }
+
+    /// Emits text under `white-space: pre-line`: newlines survive, horizontal
+    /// whitespace collapses to one space.
+    fn emit_pre_line(&mut self, raw: &str) {
+        let mut out = String::with_capacity(raw.len());
+        let mut previous_space = false;
+        for ch in raw.chars() {
+            match ch {
+                '\r' => {}
+                '\n' => {
+                    out.push('\n');
+                    previous_space = false;
+                }
+                ' ' | '\t' | '\u{0C}' | '\u{0B}' => {
+                    if !previous_space {
+                        out.push(' ');
+                        previous_space = true;
+                    }
+                }
+                _ => {
+                    out.push(ch);
+                    previous_space = false;
+                }
+            }
+        }
+        self.emit_raw(&out);
+    }
+
+    /// Appends already-collapsed/preserved text, flushing pending block breaks
+    /// first and resolving anchors at the first visible character.
+    fn emit_raw(&mut self, raw: &str) {
+        if raw.is_empty() {
+            return;
+        }
+        if self.pending_newlines > 0 && !self.body.is_empty() {
+            let count = self.pending_newlines.min(2);
+            self.push_newlines(count);
+        }
+        self.pending_newlines = 0;
+        self.pending_space = false;
+        self.resolve_pending();
+        self.emit(raw);
+    }
+
     /// Emits one whitespace-collapsed token, applying pending-space/newline.
     fn emit_token(&mut self, token: &str) {
         let Some(head) = token.chars().next() else {
             return;
         };
-        if is_pending_ws_head(head) {
+        if is_ws_token_char(head) {
             self.pending_space = true;
             return;
         }
@@ -2048,6 +2187,30 @@ mod tests {
         let tree = styled("<body><h1>One</h1><p>The first chapter.</p></body>", "");
         let dto = project(&tree);
         assert_eq!(dto.body, "One\n\nThe first chapter.");
+    }
+
+    #[test]
+    fn newlines_inside_text_collapse_to_a_space() {
+        // EPUB XHTML is commonly hard-wrapped inside a single text node. A
+        // source newline is collapsible whitespace, not a token separator: the
+        // word following it must survive, whether or not the wrap is preceded
+        // by a space.
+        let spaced = styled(
+            "<body><p>his middle \nlike a bloated sausage. Below the waterbag</p></body>",
+            "",
+        );
+        assert_eq!(
+            project(&spaced).body,
+            "his middle like a bloated sausage. Below the waterbag"
+        );
+        let tight = styled("<body><p>his middle\nlike a bloated sausage</p></body>", "");
+        assert_eq!(project(&tight).body, "his middle like a bloated sausage");
+    }
+
+    #[test]
+    fn form_feed_and_vertical_tab_collapse_to_a_space() {
+        let tree = styled("<body><p>a\u{0C}b\u{0B}c</p></body>", "");
+        assert_eq!(project(&tree).body, "a b c");
     }
 
     #[test]
