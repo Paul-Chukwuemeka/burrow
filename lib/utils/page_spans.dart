@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:burrow/models/document.dart' show ChapterLink;
+import 'package:burrow/models/highlight_palette.dart';
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/book_search.dart';
@@ -30,13 +31,15 @@ List<InlineSpan> buildPageSpans({
   List<SearchResult> matches = const [],
   SearchResult? currentMatch,
   ({int start, int end})? selectedRange,
+  List<HighlightSlice> highlightSlices = const [],
 }) {
   final slice = text.substring(start, end);
   if (runs.isEmpty &&
       matches.isEmpty &&
       images.isEmpty &&
       links.isEmpty &&
-      selectedRange == null) {
+      selectedRange == null &&
+      highlightSlices.isEmpty) {
     return [TextSpan(text: slice, style: base)];
   }
 
@@ -81,6 +84,14 @@ List<InlineSpan> buildPageSpans({
     if (rs < re) {
       cuts.add(rs);
       cuts.add(re);
+    }
+  }
+  for (final highlight in highlightSlices) {
+    final hs = highlight.start.clamp(start, end);
+    final he = highlight.end.clamp(start, end);
+    if (hs < he) {
+      cuts.add(hs);
+      cuts.add(he);
     }
   }
   final boundaries = cuts.toList(growable: false);
@@ -134,9 +145,10 @@ List<InlineSpan> buildPageSpans({
           // Decode at display resolution (physical pixels) instead of the
           // source's full size, which can be many times larger.
           cacheWidth: (size.width * devicePixelRatio).round().clamp(1, 1 << 14),
-          cacheHeight: (size.height * devicePixelRatio)
-              .round()
-              .clamp(1, 1 << 14),
+          cacheHeight: (size.height * devicePixelRatio).round().clamp(
+            1,
+            1 << 14,
+          ),
           fit: BoxFit.contain,
           errorBuilder: (_, _, _) => Container(
             width: size.width,
@@ -230,6 +242,17 @@ List<InlineSpan> buildPageSpans({
         color: isCurrent ? theme.accent : null,
         fontWeight: isCurrent ? FontWeight.w700 : null,
       );
+    }
+    for (final highlight in highlightSlices) {
+      if (highlight.start <= segStart && segEnd <= highlight.end) {
+        segStyle = segStyle.copyWith(
+          backgroundColor: highlightBackground(
+            highlight.color,
+            dark: theme.brightness == Brightness.dark,
+          ),
+        );
+        break;
+      }
     }
     if (selectedRange != null) {
       final rs = selectedRange.start.clamp(start, end);

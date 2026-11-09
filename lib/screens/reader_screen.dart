@@ -20,6 +20,7 @@ import '../controllers/search_controller.dart';
 import '../services/brightness_controller.dart';
 import '../services/comic_decode_ahead.dart';
 import '../models/book.dart';
+import '../models/highlight_palette.dart';
 import '../models/reader_settings.dart';
 import '../models/style_run.dart';
 import '../services/book_search.dart';
@@ -31,6 +32,7 @@ import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/comic_issues.dart';
 import '../utils/book_title.dart';
+import '../utils/highlight_locator.dart';
 import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
 import '../utils/pdf_highlight_geometry.dart';
@@ -1681,6 +1683,33 @@ class ReaderScreenState extends State<ReaderScreen>
     _showHighlightSaved();
   }
 
+  /// Clips this chapter's highlights to [page] for painting.
+  List<HighlightSlice> _highlightSlicesForPage(int chapter, TextPage page) {
+    final doc = _doc;
+    if (doc == null || chapter < 0 || chapter >= doc.chapters.length) {
+      return const [];
+    }
+
+    final length = doc.chapters[chapter].body.length;
+    final slices = <HighlightSlice>[];
+    for (final row in _highlightCtrl.forChapter(chapter)) {
+      final clipped = clipHighlightToPage(
+        highlightChapter: row.chapter!,
+        startOffset: row.startOffset ?? 0,
+        endChapter: row.endChapter ?? row.chapter!,
+        endOffset: row.endOffset ?? 0,
+        chapter: chapter,
+        pageStart: page.start,
+        pageEnd: page.end,
+        chapterLength: length,
+      );
+      if (clipped != null) {
+        slices.add((start: clipped.start, end: clipped.end, color: row.color));
+      }
+    }
+    return slices;
+  }
+
   void _showHighlightSaved() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -2507,6 +2536,7 @@ class ReaderScreenState extends State<ReaderScreen>
                     }
                   },
                   highlightMatches: highlights,
+                  highlightSlices: _highlightSlicesForPage(chapter, page),
                   currentMatch:
                       _searchCtrl.currentResultIndex >= 0 &&
                           _searchCtrl.currentResultIndex <
@@ -3368,6 +3398,7 @@ class _PageContent extends StatefulWidget {
     this.links = const [],
     this.onTapLink,
     this.highlightMatches,
+    this.highlightSlices = const [],
     this.currentMatch,
     this.pageMaxHeight = double.infinity,
     this.selectionStart,
@@ -3400,6 +3431,7 @@ class _PageContent extends StatefulWidget {
   final List<ChapterLink> links;
   final void Function(int target)? onTapLink;
   final List<SearchResult>? highlightMatches;
+  final List<HighlightSlice> highlightSlices;
   final SearchResult? currentMatch;
   final double pageMaxHeight;
   final void Function(int wordStart, int wordEnd)? onWordSelected;
@@ -3822,6 +3854,7 @@ class _PageContentState extends State<_PageContent> {
       matches: widget.highlightMatches ?? const [],
       currentMatch: widget.currentMatch,
       selectedRange: _selectedPageRange(),
+      highlightSlices: widget.highlightSlices,
     );
   }
 

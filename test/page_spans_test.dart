@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:burrow/models/css_style.dart';
 import 'package:burrow/models/document.dart' show ChapterLink;
+import 'package:burrow/models/highlight_palette.dart';
 import 'package:burrow/models/reader_settings.dart';
 import 'package:burrow/models/style_run.dart';
 import 'package:burrow/services/book_search.dart';
@@ -269,10 +270,7 @@ void main() {
           base: style,
           theme: theme,
           settings: ReaderSettings(),
-          links: const [
-            ChapterLink(4, 9, 1),
-            ChapterLink(10, 15, 2),
-          ],
+          links: const [ChapterLink(4, 9, 1), ChapterLink(10, 15, 2)],
         ),
       );
 
@@ -575,10 +573,7 @@ void main() {
       );
       tp.setPlaceholderDimensions([
         PlaceholderDimensions(
-          size: Size(
-            size.width,
-            size.height + 2 * ImageRun.verticalPadding,
-          ),
+          size: Size(size.width, size.height + 2 * ImageRun.verticalPadding),
           alignment: PlaceholderAlignment.middle,
         ),
       ]);
@@ -598,10 +593,12 @@ void main() {
       );
 
       final imageCenter = tester.renderObject<RenderBox>(
-        find.descendant(
-          of: find.byType(RichText),
-          matching: find.byType(Center),
-        ).first,
+        find
+            .descendant(
+              of: find.byType(RichText),
+              matching: find.byType(Center),
+            )
+            .first,
       );
       expect(
         imageCenter.size.width,
@@ -634,5 +631,62 @@ void main() {
     expect(spans.first.text, 'Alpha beta g');
     expect(spans.last.text, 'amma delta.');
     expect(spans.last.style?.fontWeight, FontWeight.w700);
+  });
+
+  group('highlight slices', () {
+    List<InlineSpan> pages({
+      List<HighlightSlice> slices = const [],
+      ({int start, int end})? selectedRange,
+    }) => buildPageSpans(
+      text: 'word word',
+      start: 0,
+      end: 9,
+      base: style,
+      theme: theme,
+      settings: ReaderSettings(),
+      highlightSlices: slices,
+      selectedRange: selectedRange,
+    );
+
+    test('paints a highlight background', () {
+      final span = wrapSpans(
+        pages(slices: const [(start: 0, end: 4, color: 0)]),
+      );
+      expect(span.toPlainText(), 'word word');
+
+      final first = span.children!.first as TextSpan;
+      expect(first.text, 'word');
+      expect(first.style?.backgroundColor, highlightBackground(0, dark: false));
+    });
+
+    test('selection overrides a highlight', () {
+      final span = wrapSpans(
+        pages(
+          slices: const [(start: 0, end: 4, color: 0)],
+          selectedRange: (start: 0, end: 4),
+        ),
+      );
+      final first = span.children!.first as TextSpan;
+      expect(first.style?.backgroundColor, theme.selection);
+    });
+
+    test('highlight boundaries split the span', () {
+      final span = wrapSpans(
+        pages(slices: const [(start: 5, end: 9, color: 0)]),
+      );
+      final children = span.children!.cast<TextSpan>();
+      expect(children.map((c) => c.text), ['word ', 'word']);
+      expect(children[0].style?.backgroundColor, isNull);
+      expect(children[1].style?.backgroundColor, isNotNull);
+    });
+
+    test('a slice outside the page paints nothing', () {
+      final span = wrapSpans(
+        pages(slices: const [(start: 50, end: 60, color: 0)]),
+      );
+      for (final child in span.children!.cast<TextSpan>()) {
+        expect(child.style?.backgroundColor, isNull);
+      }
+    });
   });
 }
