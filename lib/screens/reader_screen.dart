@@ -6,7 +6,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/bookmark_helper.dart';
@@ -29,6 +31,7 @@ import '../services/comic_page_provider.dart';
 import '../models/document.dart';
 import '../services/epub/epub_engine_factory.dart';
 import '../services/epub_css_parser.dart';
+import '../services/highlight_exporter.dart';
 import '../services/library_service.dart';
 import '../services/paginator.dart';
 import '../utils/comic_issues.dart';
@@ -2724,7 +2727,6 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   HighlightTab _buildHighlightTab() {
-    final doc = _doc;
     return HighlightTab(
       highlights: _highlightCtrl.highlights,
       onJump: (row) {
@@ -2746,29 +2748,88 @@ class ReaderScreenState extends State<ReaderScreen>
       onColorChanged: (row, color) => _highlightCtrl.updateColor(row.id, color),
       onDelete: (row) => _highlightCtrl.delete(row.id),
       onRestore: (row) => _highlightCtrl.restore(row),
-      locatorLabel: (row) {
-        if (row.page != null) return 'Page ${row.page}';
-        final chapter = row.chapter;
-        if (doc == null ||
-            chapter == null ||
-            chapter < 0 ||
-            chapter >= doc.chapters.length) {
-          return 'Location unavailable';
-        }
-        final title = doc.chapters[chapter].title;
-        return title.isEmpty ? 'Chapter ${chapter + 1}' : title;
-      },
+      locatorLabel: _highlightLocatorLabel,
       canJump: (row) {
         if (row.page != null) return true;
         return _clampHighlight(row) != null;
       },
-      onExport: () {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Export coming next')));
-      },
+      onExport: _exportHighlights,
     );
+  }
+
+  String _highlightLocatorLabel(db.HighlightRow row) {
+    if (row.page != null) return 'Page ${row.page}';
+    final doc = _doc;
+    final chapter = row.chapter;
+    if (doc == null ||
+        chapter == null ||
+        chapter < 0 ||
+        chapter >= doc.chapters.length) {
+      return 'Location unavailable';
+    }
+    final title = doc.chapters[chapter].title;
+    return title.isEmpty ? 'Chapter ${chapter + 1}' : title;
+  }
+
+  Future<void> _exportHighlights() async {
+    final highlights = _highlightCtrl.highlights;
+    if (highlights.isEmpty) return;
+
+    final format = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Export highlights',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Markdown'),
+              onTap: () => Navigator.pop(sheetContext, 'md'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.data_object),
+              title: const Text('JSON'),
+              onTap: () => Navigator.pop(sheetContext, 'json'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (format == null || !mounted) return;
+
+    try {
+      final content = format == 'md'
+          ? highlightsToMarkdown(
+              book: _book,
+              highlights: highlights,
+              locatorLabel: _highlightLocatorLabel,
+            )
+          : highlightsToJson(book: _book, highlights: highlights);
+      final extension = format == 'md' ? 'md' : 'json';
+      final safeTitle = _book.title
+          .replaceAll(RegExp(r'[^A-Za-z0-9 _-]'), '')
+          .trim();
+      final name = safeTitle.isEmpty ? 'highlights' : safeTitle;
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/$name — highlights.$extension');
+      await file.writeAsString(content);
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not export highlights')),
+      );
+    }
   }
 
   ({int chapter, int start, int end})? _clampHighlight(db.HighlightRow row) {
