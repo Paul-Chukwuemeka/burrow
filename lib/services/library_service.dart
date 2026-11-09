@@ -332,7 +332,9 @@ class LibraryService extends ChangeNotifier {
     // (CollectionScreen._groupedBooks) — no per-series collections.
     if (!(prefs.getBool(_comicsOrganizedKey) ?? false)) {
       unawaited(
-        _autoOrganizeComics().then((_) => prefs.setBool(_comicsOrganizedKey, true)),
+        _autoOrganizeComics().then(
+          (_) => prefs.setBool(_comicsOrganizedKey, true),
+        ),
       );
     }
 
@@ -437,13 +439,16 @@ class LibraryService extends ChangeNotifier {
     required List<String> formats,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_filtersKey, jsonEncode({
-      'sort': sort,
-      'status': status,
-      'genre': genre,
-      'series': series,
-      'formats': formats,
-    }));
+    await prefs.setString(
+      _filtersKey,
+      jsonEncode({
+        'sort': sort,
+        'status': status,
+        'genre': genre,
+        'series': series,
+        'formats': formats,
+      }),
+    );
   }
 
   Future<Map<String, dynamic>?> loadFilters() async {
@@ -530,8 +535,15 @@ class LibraryService extends ChangeNotifier {
       }
       if (probe != null) {
         // Auto re-link: unknown path may be a moved file.
-        final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
-        final hitId = findRelinkCandidate(size: probe.size, mtimeMs: probe.modified.millisecondsSinceEpoch, format: formatFromExtension(path), missing: candidates);
+        final candidates = _books
+            .where((b) => _missingIds.contains(b.id))
+            .toList();
+        final hitId = findRelinkCandidate(
+          size: probe.size,
+          mtimeMs: probe.modified.millisecondsSinceEpoch,
+          format: formatFromExtension(path),
+          missing: candidates,
+        );
         if (hitId != null) {
           // Awaited inside try/finally so _pendingImports still covers the
           // relink: a bare `return relinkToPath(...)` would run finally
@@ -619,7 +631,9 @@ class LibraryService extends ChangeNotifier {
                 st.type != FileSystemEntityType.directory) {
               sz = st.size;
               mt = st.modified.millisecondsSinceEpoch;
-              final candidates = _books.where((b) => _missingIds.contains(b.id)).toList();
+              final candidates = _books
+                  .where((b) => _missingIds.contains(b.id))
+                  .toList();
               // Note: batch books are never missing, so only check existing.
               hitId = findRelinkCandidate(
                 size: st.size,
@@ -964,9 +978,9 @@ class LibraryService extends ChangeNotifier {
     if (comics.isEmpty) return;
 
     // Ensure "Comics" collection exists and add all comics to it.
-    var comicsCollection = _collections.where(
-      (c) => c.name == 'Comics',
-    ).firstOrNull;
+    var comicsCollection = _collections
+        .where((c) => c.name == 'Comics')
+        .firstOrNull;
     if (comicsCollection == null) {
       final id = await createCollection('Comics');
       if (id.isEmpty) return;
@@ -997,11 +1011,8 @@ class LibraryService extends ChangeNotifier {
       )) {
         continue;
       }
-      final seriesNames = {
-        for (final b in books) b.effectiveSeriesName,
-      };
-      if (seriesNames.length == 1 &&
-          seriesNames.single == collection.name) {
+      final seriesNames = {for (final b in books) b.effectiveSeriesName};
+      if (seriesNames.length == 1 && seriesNames.single == collection.name) {
         await deleteCollection(collection.id);
       }
     }
@@ -1416,6 +1427,153 @@ class LibraryService extends ChangeNotifier {
       offset: offset,
     );
     return found != null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Highlights
+  // ---------------------------------------------------------------------------
+
+  Future<String> addHighlight({
+    required String bookId,
+    required String text,
+    String note = '',
+    int color = 0,
+    int? chapter,
+    int? startOffset,
+    int? endChapter,
+    int? endOffset,
+    int? page,
+    String? segments,
+  }) async {
+    _validateHighlight(
+      chapter: chapter,
+      startOffset: startOffset,
+      endChapter: endChapter,
+      endOffset: endOffset,
+      page: page,
+      segments: segments,
+    );
+    if (_db == null) return '';
+
+    final id = _newId();
+    await _db!.insertHighlight(
+      db.HighlightsCompanion.insert(
+        id: id,
+        bookId: bookId,
+        quote: text,
+        note: Value(note),
+        color: Value(color),
+        chapter: Value(chapter),
+        startOffset: Value(startOffset),
+        endChapter: Value(endChapter),
+        endOffset: Value(endOffset),
+        page: Value(page),
+        segments: Value(segments),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    notifyListeners();
+    return id;
+  }
+
+  void _validateHighlight({
+    required int? chapter,
+    required int? startOffset,
+    required int? endChapter,
+    required int? endOffset,
+    required int? page,
+    required String? segments,
+  }) {
+    final hasReflowable =
+        chapter != null ||
+        startOffset != null ||
+        endChapter != null ||
+        endOffset != null;
+    final hasPdf = page != null || segments != null;
+    if (hasReflowable == hasPdf) {
+      throw ArgumentError('Highlight needs exactly one locator family');
+    }
+
+    if (hasReflowable) {
+      if (chapter == null ||
+          startOffset == null ||
+          endChapter == null ||
+          endOffset == null) {
+        throw ArgumentError('Reflowable highlight is missing an offset');
+      }
+      if (chapter < 0 || endChapter < chapter) {
+        throw ArgumentError('Invalid highlight chapter range');
+      }
+      if (startOffset < 0 || endOffset < 0) {
+        throw ArgumentError('Highlight offsets must be non-negative');
+      }
+      if (endChapter == chapter && endOffset <= startOffset) {
+        throw ArgumentError('Highlight end must follow its start');
+      }
+      return;
+    }
+
+    if (page == null || page < 1) {
+      throw ArgumentError('PDF highlight needs a positive page');
+    }
+    if (segments == null) {
+      throw ArgumentError('PDF highlight needs segments');
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(segments);
+    } on FormatException {
+      throw ArgumentError('PDF highlight segments are not valid JSON');
+    }
+    if (decoded is! List) {
+      throw ArgumentError('PDF highlight segments must be a list');
+    }
+    for (final entry in decoded) {
+      if (entry is! Map || entry['page'] is! int || entry['rects'] is! List) {
+        throw ArgumentError('Malformed PDF highlight segment');
+      }
+    }
+  }
+
+  Future<List<db.HighlightRow>> getHighlights(String bookId) async {
+    if (_db == null) return [];
+    return _db!.getHighlightsForBook(bookId);
+  }
+
+  Future<void> updateHighlightNote(String id, String note) async {
+    if (_db == null) return;
+    await _db!.updateHighlightNote(id, note);
+    notifyListeners();
+  }
+
+  Future<void> updateHighlightColor(String id, int color) async {
+    if (_db == null) return;
+    await _db!.updateHighlightColor(id, color);
+    notifyListeners();
+  }
+
+  Future<void> deleteHighlight(String id) async {
+    if (_db == null) return;
+    await _db!.deleteHighlightById(id);
+    notifyListeners();
+  }
+
+  Future<int> countHighlightsForBook(String bookId) async {
+    if (_db == null) return 0;
+    return _db!.countHighlightsForBook(bookId);
+  }
+
+  Future<Map<String, int>> highlightCountsForBooks(
+    Iterable<String> bookIds,
+  ) async {
+    if (_db == null) return {};
+    final counts = <String, int>{};
+    for (final id in bookIds.toSet()) {
+      final count = await _db!.countHighlightsForBook(id);
+      if (count > 0) counts[id] = count;
+    }
+    return counts;
   }
 
   // ---------------------------------------------------------------------------
