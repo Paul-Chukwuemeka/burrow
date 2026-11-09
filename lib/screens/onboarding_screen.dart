@@ -280,7 +280,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _title(i),
       textAlign: TextAlign.center,
       style: TextStyle(
-        fontFamily: 'Fraunces',
         fontSize: isWordmark ? 56 : 34,
         height: isWordmark ? 1.0 : 1.1,
         fontWeight: FontWeight.w700,
