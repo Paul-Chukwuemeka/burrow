@@ -17,6 +17,7 @@ import '../controllers/pdf_controller.dart';
 import '../controllers/reader_selection.dart';
 import '../controllers/reading_session.dart';
 import '../controllers/search_controller.dart';
+import '../db/database.dart' as db;
 import '../services/brightness_controller.dart';
 import '../services/comic_decode_ahead.dart';
 import '../models/book.dart';
@@ -244,6 +245,7 @@ class ReaderScreenState extends State<ReaderScreen>
   late final HighlightController _highlightCtrl;
   ({String text, int page, String segments})? _pendingPdfSelection;
   PdfTextSelection? _pdfSelection;
+  List<db.HighlightRow> _pdfHighlights = const [];
 
   // Search state.
   late final ReaderSearchController _searchCtrl;
@@ -317,7 +319,9 @@ class ReaderScreenState extends State<ReaderScreen>
     });
     _highlightCtrl = HighlightController(library: widget.library, book: _book);
     _highlightCtrl.addListener(() {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      _pdfHighlights = _highlightCtrl.highlights;
+      setState(() {});
     });
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -1683,6 +1687,28 @@ class ReaderScreenState extends State<ReaderScreen>
     _showHighlightSaved();
   }
 
+  /// Paints the open book's PDF highlights for one page.
+  ///
+  /// The rectangle math lives in `pdf_highlight_geometry.dart`; this reads the
+  /// already-loaded rows and never queries the database.
+  void _paintPdfHighlights(Canvas canvas, Rect pageRect, PdfPage page) {
+    final dark = _settings.colors.brightness == Brightness.dark;
+    for (final row in _pdfHighlights) {
+      for (final rect in pdfRectsForPage(row.segments, page.pageNumber)) {
+        final target = PdfRect(
+          rect.left,
+          rect.top,
+          rect.right,
+          rect.bottom,
+        ).toRectInDocument(page: page, pageRect: pageRect);
+        canvas.drawRect(
+          target,
+          Paint()..color = highlightBackground(row.color, dark: dark),
+        );
+      }
+    }
+  }
+
   /// Clips this chapter's highlights to [page] for painting.
   List<HighlightSlice> _highlightSlicesForPage(int chapter, TextPage page) {
     final doc = _doc;
@@ -1954,6 +1980,7 @@ class ReaderScreenState extends State<ReaderScreen>
         pagePaintCallbacks: [
           if (_searchCtrl.pdfSearcher != null)
             _searchCtrl.pdfSearcher!.pageTextMatchPaintCallback,
+          _paintPdfHighlights,
         ],
       ),
     );
