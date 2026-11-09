@@ -2,12 +2,14 @@
 
 A minimal, fast e-book reader for Android. Supports EPUB, PDF, TXT, CBZ, and CBR formats.
 
+See [ROADMAP.md](ROADMAP.md) for what's planned next and what's deliberately out of scope.
+
 ## Features
 
 - **Two-phase import** — Books appear instantly with filename titles; metadata (title, author, cover, description) extracts in the background
 - **Reader** — EPUB reflow with adjustable font/size/theme, PDF native rendering, TXT with pagination
 - **Library** — Grid/list view, sort by title/recent/added, filter by format/reading status/genre/series
-- **Collections & Smart Groups** — Organize books manually or by rules (unread, finished, etc.)
+- **Collections & Smart Groups** — Organize books manually, or use the built-in Reading, Finished, and New groups
 - **Dictionary** — Offline word lookup via Wiktionary (~50 MB downloaded once)
 - **Stats** — Reading activity, genre breakdown, heatmap
 
