@@ -200,4 +200,25 @@ void main() {
     expect(burrowJson.defaultDictionary, 'burrow');
     expect(appJson.defaultDictionary, 'net.guten.cpp');
   });
+
+  test('default highlight colour is amber', () {
+    expect(ReaderSettings().highlightColorIndex, 0);
+  });
+
+  test('highlight colour round-trips through JSON', () {
+    final s = ReaderSettings()..highlightColorIndex = 3;
+    final r = ReaderSettings.fromJson(Map<String, dynamic>.of(s.toJson()));
+    expect(r.highlightColorIndex, 3);
+  });
+
+  test('highlight colour is clamped to the palette', () {
+    expect(
+      ReaderSettings.fromJson({'highlightColorIndex': 99}).highlightColorIndex,
+      4,
+    );
+    expect(
+      ReaderSettings.fromJson({'highlightColorIndex': -4}).highlightColorIndex,
+      0,
+    );
+  });
 }

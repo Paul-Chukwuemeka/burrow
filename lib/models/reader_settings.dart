@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'highlight_palette.dart';
+
 /// Minimum brightness level (0–1). A low floor keeps the UI recoverable on
 /// devices where the hardware minimum backlight is very dim.
 const kMinBrightness = 0.05;
@@ -234,6 +236,7 @@ class ReaderSettings {
     this.scanMode = ScanMode.device,
     this.scanFolder = '',
     this.defaultDictionary,
+    this.highlightColorIndex = 0,
   });
 
   double fontSize;
@@ -298,6 +301,9 @@ class ReaderSettings {
   /// package name of an external dictionary app.
   String? defaultDictionary;
 
+  /// Index into [kHighlightColors] used by the selection toolbar.
+  int highlightColorIndex;
+
   ReaderTheme get colors => ReaderTheme.byMode(readerTheme);
 
   TextStyle textStyle(BuildContext context) {
@@ -339,6 +345,7 @@ class ReaderSettings {
     'scanMode': scanMode.name,
     'scanFolder': scanFolder,
     'defaultDictionary': defaultDictionary,
+    'highlightColorIndex': highlightColorIndex,
   };
 
   /// Slider ranges the UI offers; persisted values are clamped to them so a
@@ -426,6 +433,8 @@ class ReaderSettings {
     ),
     scanFolder: json['scanFolder'] as String? ?? '',
     defaultDictionary: json['defaultDictionary'] as String?,
+    highlightColorIndex: ((json['highlightColorIndex'] as num?)?.toInt() ?? 0)
+        .clamp(0, kHighlightColorCount - 1),
   );
 
   /// Migrate the legacy `serif` bool to the new `fontFamily` string.
