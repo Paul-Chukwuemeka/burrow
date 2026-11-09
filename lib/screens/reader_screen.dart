@@ -1771,7 +1771,6 @@ class ReaderScreenState extends State<ReaderScreen>
         ],
       ),
     );
-    controller.dispose();
     if (note == null) return;
     if (_isPdf) {
       await _savePdfHighlight(note: note);
@@ -2690,8 +2689,6 @@ class ReaderScreenState extends State<ReaderScreen>
 
   void _showTocSheet() {
     if (_isPdf) {
-      // PDF: show outline if available.
-      if (_pdfCtrl.pdfOutline.isEmpty) return;
       TocSheet.showPdf(
         context,
         settings: _settings,
@@ -2703,6 +2700,7 @@ class ReaderScreenState extends State<ReaderScreen>
           await widget.library.deleteBookmark(bm.id);
           await _bookmarkCtrl.loadBookmarks();
         },
+        highlightTab: _buildHighlightTab(),
       );
       return;
     }
@@ -2721,6 +2719,69 @@ class ReaderScreenState extends State<ReaderScreen>
         await widget.library.deleteBookmark(bm.id);
         await _bookmarkCtrl.loadBookmarks();
       },
+      highlightTab: _buildHighlightTab(),
+    );
+  }
+
+  HighlightTab _buildHighlightTab() {
+    final doc = _doc;
+    return HighlightTab(
+      highlights: _highlightCtrl.highlights,
+      onJump: (row) {
+        if (_isPdf) {
+          final page = row.page;
+          if (page == null) return;
+          Navigator.of(context).pop();
+          _jumpToPdfPage(page);
+          return;
+        }
+        final clamped = _clampHighlight(row);
+        if (clamped == null) return;
+        Navigator.of(context).pop();
+        final flat = _flatIndexForPosition(clamped.chapter, clamped.start);
+        _pageController?.jumpToPage(flat);
+        setState(() => _flatPage = flat);
+      },
+      onNoteChanged: (row, note) => _highlightCtrl.updateNote(row.id, note),
+      onColorChanged: (row, color) => _highlightCtrl.updateColor(row.id, color),
+      onDelete: (row) => _highlightCtrl.delete(row.id),
+      onRestore: (row) => _highlightCtrl.restore(row),
+      locatorLabel: (row) {
+        if (row.page != null) return 'Page ${row.page}';
+        final chapter = row.chapter;
+        if (doc == null ||
+            chapter == null ||
+            chapter < 0 ||
+            chapter >= doc.chapters.length) {
+          return 'Location unavailable';
+        }
+        final title = doc.chapters[chapter].title;
+        return title.isEmpty ? 'Chapter ${chapter + 1}' : title;
+      },
+      canJump: (row) {
+        if (row.page != null) return true;
+        return _clampHighlight(row) != null;
+      },
+      onExport: () {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Export coming next')));
+      },
+    );
+  }
+
+  ({int chapter, int start, int end})? _clampHighlight(db.HighlightRow row) {
+    final doc = _doc;
+    final chapter = row.chapter;
+    if (doc == null || chapter == null) return null;
+    return clampReflowableLocator(
+      chapter: chapter,
+      startOffset: row.startOffset ?? 0,
+      endChapter: row.endChapter ?? chapter,
+      endOffset: row.endOffset ?? 0,
+      chapterCount: doc.chapters.length,
+      chapterLength: (c) => doc.chapters[c].body.length,
     );
   }
 

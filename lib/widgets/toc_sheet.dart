@@ -1,10 +1,38 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart' show PdfOutlineNode;
 
 import '../db/database.dart' as db;
+import '../models/highlight_palette.dart';
 import '../models/reader_settings.dart';
 import '../models/document.dart';
 import '../services/paginator.dart';
+
+/// The Notes tab's data and callbacks.
+class HighlightTab {
+  const HighlightTab({
+    required this.highlights,
+    required this.onJump,
+    required this.onNoteChanged,
+    required this.onColorChanged,
+    required this.onDelete,
+    required this.onRestore,
+    required this.locatorLabel,
+    required this.canJump,
+    required this.onExport,
+  });
+
+  final List<db.HighlightRow> highlights;
+  final void Function(db.HighlightRow) onJump;
+  final void Function(db.HighlightRow, String note) onNoteChanged;
+  final void Function(db.HighlightRow, int color) onColorChanged;
+  final void Function(db.HighlightRow) onDelete;
+  final Future<db.HighlightRow?> Function(db.HighlightRow) onRestore;
+  final String Function(db.HighlightRow) locatorLabel;
+  final bool Function(db.HighlightRow) canJump;
+  final VoidCallback onExport;
+}
 
 /// Bottom sheet with tabbed Contents | Bookmarks view.
 /// Tapping a chapter jumps to it; tapping a bookmark jumps to its position.
@@ -19,6 +47,7 @@ abstract final class TocSheet {
     required ValueChanged<int> onJump,
     required List<db.Bookmark> bookmarks,
     required ValueChanged<db.Bookmark> onDeleteBookmark,
+    required HighlightTab highlightTab,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -33,6 +62,7 @@ abstract final class TocSheet {
         onJump: onJump,
         bookmarks: bookmarks,
         onDeleteBookmark: onDeleteBookmark,
+        highlightTab: highlightTab,
       ),
     );
   }
@@ -45,6 +75,7 @@ abstract final class TocSheet {
     required ValueChanged<int> onJump,
     required List<db.Bookmark> bookmarks,
     required ValueChanged<db.Bookmark> onDeleteBookmark,
+    required HighlightTab highlightTab,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -57,6 +88,7 @@ abstract final class TocSheet {
         onJump: onJump,
         bookmarks: bookmarks,
         onDeleteBookmark: onDeleteBookmark,
+        highlightTab: highlightTab,
       ),
     );
   }
@@ -72,6 +104,7 @@ class _TocSheetContent extends StatefulWidget {
     required this.onJump,
     required this.bookmarks,
     required this.onDeleteBookmark,
+    required this.highlightTab,
   }) : outline = const [],
        currentPage = 0,
        onJumpPdf = null,
@@ -84,6 +117,7 @@ class _TocSheetContent extends StatefulWidget {
     required ValueChanged<int> onJump,
     required this.bookmarks,
     required this.onDeleteBookmark,
+    required this.highlightTab,
   }) : chapters = const [],
        paginators = const [],
        readiness = null,
@@ -107,6 +141,7 @@ class _TocSheetContent extends StatefulWidget {
   final ValueChanged<int>? onJump;
   final List<db.Bookmark> bookmarks;
   final ValueChanged<db.Bookmark> onDeleteBookmark;
+  final HighlightTab highlightTab;
 
   @override
   State<_TocSheetContent> createState() => _TocSheetContentState();
@@ -119,7 +154,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -164,9 +199,10 @@ class _TocSheetContentState extends State<_TocSheetContent>
                   labelColor: theme.accent,
                   unselectedLabelColor: theme.muted,
                   indicatorColor: theme.accent,
-                  tabs: const [
-                    Tab(text: 'Outline'),
-                    Tab(text: 'Bookmarks'),
+                  tabs: [
+                    const Tab(text: 'Outline'),
+                    const Tab(text: 'Bookmarks'),
+                    Tab(text: 'Notes ${widget.highlightTab.highlights.length}'),
                   ],
                 ),
                 const Divider(height: 1),
@@ -194,6 +230,11 @@ class _TocSheetContentState extends State<_TocSheetContent>
                           widget.onJumpPdf?.call(pageNumber);
                         },
                         onDelete: widget.onDeleteBookmark,
+                      ),
+                      _HighlightsList(
+                        tab: widget.highlightTab,
+                        theme: theme,
+                        scrollController: scrollController,
                       ),
                     ],
                   ),
@@ -243,9 +284,10 @@ class _TocSheetContentState extends State<_TocSheetContent>
                 labelColor: theme.accent,
                 unselectedLabelColor: theme.muted,
                 indicatorColor: theme.accent,
-                tabs: const [
-                  Tab(text: 'Contents'),
-                  Tab(text: 'Bookmarks'),
+                tabs: [
+                  const Tab(text: 'Contents'),
+                  const Tab(text: 'Bookmarks'),
+                  Tab(text: 'Notes ${widget.highlightTab.highlights.length}'),
                 ],
               ),
               const Divider(height: 1),
@@ -278,6 +320,11 @@ class _TocSheetContentState extends State<_TocSheetContent>
                         widget.onJump?.call(chapterIndex);
                       },
                       onDelete: widget.onDeleteBookmark,
+                    ),
+                    _HighlightsList(
+                      tab: widget.highlightTab,
+                      theme: theme,
+                      scrollController: scrollController,
                     ),
                   ],
                 ),
@@ -556,4 +603,290 @@ class _BookmarksList extends StatelessWidget {
       },
     );
   }
+}
+
+class _HighlightsList extends StatefulWidget {
+  const _HighlightsList({
+    required this.tab,
+    required this.theme,
+    required this.scrollController,
+  });
+
+  final HighlightTab tab;
+  final ReaderTheme theme;
+  final ScrollController scrollController;
+
+  @override
+  State<_HighlightsList> createState() => _HighlightsListState();
+}
+
+class _HighlightsListState extends State<_HighlightsList> {
+  late List<db.HighlightRow> _items;
+  db.HighlightRow? _lastDeleted;
+  Timer? _undoTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = _sorted(widget.tab.highlights);
+  }
+
+  @override
+  void dispose() {
+    _undoTimer?.cancel();
+    super.dispose();
+  }
+
+  List<db.HighlightRow> _sorted(Iterable<db.HighlightRow> rows) {
+    final list = List<db.HighlightRow>.of(rows);
+    list.sort((a, b) {
+      final page = (a.page ?? 0).compareTo(b.page ?? 0);
+      if (page != 0) return page;
+      final chapter = (a.chapter ?? 0).compareTo(b.chapter ?? 0);
+      if (chapter != 0) return chapter;
+      return (a.startOffset ?? 0).compareTo(b.startOffset ?? 0);
+    });
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    if (_items.isEmpty) {
+      return _frame(
+        theme,
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'No highlights yet.',
+                  style: TextStyle(
+                    color: theme.text,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Select text while reading to keep a quote.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: theme.muted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _frame(
+      theme,
+      ListView.separated(
+        controller: widget.scrollController,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: _items.length,
+        separatorBuilder: (_, _) =>
+            Divider(height: 1, color: theme.muted.withValues(alpha: 0.15)),
+        itemBuilder: (context, index) {
+          final row = _items[index];
+          final canJump = widget.tab.canJump(row);
+          final locator = canJump
+              ? widget.tab.locatorLabel(row)
+              : 'Location unavailable';
+          final color =
+              kHighlightColors[row.color.clamp(0, kHighlightColorCount - 1)];
+
+          return Material(
+            color: Colors.transparent,
+            child: ListTile(
+              onTap: canJump ? () => widget.tab.onJump(row) : null,
+              leading: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              title: Text(
+                row.quote,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: theme.text, fontSize: 14),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (row.note.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        row.note,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: theme.muted, fontSize: 12),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '$locator · ${_date(row.createdAt)}',
+                      style: TextStyle(color: theme.muted, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+              trailing: PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'edit':
+                      _editNote(row);
+                    case 'color':
+                      _pickColor(row);
+                    case 'delete':
+                      _delete(row);
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit note')),
+                  PopupMenuItem(value: 'color', child: Text('Change colour')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _editNote(db.HighlightRow row) async {
+    final controller = TextEditingController(text: row.note);
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit note'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(hintText: 'Your note'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (note == null || !mounted) return;
+
+    widget.tab.onNoteChanged(row, note);
+    setState(() {
+      final index = _items.indexWhere((item) => item.id == row.id);
+      if (index >= 0) _items[index] = _items[index].copyWith(note: note);
+    });
+  }
+
+  Future<void> _pickColor(db.HighlightRow row) async {
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Highlight colour'),
+        children: [
+          for (var i = 0; i < kHighlightColorCount; i++)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, i),
+              child: Row(
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: kHighlightColors[i],
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(kHighlightColorNames[i])),
+                  if (row.color == i) const Icon(Icons.check, size: 18),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+
+    widget.tab.onColorChanged(row, selected);
+    setState(() {
+      final index = _items.indexWhere((item) => item.id == row.id);
+      if (index >= 0) _items[index] = _items[index].copyWith(color: selected);
+    });
+  }
+
+  void _delete(db.HighlightRow row) {
+    setState(() {
+      _items.removeWhere((item) => item.id == row.id);
+      _lastDeleted = row;
+    });
+    widget.tab.onDelete(row);
+
+    _undoTimer?.cancel();
+    _undoTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted && _lastDeleted?.id == row.id) {
+        setState(() => _lastDeleted = null);
+      }
+    });
+  }
+
+  Widget _frame(ReaderTheme theme, Widget child) => Column(
+    children: [
+      if (_lastDeleted != null) _undoBanner(theme),
+      Expanded(child: child),
+    ],
+  );
+
+  Widget _undoBanner(ReaderTheme theme) => Material(
+    color: theme.accent.withValues(alpha: 0.12),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Highlight deleted',
+              style: TextStyle(color: theme.text, fontSize: 13),
+            ),
+          ),
+          TextButton(onPressed: _undo, child: const Text('Undo')),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _undo() async {
+    final row = _lastDeleted;
+    if (row == null) return;
+    final restored = await widget.tab.onRestore(row);
+    if (!mounted || restored == null) return;
+
+    _undoTimer?.cancel();
+    setState(() {
+      _lastDeleted = null;
+      _items = _sorted([..._items, restored]);
+    });
+  }
+
+  String _date(int ms) => DateTime.fromMillisecondsSinceEpoch(
+    ms,
+  ).toIso8601String().split('T').first;
 }

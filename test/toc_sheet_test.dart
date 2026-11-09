@@ -6,6 +6,18 @@ import 'package:burrow/widgets/toc_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+HighlightTab _emptyTab() => HighlightTab(
+  highlights: const [],
+  onJump: (_) {},
+  onNoteChanged: (_, __) {},
+  onColorChanged: (_, __) {},
+  onDelete: (_) {},
+  onRestore: (row) async => row,
+  locatorLabel: (_) => '',
+  canJump: (_) => true,
+  onExport: () {},
+);
+
 List<Paginator> _makePaginators(List<int> pageCounts) => pageCounts
     .map(
       (n) => Paginator.paginate(
@@ -43,6 +55,7 @@ void main() {
                   onJump: (i) => tapped.add(i),
                   bookmarks: const [],
                   onDeleteBookmark: (_) {},
+                  highlightTab: _emptyTab(),
                 ),
                 child: const Text('open'),
               ),
@@ -88,6 +101,7 @@ void main() {
                   onJump: (i) => tapped.add(i),
                   bookmarks: const [],
                   onDeleteBookmark: (_) {},
+                  highlightTab: _emptyTab(),
                 ),
                 child: const Text('open'),
               ),
@@ -138,6 +152,7 @@ void main() {
                   onJump: (i) => tapped.add(i),
                   bookmarks: const [bookmark],
                   onDeleteBookmark: (_) {},
+                  highlightTab: _emptyTab(),
                 ),
                 child: const Text('open'),
               ),
@@ -183,6 +198,7 @@ void main() {
                   onJump: (_) {},
                   bookmarks: const [],
                   onDeleteBookmark: (_) {},
+                  highlightTab: _emptyTab(),
                 ),
                 child: const Text('open'),
               ),
@@ -197,6 +213,198 @@ void main() {
       // Untitled chapters are hidden; only titled ones appear.
       expect(find.text('Untitled chapter 1'), findsNothing);
       expect(find.text('Real Title'), findsOneWidget);
+    });
+  });
+
+  group('Notes tab', () {
+    const row = db.HighlightRow(
+      id: 'h1',
+      bookId: 'b1',
+      quote: 'quoted words',
+      note: 'my note',
+      color: 0,
+      chapter: 0,
+      startOffset: 10,
+      endChapter: 0,
+      endOffset: 20,
+      createdAt: 1700000000000,
+    );
+
+    Future<void> open(WidgetTester tester, HighlightTab tab) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => TocSheet.show(
+                  context,
+                  settings: ReaderSettings(),
+                  chapters: const [Chapter('Chapter One', 'body')],
+                  paginators: _makePaginators([2]),
+                  currentIndex: 0,
+                  onJump: (_) {},
+                  bookmarks: const [],
+                  onDeleteBookmark: (_) {},
+                  highlightTab: tab,
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Notes'));
+      await tester.pumpAndSettle();
+    }
+
+    HighlightTab tab({
+      List<db.HighlightRow> highlights = const [row],
+      void Function(db.HighlightRow)? onJump,
+      void Function(db.HighlightRow, String)? onNoteChanged,
+      void Function(db.HighlightRow, int)? onColorChanged,
+      void Function(db.HighlightRow)? onDelete,
+      Future<db.HighlightRow?> Function(db.HighlightRow)? onRestore,
+      String Function(db.HighlightRow)? locatorLabel,
+      bool Function(db.HighlightRow)? canJump,
+    }) => HighlightTab(
+      highlights: highlights,
+      onJump: onJump ?? (_) {},
+      onNoteChanged: onNoteChanged ?? (_, __) {},
+      onColorChanged: onColorChanged ?? (_, __) {},
+      onDelete: onDelete ?? (_) {},
+      onRestore: onRestore ?? (r) async => r,
+      locatorLabel: locatorLabel ?? (_) => 'Page 12',
+      canJump: canJump ?? (_) => true,
+      onExport: () {},
+    );
+
+    testWidgets('shows a Notes tab with a count', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => TocSheet.show(
+                  context,
+                  settings: ReaderSettings(),
+                  chapters: const [Chapter('Chapter One', 'body')],
+                  paginators: _makePaginators([2]),
+                  currentIndex: 0,
+                  onJump: (_) {},
+                  bookmarks: const [],
+                  onDeleteBookmark: (_) {},
+                  highlightTab: tab(),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Notes 1'), findsOneWidget);
+    });
+
+    testWidgets('lists quote text and locator', (tester) async {
+      await open(tester, tab());
+
+      expect(find.text('quoted words'), findsOneWidget);
+      expect(find.textContaining('Page 12'), findsOneWidget);
+    });
+
+    testWidgets('tapping a row calls onJump', (tester) async {
+      db.HighlightRow? jumped;
+      await open(tester, tab(onJump: (r) => jumped = r));
+
+      await tester.tap(find.text('quoted words'));
+      await tester.pumpAndSettle();
+
+      expect(jumped?.id, 'h1');
+    });
+
+    testWidgets('editing a note calls onNoteChanged', (tester) async {
+      String? edited;
+      await open(tester, tab(onNoteChanged: (_, note) => edited = note));
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit note'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'updated note');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(edited, 'updated note');
+    });
+
+    testWidgets('changing colour calls onColorChanged', (tester) async {
+      int? colour;
+      await open(tester, tab(onColorChanged: (_, c) => colour = c));
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change colour'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Green'));
+      await tester.pumpAndSettle();
+
+      expect(colour, 1);
+    });
+
+    testWidgets('deleting calls onDelete and Undo calls onRestore', (
+      tester,
+    ) async {
+      db.HighlightRow? deleted;
+      db.HighlightRow? restored;
+      await open(
+        tester,
+        tab(
+          onDelete: (r) => deleted = r,
+          onRestore: (r) async {
+            restored = r;
+            return r;
+          },
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(deleted?.id, 'h1');
+      expect(find.text('Undo'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      expect(restored?.id, 'h1');
+      expect(find.text('quoted words'), findsOneWidget);
+    });
+
+    testWidgets('an unavailable row shows the fallback and does not jump', (
+      tester,
+    ) async {
+      var jumps = 0;
+      await open(
+        tester,
+        tab(canJump: (_) => false, onJump: (_) => jumps++),
+      );
+
+      expect(find.textContaining('Location unavailable'), findsOneWidget);
+      await tester.tap(find.text('quoted words'));
+      await tester.pumpAndSettle();
+      expect(jumps, 0);
+    });
+
+    testWidgets('empty state renders', (tester) async {
+      await open(tester, tab(highlights: const []));
+
+      expect(find.text('No highlights yet.'), findsOneWidget);
     });
   });
 
