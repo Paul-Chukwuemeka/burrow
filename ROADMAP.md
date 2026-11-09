@@ -61,6 +61,9 @@ list, jumps back to the right passage in EPUB, PDF, and TXT, and exports.
 and stats in SQLite and has no export of any kind. A lost phone loses all of it.
 Cloud sync is not required to fix the data-loss problem.
 
+**Decision:** local only for now. Cloud sync is not in scope and is not a
+prerequisite for this item.
+
 **Smallest useful shape:**
 - Export a single archive: database contents as JSON, plus covers and cached
   metadata.
@@ -70,12 +73,14 @@ Cloud sync is not required to fix the data-loss problem.
 **Done when:** a clean install can restore a library from the export and reopen
 books at their saved positions.
 
-**Depends on:** nothing. Do it before cloud sync is even discussed.
+**Depends on:** nothing.
 
 ### 3. Read aloud (TTS)
 
 **Why:** expected by mainstream readers and an accessibility win. Four of the
 six surveyed competitors have it.
+
+**Decision:** a core feature, not an optional add-on.
 
 **Smallest useful shape:**
 - Android system TTS, no cloud voice.
@@ -101,19 +106,19 @@ with the sentence pre-filled.
 
 **Depends on:** nothing. Reuses `SharePlus`/intent plumbing.
 
-### 5. Format expansion: MOBI, AZW3, FB2
+### 5. Format expansion: MOBI and AZW3
 
-**Why:** Kindle and FB2 libraries are common, and every surveyed competitor
-except Readest covers at least one of these.
+**Why:** Kindle libraries are common, and every surveyed competitor covers at
+least one of these. FB2 and other formats stay in Later until there is demand.
 
 **Smallest useful shape:**
-- Add the formats to `BookFormat`, the import filters, the Android intent
+- Add both formats to `BookFormat`, the import filters, the Android intent
   filters, and the Rust parser path.
 - Extract title, author, cover, and TOC through the existing metadata pipeline.
 - Fail loudly on DRM-protected files instead of importing garbage text.
 
-**Done when:** a MOBI and an FB2 file import, show metadata and a cover, and read
-with pagination and TOC.
+**Done when:** a MOBI and an AZW3 file import, show metadata and a cover, and
+read with pagination and TOC.
 
 **Depends on:** parser work in `rust/`; design doc required.
 
@@ -138,7 +143,8 @@ continuous scroll without losing their place when switching modes.
 
 These are small, visible, and unblock trust in the roadmap:
 
-- Reword the README Smart Groups bullet, or ship rule-based groups (see Next).
+- Ship rule-based smart groups (see Next); the README bullet now matches the
+  current built-in groups, so this is an upgrade rather than a correction.
 - Add an **Export library** entry as soon as item 2 exists.
 - Add the onboarding completion page and Settings re-entry from
   `design/onboarding-redesign.md`.
@@ -151,8 +157,8 @@ These are small, visible, and unblock trust in the roadmap:
 
 ### 7. Rule-based smart groups
 
-**Why:** the README promises "by rules", but the code has three fixed buckets
-(Reading, Finished, New). Either build the rule builder or correct the promise.
+**Why:** the code has three fixed buckets (Reading, Finished, New). The README
+now describes those honestly, so this is an upgrade rather than a correction.
 
 **Smallest useful shape:** saved filters over the existing filter fields
 (status, format, genre, series, progress), with a name and an optional icon.
@@ -194,19 +200,7 @@ habit and make the data portable.
 **Smallest useful shape:** daily/weekly time or page goals, streak continuity,
 and CSV/JSON export of the existing session data.
 
-### 12. Localization
-
-**Why:** English-only blocks most non-English markets, and every surveyed
-competitor localizes.
-
-**Smallest useful shape:** add `flutter_localizations` and `intl`, extract
-strings, ship one non-English locale end to end, and make locale selectable in
-Settings.
-
-**Done when:** the full onboarding, library, reader, and settings flows work in
-the pilot locale.
-
-### 13. Reader polish
+### 12. Reader polish
 
 **Why:** the last comfort gap between Burrow and mature readers.
 
@@ -220,6 +214,8 @@ page-turn effects. Keep smooth scroll from item 6 as the base.
 | Item | Why it might matter | Why it waits |
 |---|---|---|
 | OPDS / Calibre / Calibre-Web | strong fit for self-hosted libraries | niche; adds a network surface |
+| FB2 support | common in some markets | Kindle formats are the agreed first step |
+| Localization (non-English) | English-only limits reach | English-only is intentional for now |
 | iOS packaging | README flags iOS as hard-broken | needs Rust FFI packaging and a maintainer |
 | Home-screen widget / quick actions | convenience | no daily-reading impact |
 | App-wide lock | privacy extension of the hidden-archive PIN | hidden archive already covers the sensitive case |
@@ -244,18 +240,17 @@ These are deliberate anti-goals, not backlog items:
 
 ---
 
-## Decisions needed
+## Decisions made
 
-These change what gets built, so they should be settled before the relevant
-item starts. Recommended defaults are shown; they are proposals, not decisions.
+These were settled on 2026-11-09 and now shape the phases above.
 
-| Decision | Affects | Recommended default |
+| Decision | Answer | Effect |
 |---|---|---|
-| Is cloud sync in scope, or is local export enough? | item 2, Later | local export now; no cloud commitment |
-| Is TTS core or an accessibility add-on? | item 3 | core, system TTS only |
-| Which formats do actual users need: Kindle, FB2, or PDF/DJVU? | item 5 | Kindle (MOBI/AZW3) first, FB2 second |
-| Is "minimal" a hard constraint? | Later, Not doing | yes; skip OPDS/widgets until asked for |
-| Is English-only intentional for launch? | item 12 | no; pilot one locale after Now |
+| Cloud sync vs local export | **Local only for now** | item 2 exports an archive; cloud sync stays in Later |
+| TTS: core or add-on | **Core** | item 3 stays in Now with full playback controls |
+| Which format first | **Kindle** | item 5 covers MOBI and AZW3; FB2 moves to Later |
+| Is "minimal" a hard constraint | **Yes** | Not-doing list holds; OPDS and widgets stay Later |
+| Language support | **English only for now** | localization moves from Next to Later |
 
 ---
 
