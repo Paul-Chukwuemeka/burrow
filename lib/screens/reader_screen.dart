@@ -11,6 +11,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/bookmark_helper.dart';
 import '../controllers/comic_controller.dart';
+import '../controllers/highlight_controller.dart';
 import '../controllers/selection_toolbar.dart';
 import '../controllers/pdf_controller.dart';
 import '../controllers/reader_selection.dart';
@@ -32,6 +33,7 @@ import '../utils/comic_issues.dart';
 import '../utils/book_title.dart';
 import '../utils/open_trace.dart';
 import '../utils/page_spans.dart';
+import '../utils/pdf_highlight_geometry.dart';
 import '../utils/text_selection.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/comic_image.dart';
@@ -193,6 +195,7 @@ class ReaderScreenState extends State<ReaderScreen>
   List<bool> _reflowReady = const [];
   int _reflowNext = 0;
   int _reflowGeneration = 0;
+
   /// Chapters in the order the background pass should lay them out (outward
   /// from the anchor), indexed by [_reflowNext].
   List<int> _reflowOrder = const [];
@@ -234,6 +237,11 @@ class ReaderScreenState extends State<ReaderScreen>
 
   // Bookmark state.
   late final BookmarkHelper _bookmarkCtrl;
+
+  // Highlight state.
+  late final HighlightController _highlightCtrl;
+  ({String text, int page, String segments})? _pendingPdfSelection;
+  PdfTextSelection? _pdfSelection;
 
   // Search state.
   late final ReaderSearchController _searchCtrl;
@@ -305,6 +313,10 @@ class ReaderScreenState extends State<ReaderScreen>
     _bookmarkCtrl.addListener(() {
       if (mounted) setState(() {});
     });
+    _highlightCtrl = HighlightController(library: widget.library, book: _book);
+    _highlightCtrl.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
@@ -314,6 +326,7 @@ class ReaderScreenState extends State<ReaderScreen>
     if (_settings.keepScreenOn) WakelockPlus.enable();
     BrightnessController.instance.apply(_settings.brightness);
     _bookmarkCtrl.loadBookmarks();
+    _highlightCtrl.load();
     _sessionCtrl.startSession();
     // The reader is on screen: a process death from here (foreground task
     // killed, backgrounded then killed by the OS, task swiped in recents)
@@ -404,6 +417,7 @@ class ReaderScreenState extends State<ReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     _sessionCtrl.dispose();
     _bookmarkCtrl.dispose();
+    _highlightCtrl.dispose();
     _saveDebounce?.cancel();
     _flushSave();
     _flushComicPosition();
@@ -623,8 +637,7 @@ class ReaderScreenState extends State<ReaderScreen>
     if (!_isComic) return;
     final count = _comicCtrl.comicPageCount;
     if (count == 0) return;
-    final vertical =
-        _settings.comicReadingMode == ComicReadingMode.vertical;
+    final vertical = _settings.comicReadingMode == ComicReadingMode.vertical;
     final scroll = _comicCtrl.comicVerticalScrollController;
     final offset = vertical && scroll != null && scroll.hasClients
         ? scroll.offset.toInt()
@@ -803,54 +816,54 @@ class ReaderScreenState extends State<ReaderScreen>
   /// in atomically once done.  The reader opens fully laid out — no
   /// placeholders, no `…` page counts, no re-anchor jumps.
   void _startInitialFullPass(
-  Size viewport,
-  TextStyle style,
-  TextScaler scaler,
-  (int, int) anchor,
-  String signature,
-) {
-  final n = _doc!.chapters.length;
-  _disposeDrivers();
-  _cancelReflow();
+    Size viewport,
+    TextStyle style,
+    TextScaler scaler,
+    (int, int) anchor,
+    String signature,
+  ) {
+    final n = _doc!.chapters.length;
+    _disposeDrivers();
+    _cancelReflow();
 
-  _chapterStyles = List.filled(n, style);
-  _paginators
-    ..clear()
-    ..addAll(List.generate(n, (_) => _emptyPaginator()));
-  _paginationReady = List.filled(n, false);
-  _layoutSignature = signature;
-  _anchorChapter = anchor.$1.clamp(0, n - 1);
-  _anchorOffset = anchor.$2;
-  _recomputeFlatIndexes();
+    _chapterStyles = List.filled(n, style);
+    _paginators
+      ..clear()
+      ..addAll(List.generate(n, (_) => _emptyPaginator()));
+    _paginationReady = List.filled(n, false);
+    _layoutSignature = signature;
+    _anchorChapter = anchor.$1.clamp(0, n - 1);
+    _anchorOffset = anchor.$2;
+    _recomputeFlatIndexes();
 
-  final old = _pageController;
-  _pageController = null;
-  if (old != null) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    final old = _pageController;
+    _pageController = null;
+    if (old != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    }
+
+    // Delay the first paint until the WHOLE book is paginated (deliberate
+    // product choice). The controller is left null so the "Laying out pages…"
+    // view stays up while the full pass below runs; when it completes,
+    // _applyReflow swaps the complete layout in atomically and only then is the
+    // controller created. There is no anchor-chapter early paint.
+    OpenTrace.dump();
+    _paginationRunning = true;
+
+    // Build every chapter into the reflow buffer and swap when done. The buffer
+    // starts entirely empty (no anchor pre-layout) so nothing paints until the
+    // whole book is ready.
+    _reflowPages = List.of(_paginators);
+    _reflowStyles = List.of(_chapterStyles);
+    _reflowReady = List.filled(n, false);
+    _reflowNext = 0;
+    _reflowOrder = fillOrderFor(n, _anchorChapter);
+    _reflowSignature = signature;
+    _reflowGeneration++;
+    final generation = _reflowGeneration;
+    if (mounted) setState(() {});
+    _reflowNextBatch(viewport, style, scaler, generation);
   }
-
-  // Delay the first paint until the WHOLE book is paginated (deliberate
-  // product choice). The controller is left null so the "Laying out pages…"
-  // view stays up while the full pass below runs; when it completes,
-  // _applyReflow swaps the complete layout in atomically and only then is the
-  // controller created. There is no anchor-chapter early paint.
-  OpenTrace.dump();
-  _paginationRunning = true;
-
-  // Build every chapter into the reflow buffer and swap when done. The buffer
-  // starts entirely empty (no anchor pre-layout) so nothing paints until the
-  // whole book is ready.
-  _reflowPages = List.of(_paginators);
-  _reflowStyles = List.of(_chapterStyles);
-  _reflowReady = List.filled(n, false);
-  _reflowNext = 0;
-  _reflowOrder = fillOrderFor(n, _anchorChapter);
-  _reflowSignature = signature;
-  _reflowGeneration++;
-  final generation = _reflowGeneration;
-  if (mounted) setState(() {});
-  _reflowNextBatch(viewport, style, scaler, generation);
-}
 
   /// Adopt a fully-built layout (cache hit or completed pass) and land on
   /// [anchor] without further work.
@@ -1180,8 +1193,8 @@ class ReaderScreenState extends State<ReaderScreen>
   @visibleForTesting
   List<List<double>> debugPageHeights(int chapter) =>
       chapter >= 0 && chapter < _paginators.length
-          ? _paginators[chapter].pageLineHeights
-          : const [];
+      ? _paginators[chapter].pageLineHeights
+      : const [];
 
   /// Test-only: the live word selection model.
   @visibleForTesting
@@ -1406,7 +1419,8 @@ class ReaderScreenState extends State<ReaderScreen>
                             color: theme.muted,
                             size: 20,
                           ),
-                          suffixIcon: _searchCtrl.searchController.text.isNotEmpty
+                          suffixIcon:
+                              _searchCtrl.searchController.text.isNotEmpty
                               ? IconButton(
                                   icon: Icon(
                                     Icons.clear,
@@ -1532,7 +1546,10 @@ class ReaderScreenState extends State<ReaderScreen>
                                 r.snippet,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: theme.text, fontSize: 13),
+                                style: TextStyle(
+                                  color: theme.text,
+                                  fontSize: 13,
+                                ),
                               ),
                             ],
                           ),
@@ -1557,6 +1574,8 @@ class ReaderScreenState extends State<ReaderScreen>
     required bool singleWord,
     required String word,
     required String text,
+    required VoidCallback onHighlight,
+    required VoidCallback onNote,
   }) {
     _selectionToolbar ??= SelectionToolbarOverlay(
       context: context,
@@ -1572,6 +1591,8 @@ class ReaderScreenState extends State<ReaderScreen>
       singleWord: singleWord,
       word: word,
       text: text,
+      onHighlight: onHighlight,
+      onNote: onNote,
     );
     setState(() {});
   }
@@ -1604,7 +1625,104 @@ class ReaderScreenState extends State<ReaderScreen>
       singleWord: singleWord,
       word: _firstWordOf(text),
       text: text,
+      onHighlight: () => _saveReflowableHighlight(),
+      onNote: _promptHighlightNote,
     );
+  }
+
+  Future<void> _saveReflowableHighlight({String note = ''}) async {
+    if (_isPdf) return _savePdfHighlight(note: note);
+    final doc = _doc;
+    final start = _selection.start;
+    final end = _selection.end;
+    if (doc == null || start == null || end == null) return;
+
+    final text = selectionText(
+      start: start,
+      end: end,
+      chapterBodies: doc.chapters.map((c) => c.body).toList(),
+      charsBefore: _charsBefore,
+    );
+    if (text.trim().isEmpty) return;
+
+    await _highlightCtrl.addReflowable(
+      text: text,
+      start: start,
+      end: end,
+      charsBefore: _charsBefore,
+      color: _settings.highlightColorIndex,
+      note: note,
+    );
+    if (!mounted) return;
+    _clearSelection();
+    _showHighlightSaved();
+  }
+
+  Future<void> _savePdfHighlight({String note = ''}) async {
+    final pending = _pendingPdfSelection;
+    if (pending == null) return;
+
+    await _highlightCtrl.addPdf(
+      text: pending.text,
+      page: pending.page,
+      segments: pending.segments,
+      color: _settings.highlightColorIndex,
+      note: note,
+    );
+    if (!mounted) return;
+    _pendingPdfSelection = null;
+    _dismissSelectionToolbar();
+    final selection = _pdfSelection;
+    _pdfSelection = null;
+    if (selection is PdfTextSelectionDelegate) {
+      await selection.clearTextSelection();
+    }
+    if (!mounted) return;
+    _showHighlightSaved();
+  }
+
+  void _showHighlightSaved() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Highlight saved'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Future<void> _promptHighlightNote() async {
+    final controller = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add note'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(hintText: 'Your note'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (note == null) return;
+    if (_isPdf) {
+      await _savePdfHighlight(note: note);
+    } else {
+      await _saveReflowableHighlight(note: note);
+    }
   }
 
   /// The first word of [text], punctuation-trimmed. Used for the dictionary
@@ -1685,32 +1803,60 @@ class ReaderScreenState extends State<ReaderScreen>
       controller: _pdfCtrl.pdfController,
       params: PdfViewerParams(
         backgroundColor: theme.background,
+        buildContextMenu: (context, params) => null,
         textSelectionParams: PdfTextSelectionParams(
           enabled: true,
           onTextSelectionChange: (selection) async {
             if (!selection.hasSelectedText) {
+              _pendingPdfSelection = null;
+              _pdfSelection = null;
               _dismissSelectionToolbar();
               return;
             }
-            final selectedText = await selection.getSelectedText();
-            if (!mounted) return;
-            final trimmed = selectedText.trim();
-            if (trimmed.isNotEmpty && trimmed.length < 50) {
-              final words = trimmed.split(RegExp(r'\s+'));
-              final word = words.first.replaceAll(
-                RegExp(r'[^a-zA-Z\u00C0-\u024F]'),
-                '',
-              );
-              if (word.length >= 2) {
-                final size = MediaQuery.sizeOf(context);
-                _showSelectionToolbar(
-                  Offset(size.width / 2, size.height / 2),
-                  singleWord: true,
-                  word: word,
-                  text: word,
+
+            final selectedText = (await selection.getSelectedText()).trim();
+            final ranges = await selection.getSelectedTextRanges();
+            if (!mounted || selectedText.isEmpty || ranges.isEmpty) {
+              return;
+            }
+
+            final segments = <PdfHighlightSegment>[];
+            for (final range in ranges) {
+              final rects = <PdfHighlightRect>[];
+              for (final fragment in range.enumerateFragmentBoundingRects()) {
+                final bounds = fragment.bounds;
+                rects.add(
+                  PdfHighlightRect(
+                    left: bounds.left,
+                    top: bounds.top,
+                    right: bounds.right,
+                    bottom: bounds.bottom,
+                  ),
+                );
+              }
+              if (rects.isNotEmpty) {
+                segments.add(
+                  PdfHighlightSegment(page: range.pageNumber, rects: rects),
                 );
               }
             }
+            if (segments.isEmpty) return;
+
+            _pendingPdfSelection = (
+              text: selectedText,
+              page: segments.first.page,
+              segments: encodePdfSegments(segments),
+            );
+            _pdfSelection = selection;
+            final size = MediaQuery.sizeOf(context);
+            _showSelectionToolbar(
+              Offset(size.width / 2, size.height / 2),
+              singleWord: false,
+              word: '',
+              text: selectedText,
+              onHighlight: () => _savePdfHighlight(),
+              onNote: _promptHighlightNote,
+            );
           },
         ),
         scrollPhysics: _settings.pdfContinuousScroll
@@ -1929,7 +2075,7 @@ class ReaderScreenState extends State<ReaderScreen>
                     ? 0
                     : (i + 1) / _comicCtrl.comicPageCount,
               );
-                      if (_comicCtrl.isLazy) _prefetchComicPages(i);
+              if (_comicCtrl.isLazy) _prefetchComicPages(i);
               _comicDecodeAhead?.advance(i);
               if (_comicCtrl.comicPreviewVisible) _scrollToPreviewPage(i);
             },
@@ -1941,10 +2087,7 @@ class ReaderScreenState extends State<ReaderScreen>
                       fit: _comicCtrl.boxFit,
                       viewport: MediaQuery.sizeOf(context),
                       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-                      intrinsic: (
-                        meta.intrinsicWidth,
-                        meta.intrinsicHeight,
-                      ),
+                      intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
                     );
               final page = _comicCtrl.isLazy
                   ? _LazyComicPageWidget(
@@ -2105,36 +2248,34 @@ class ReaderScreenState extends State<ReaderScreen>
   /// later frames, so reading [context]/[MediaQuery] here is safe even
   /// though this is built during [initState].
   ComicDecodeAhead _createComicDecodeAhead() => ComicDecodeAhead(
-        loadBytes: (index) async {
-          final ctrl = _comicCtrl;
-          if (index < 0 || index >= ctrl.comicPageCount) return null;
-          final provider = ctrl.comicPageProvider;
-          if (provider != null) return provider.loadPage(index);
-          return index < ctrl.comicPages.length
-              ? ctrl.comicPages[index]
-              : null;
-        },
-        resolveBounds: (index) {
-          final meta = _comicCtrl.pageMetaAt(index);
-          if (meta == null) return null;
-          return comicPageDecodeBounds(
-            fit: _comicCtrl.boxFit,
-            viewport: MediaQuery.sizeOf(context),
-            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-            intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
-          );
-        },
-        warmup: (provider) {
-          if (!mounted) return;
-          unawaited(
-            precacheImage(provider, context).catchError((Object e) {
-              debugPrint('comic decode-ahead dropped a page: $e');
-            }),
-          );
-        },
-        onSkip: (index, reason) =>
-            debugPrint('comic decode-ahead skipped page $index: $reason'),
+    loadBytes: (index) async {
+      final ctrl = _comicCtrl;
+      if (index < 0 || index >= ctrl.comicPageCount) return null;
+      final provider = ctrl.comicPageProvider;
+      if (provider != null) return provider.loadPage(index);
+      return index < ctrl.comicPages.length ? ctrl.comicPages[index] : null;
+    },
+    resolveBounds: (index) {
+      final meta = _comicCtrl.pageMetaAt(index);
+      if (meta == null) return null;
+      return comicPageDecodeBounds(
+        fit: _comicCtrl.boxFit,
+        viewport: MediaQuery.sizeOf(context),
+        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        intrinsic: (meta.intrinsicWidth, meta.intrinsicHeight),
       );
+    },
+    warmup: (provider) {
+      if (!mounted) return;
+      unawaited(
+        precacheImage(provider, context).catchError((Object e) {
+          debugPrint('comic decode-ahead dropped a page: $e');
+        }),
+      );
+    },
+    onSkip: (index, reason) =>
+        debugPrint('comic decode-ahead skipped page $index: $reason'),
+  );
 
   void _scrollToPreviewPage(int page) => _comicCtrl.scrollToPreviewPage(page);
 
@@ -2622,9 +2763,7 @@ class ReaderScreenState extends State<ReaderScreen>
         if (!mounted || gen != _brightnessSeedGen) return;
         // Clamp the raw plugin seed: values below the slider minimum (or
         // non-finite) would trip the Slider assertion on the next build.
-        final lv = v.isFinite
-            ? v.clamp(kMinBrightness, 1.0).toDouble()
-            : 1.0;
+        final lv = v.isFinite ? v.clamp(kMinBrightness, 1.0).toDouble() : 1.0;
         setState(() => _settings.brightness = lv);
         BrightnessController.instance.apply(lv);
         _onSettingsChanged();
@@ -2879,7 +3018,9 @@ class ReaderScreenState extends State<ReaderScreen>
                           data: SliderThemeData(
                             activeTrackColor: theme.accent,
                             thumbColor: theme.accent,
-                            inactiveTrackColor: theme.muted.withValues(alpha: 0.3),
+                            inactiveTrackColor: theme.muted.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                           child: Slider(
                             value: (_settings.brightness ?? 1.0).clamp(
@@ -2908,10 +3049,7 @@ class ReaderScreenState extends State<ReaderScreen>
                             _settings.brightness == null
                                 ? 'Auto'
                                 : '${((_settings.brightness ?? 1.0) * 100).round()}%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.muted,
-                            ),
+                            style: TextStyle(fontSize: 12, color: theme.muted),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -2966,8 +3104,9 @@ class ReaderScreenState extends State<ReaderScreen>
                           ),
                           tooltip: 'Previous issue',
                           visualDensity: VisualDensity.compact,
-                          onPressed:
-                              prevIssue == null ? null : () => _goToIssue(prevIssue),
+                          onPressed: prevIssue == null
+                              ? null
+                              : () => _goToIssue(prevIssue),
                         ),
                         IconButton(
                           icon: Icon(
@@ -2977,8 +3116,9 @@ class ReaderScreenState extends State<ReaderScreen>
                           ),
                           tooltip: 'Next issue',
                           visualDensity: VisualDensity.compact,
-                          onPressed:
-                              nextIssue == null ? null : () => _goToIssue(nextIssue),
+                          onPressed: nextIssue == null
+                              ? null
+                              : () => _goToIssue(nextIssue),
                         ),
                       ],
                     ],
@@ -3447,8 +3587,7 @@ class _PageContentState extends State<_PageContent> {
                           ),
                         ),
                       ),
-                      if (widget.showStartHandle &&
-                          _startHandleMetrics != null)
+                      if (widget.showStartHandle && _startHandleMetrics != null)
                         _buildHandle(
                           isStart: true,
                           metrics: _startHandleMetrics!,

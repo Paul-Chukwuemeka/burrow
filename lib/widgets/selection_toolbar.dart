@@ -13,6 +13,8 @@ class SelectionToolbar extends StatelessWidget {
     required this.onDefine,
     required this.onCopy,
     required this.onShare,
+    required this.onHighlight,
+    required this.onNote,
     required this.theme,
   });
 
@@ -20,21 +22,30 @@ class SelectionToolbar extends StatelessWidget {
   final VoidCallback onDefine;
   final VoidCallback onCopy;
   final VoidCallback onShare;
+  final VoidCallback onHighlight;
+  final VoidCallback onNote;
   final ReaderTheme theme;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (singleWord) ...[
-          _toolbarButton(label: 'Define', onTap: onDefine),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (singleWord) ...[
+            _toolbarButton(label: 'Define', onTap: onDefine),
+            _toolbarDivider(),
+          ],
+          _toolbarButton(label: 'Copy', onTap: onCopy),
           _toolbarDivider(),
+          _toolbarButton(label: 'Share', onTap: onShare),
+          _toolbarDivider(),
+          _toolbarButton(label: 'Highlight', onTap: onHighlight),
+          _toolbarDivider(),
+          _toolbarButton(label: 'Note', onTap: onNote),
         ],
-        _toolbarButton(label: 'Copy', onTap: onCopy),
-        _toolbarDivider(),
-        _toolbarButton(label: 'Share', onTap: onShare),
-      ],
+      ),
     );
   }
 

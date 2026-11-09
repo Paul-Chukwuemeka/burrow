@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -43,6 +42,8 @@ class SelectionToolbarOverlay {
     required bool singleWord,
     required String word,
     required String text,
+    required VoidCallback onHighlight,
+    required VoidCallback onNote,
   }) {
     _removeEntry();
     _text = text;
@@ -59,10 +60,8 @@ class SelectionToolbarOverlay {
                 ),
               ),
             Positioned(
-              left: (globalPosition.dx - 140).clamp(
-                8.0,
-                math.max(8.0, MediaQuery.sizeOf(context).width - 296.0),
-              ),
+              left: 8,
+              right: 8,
               top: (globalPosition.dy - 56).clamp(
                 0.0,
                 MediaQuery.sizeOf(context).height - 60,
@@ -106,6 +105,14 @@ class SelectionToolbarOverlay {
                       dismiss();
                       SharePlus.instance.share(ShareParams(text: _text));
                     },
+                    onHighlight: () {
+                      dismiss();
+                      onHighlight();
+                    },
+                    onNote: () {
+                      dismiss();
+                      onNote();
+                    },
                   ),
                 ),
               ),
@@ -140,12 +147,22 @@ class SelectionToolbarOverlay {
   void openDictionarySheet(String word) {
     if (!_context.mounted) return;
     unawaited(
-      DictionaryRouter.resolve(_context, library: library, theme: theme, word: word),
+      DictionaryRouter.resolve(
+        _context,
+        library: library,
+        theme: theme,
+        word: word,
+      ),
     );
   }
 
   void showDownloadDialog(String word) {
     if (!_context.mounted) return;
-    DictionaryRouter.openLocal(_context, library: library, theme: theme, word: word);
+    DictionaryRouter.openLocal(
+      _context,
+      library: library,
+      theme: theme,
+      word: word,
+    );
   }
 }
