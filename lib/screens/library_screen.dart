@@ -108,11 +108,13 @@ typedef ScanFolderFn =
 
 /// Scan the folders that already contain books (quick refresh).
 typedef ScanFoldersFn =
-    Future<List<String>> Function(Set<String> folders, {Set<String> knownPaths});
+    Future<List<String>> Function(
+      Set<String> folders, {
+      Set<String> knownPaths,
+    });
 
 /// Full-device walk for supported documents.
-typedef ScanDeviceFn =
-    Future<List<String>> Function({Set<String> knownPaths});
+typedef ScanDeviceFn = Future<List<String>> Function({Set<String> knownPaths});
 
 class _LibraryScreenState extends State<LibraryScreen>
     with WidgetsBindingObserver {
@@ -1009,7 +1011,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                           Navigator.pop(sheetContext);
                           _showRemoveBookSheet(book);
                         },
-                        icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 20,
+                        ),
                         label: const Text('Remove'),
                       ),
                     ),
@@ -1023,8 +1028,10 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
-  void _showRemoveBookSheet(Book book) {
+  Future<void> _showRemoveBookSheet(Book book) async {
     bool deleteFile = false;
+    final count = await widget.library.countHighlightsForBook(book.id);
+    if (!mounted) return;
     final scheme = Theme.of(context).colorScheme;
     showModalBottomSheet<void>(
       context: context,
@@ -1045,6 +1052,20 @@ class _LibraryScreenState extends State<LibraryScreen>
                   ),
                 ),
               ),
+              if (count > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Also deletes $count highlight${count == 1 ? '' : 's'}.',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
               CheckboxListTile(
                 value: deleteFile,
                 onChanged: (v) => setSheetState(() => deleteFile = v ?? false),
@@ -1113,79 +1134,82 @@ class _LibraryScreenState extends State<LibraryScreen>
         backgroundColor: scheme.surface,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-        child: Material(
-          color: scheme.primaryContainer,
-          borderRadius: BorderRadius.circular(Burrow.shapeSm + 4),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  color: scheme.onPrimaryContainer,
-                  tooltip: 'Clear selection',
-                  onPressed: _selection.clear,
-                ),
-                Expanded(
-                  child: Text(
-                    '${_selection.count} selected',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: scheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
+          child: Material(
+            color: scheme.primaryContainer,
+            borderRadius: BorderRadius.circular(Burrow.shapeSm + 4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    color: scheme.onPrimaryContainer,
+                    tooltip: 'Clear selection',
+                    onPressed: _selection.clear,
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${_selection.count} selected',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
-                ),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: _selectAllVisible,
+                    child: const Text('Select all'),
                   ),
-                  onPressed: _selectAllVisible,
-                  child: const Text('Select all'),
-                ),
-                // Exactly one book: the full single-book sheet stays
-                // reachable (Read now / Edit metadata / Book details / …).
-                if (selected.length == 1)
+                  // Exactly one book: the full single-book sheet stays
+                  // reachable (Read now / Edit metadata / Book details / …).
+                  if (selected.length == 1)
+                    IconButton(
+                      icon: const Icon(Icons.more_vert_rounded),
+                      color: scheme.onPrimaryContainer,
+                      tooltip: 'More actions',
+                      onPressed: () => _showBookActions(selected.first),
+                    ),
                   IconButton(
-                    icon: const Icon(Icons.more_vert_rounded),
+                    icon: const Icon(Icons.collections_bookmark_outlined),
                     color: scheme.onPrimaryContainer,
-                    tooltip: 'More actions',
-                    onPressed: () => _showBookActions(selected.first),
+                    tooltip: 'Add to collection',
+                    onPressed: () =>
+                        _showAddBooksToCollectionSheet(_selectedBooks),
                   ),
-                IconButton(
-                  icon: const Icon(Icons.collections_bookmark_outlined),
-                  color: scheme.onPrimaryContainer,
-                  tooltip: 'Add to collection',
-                  onPressed: () =>
-                      _showAddBooksToCollectionSheet(_selectedBooks),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  color: scheme.onPrimaryContainer,
-                  tooltip: 'Delete',
-                  onPressed: () => _showRemoveBooksSheet(_selectedBooks),
-                ),
-              ],
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    color: scheme.onPrimaryContainer,
+                    tooltip: 'Delete',
+                    onPressed: () => _showRemoveBooksSheet(_selectedBooks),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   /// Batch confirm sheet mirroring [_showRemoveBookSheet]: one confirm step
   /// for N books, then a single [LibraryService.deleteBooks] call. Errors are
   /// collected, never thrown mid-batch.
-  void _showRemoveBooksSheet(List<Book> books) {
+  Future<void> _showRemoveBooksSheet(List<Book> books) async {
     if (books.isEmpty) return;
     bool deleteFile = false;
-    final scheme = Theme.of(context).colorScheme;
     final ids = [for (final b in books) b.id];
+    final counts = await widget.library.highlightCountsForBooks(ids);
+    if (!mounted) return;
+    final count = counts.values.fold<int>(0, (sum, value) => sum + value);
+    final scheme = Theme.of(context).colorScheme;
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => StatefulBuilder(
@@ -1207,6 +1231,20 @@ class _LibraryScreenState extends State<LibraryScreen>
                   ),
                 ),
               ),
+              if (count > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Also deletes $count highlight${count == 1 ? '' : 's'}.',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
               CheckboxListTile(
                 value: deleteFile,
                 onChanged: (v) => setSheetState(() => deleteFile = v ?? false),
@@ -1651,127 +1689,127 @@ class _LibraryScreenState extends State<LibraryScreen>
           if (!didPop && _selection.isSelecting) _selection.clear();
         },
         child: Scaffold(
-        body: Stack(
-          children: [
-            RefreshIndicator(
-              onRefresh: _onRefresh,
-              child: CustomScrollView(
-                slivers: [
-                  BurrowHeader(
-                    tab: _tab,
-                    onTabChanged: (tab) {
-                      if (_selection.isSelecting) _selection.clear();
-                      setState(() {
-                        _tab = tab;
-                        _query = '';
-                        _searchController.clear();
-                        _searchOpen = false;
-                      });
-                    },
-                    activeFilterCount: _activeFilterCount,
-                    onFilterTap: () => _showFilterSheet(context),
-                    onStats: () =>
-                        StatsScreen.show(context, library: widget.library),
-                    onRemoveAllMissing: _removeAllMissing,
-                    missingCount: widget.library.missingIds.length,
-                    onSettings: () =>
-                        SettingsScreen.show(context, library: widget.library),
-                    onSearch: () => setState(() {
-                      _searchOpen = !_searchOpen;
-                      if (!_searchOpen) {
-                        _query = '';
-                        _searchController.clear();
-                      }
-                    }),
-                  ),
-                  if (widget.library.settings.scanMode == ScanMode.folder &&
-                      widget.library.settings.scanFolder.isNotEmpty)
-                    SliverToBoxAdapter(child: _folderScopeNote(context)),
-                  if (widget.library.missingIds.isNotEmpty)
-                    SliverToBoxAdapter(child: _missingSnack(context)),
-                  if (_selection.isSelecting) _selectionBar(),
-                  if (hasLibrary && widget.library.isScanning)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                        child: _ScanningBanner(library: widget.library),
-                      ),
+          body: Stack(
+            children: [
+              RefreshIndicator(
+                onRefresh: _onRefresh,
+                child: CustomScrollView(
+                  slivers: [
+                    BurrowHeader(
+                      tab: _tab,
+                      onTabChanged: (tab) {
+                        if (_selection.isSelecting) _selection.clear();
+                        setState(() {
+                          _tab = tab;
+                          _query = '';
+                          _searchController.clear();
+                          _searchOpen = false;
+                        });
+                      },
+                      activeFilterCount: _activeFilterCount,
+                      onFilterTap: () => _showFilterSheet(context),
+                      onStats: () =>
+                          StatsScreen.show(context, library: widget.library),
+                      onRemoveAllMissing: _removeAllMissing,
+                      missingCount: widget.library.missingIds.length,
+                      onSettings: () =>
+                          SettingsScreen.show(context, library: widget.library),
+                      onSearch: () => setState(() {
+                        _searchOpen = !_searchOpen;
+                        if (!_searchOpen) {
+                          _query = '';
+                          _searchController.clear();
+                        }
+                      }),
                     ),
-                  if (hasLibrary &&
-                      widget.library.storageUnavailable &&
-                      !_storageBannerDismissed)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                        child: MaterialBanner(
-                          content: const Text(
-                            'Storage unavailable — missing check skipped',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => setState(
-                                () => _storageBannerDismissed = true,
-                              ),
-                              child: const Text('Dismiss'),
-                            ),
-                          ],
+                    if (widget.library.settings.scanMode == ScanMode.folder &&
+                        widget.library.settings.scanFolder.isNotEmpty)
+                      SliverToBoxAdapter(child: _folderScopeNote(context)),
+                    if (widget.library.missingIds.isNotEmpty)
+                      SliverToBoxAdapter(child: _missingSnack(context)),
+                    if (_selection.isSelecting) _selectionBar(),
+                    if (hasLibrary && widget.library.isScanning)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                          child: _ScanningBanner(library: widget.library),
                         ),
                       ),
-                    ),
-                  if (hasLibrary)
-                    ..._tabContent(context, books, recent, filtered),
-                  if (!hasLibrary)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _busy || widget.library.isScanning
-                          ? const BusyState()
-                          : EmptyState(
-                              onPickFile: _pickFile,
-                              onScan: _scanPreferred,
+                    if (hasLibrary &&
+                        widget.library.storageUnavailable &&
+                        !_storageBannerDismissed)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                          child: MaterialBanner(
+                            content: const Text(
+                              'Storage unavailable — missing check skipped',
                             ),
-                    ),
-                ],
+                            actions: [
+                              TextButton(
+                                onPressed: () => setState(
+                                  () => _storageBannerDismissed = true,
+                                ),
+                                child: const Text('Dismiss'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (hasLibrary)
+                      ..._tabContent(context, books, recent, filtered),
+                    if (!hasLibrary)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _busy || widget.library.isScanning
+                            ? const BusyState()
+                            : EmptyState(
+                                onPickFile: _pickFile,
+                                onScan: _scanPreferred,
+                              ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: !_fabOpen,
-                child: AnimatedOpacity(
-                  opacity: _fabOpen ? 1 : 0,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.scrim.withValues(alpha: 0.45),
-                    ),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _fabOpen = false),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_fabOpen,
+                  child: AnimatedOpacity(
+                    opacity: _fabOpen ? 1 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.scrim.withValues(alpha: 0.45),
+                      ),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _fabOpen = false),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            if (_activeStatus != null)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: StatusBanner(
-                  status: _activeStatus!,
-                  completed: _statusCompleted,
-                  total: _statusTotal,
-                  bookTitle: _statusBookTitle,
-                  result: _statusResult,
+              if (_activeStatus != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: StatusBanner(
+                    status: _activeStatus!,
+                    completed: _statusCompleted,
+                    total: _statusTotal,
+                    bookTitle: _statusBookTitle,
+                    result: _statusResult,
+                  ),
                 ),
-              ),
-            if (_searchOpen) _buildSearchOverlay(context),
-          ],
-        ),
-        floatingActionButton: _tab == LibraryTab.books
-            ? _buildFab(context)
-            : null,
+              if (_searchOpen) _buildSearchOverlay(context),
+            ],
+          ),
+          floatingActionButton: _tab == LibraryTab.books
+              ? _buildFab(context)
+              : null,
         ),
       ),
     );
@@ -2337,10 +2375,13 @@ class _LibraryScreenState extends State<LibraryScreen>
     final q = _query.trim().toLowerCase();
     final searchResults = q.isEmpty
         ? <Book>[]
-        : widget.library.books.where((b) {
-            return b.displayTitle.toLowerCase().contains(q) ||
-                b.author.toLowerCase().contains(q);
-          }).take(10).toList();
+        : widget.library.books
+              .where((b) {
+                return b.displayTitle.toLowerCase().contains(q) ||
+                    b.author.toLowerCase().contains(q);
+              })
+              .take(10)
+              .toList();
 
     return Positioned.fill(
       child: GestureDetector(
@@ -2387,7 +2428,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 hintText: 'Search your burrow',
                                 suffixIcon: _query.isNotEmpty
                                     ? IconButton(
-                                        icon: const Icon(Icons.close_rounded, size: 20),
+                                        icon: const Icon(
+                                          Icons.close_rounded,
+                                          size: 20,
+                                        ),
                                         onPressed: () {
                                           _searchController.clear();
                                           setState(() => _query = '');
@@ -2397,12 +2441,18 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 filled: true,
                                 fillColor: scheme.surfaceContainerHighest,
                                 isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                  horizontal: 16,
+                                ),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: Burrow.r(Burrow.shapeLg),
-                                  borderSide: BorderSide(color: scheme.primary, width: 2),
+                                  borderSide: BorderSide(
+                                    color: scheme.primary,
+                                    width: 2,
+                                  ),
                                 ),
                               ),
                             ),
@@ -2434,7 +2484,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 leading: SizedBox(
                                   width: 36,
                                   height: 54,
-                                  child: BookCover(book: book, borderRadius: 4, spine: false),
+                                  child: BookCover(
+                                    book: book,
+                                    borderRadius: 4,
+                                    spine: false,
+                                  ),
                                 ),
                                 title: Text(
                                   book.displayTitle,
@@ -2713,7 +2767,11 @@ class _PinnedSelectionBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _extent;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Material(
       color: backgroundColor,
       child: Align(alignment: Alignment.topCenter, child: child),
