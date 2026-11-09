@@ -82,6 +82,7 @@ class _SplashScreenState extends State<SplashScreen>
             child: Text(
               'burrow',
               style: TextStyle(
+                fontFamily: 'Fraunces',
                 fontSize: 42,
                 fontWeight: FontWeight.w600,
                 color: Colors.white,
