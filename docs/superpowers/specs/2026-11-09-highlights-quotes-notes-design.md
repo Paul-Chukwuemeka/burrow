@@ -87,6 +87,8 @@ locator columns, not in parallel features.
 
 ### 7.1 New table (`lib/db/database.dart`)
 
+Drift generates the row type as `HighlightRow` (same convention as `BookRow`).
+
 ```dart
 class Highlights extends Table {
   TextColumn get id => text()();
@@ -171,10 +173,18 @@ and exporter share one implementation:
 /// Chapter-local offset -> flat document offset.
 int flatOffsetFor(int chapter, int offset, List<int> charsBefore);
 
+/// Build a chapter-local locator from a flat selection.
+({int chapter, int startOffset, int endChapter, int endOffset})
+    reflowableLocatorFromFlat({
+  required int start, required int end, required List<int> charsBefore,
+});
+
 /// Clamp a stored locator to the current parse.
-({int chapter, int start, int end})? clampReflowableLocator(
-  Highlight h, int chapterCount, int Function(int) chapterLength,
-);
+({int chapter, int start, int end})? clampReflowableLocator({
+  required int chapter, required int startOffset,
+  required int endChapter, required int endOffset,
+  required int chapterCount, required int Function(int chapter) chapterLength,
+});
 ```
 
 The last function is the safety valve for parser changes: if a stored chapter
@@ -317,9 +327,17 @@ Numbering and subtitles for reflowable rows use `Chapter.title`; PDF rows use
 New pure service `lib/services/highlight_exporter.dart`:
 
 ```dart
-String toMarkdown(Book book, List<Highlight> highlights,
-    {required String Function(Highlight) locatorLabel});
-String toJson(Book book, List<Highlight> highlights);
+String highlightsToMarkdown({
+  required Book book,
+  required List<db.HighlightRow> highlights,
+  required String Function(db.HighlightRow) locatorLabel,
+  DateTime? exportedAt,
+});
+String highlightsToJson({
+  required Book book,
+  required List<db.HighlightRow> highlights,
+  DateTime? exportedAt,
+});
 ```
 
 - **Markdown**: title/author header, export date, then groups in reading order.
