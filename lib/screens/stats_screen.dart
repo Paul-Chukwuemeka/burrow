@@ -92,12 +92,16 @@ class _StatsScreenState extends State<StatsScreen> {
     // Snapshot books after the await so header counts agree with the fresh
     // stats even if the library changed mid-load.
     if (!mounted) return;
-    final books = widget.library.books;
+    final books = widget.library.activeBooks;
+    final activeIds = books.map((b) => b.id).toSet();
+    final activePerBookStats = perBookStats
+        .where((s) => activeIds.contains(s.book.id))
+        .toList();
 
     var totalTime = 0;
     var totalPages = 0;
     var totalSessions = 0;
-    for (final s in perBookStats) {
+    for (final s in activePerBookStats) {
       totalTime += s.totalTimeMs;
       totalPages += s.totalPages;
       totalSessions += s.sessionCount;
@@ -118,7 +122,7 @@ class _StatsScreenState extends State<StatsScreen> {
       _dailyTime = dailyTime;
       _hourlyTime = hourlyTime;
       _monthlyTime = monthlyTime;
-      _perBookStats = perBookStats;
+      _perBookStats = activePerBookStats;
       _loading = false;
     });
   }
@@ -133,35 +137,35 @@ class _StatsScreenState extends State<StatsScreen> {
       body: _loading
           ? Center(child: CircularProgressIndicator(color: scheme.primary))
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.error_outline_rounded,
-                          size: 56,
-                          color: scheme.error,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: _loadStats,
-                          child: const Text('Retry'),
-                        ),
-                      ],
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      size: 56,
+                      color: scheme.error,
                     ),
-                  ),
-                )
-              : _buildContent(theme, scheme),
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _loadStats,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : _buildContent(theme, scheme),
     );
   }
 

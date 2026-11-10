@@ -63,6 +63,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('More actions'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Remove from library'),
+      120,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.tap(find.text('Remove from library'));
     await tester.pumpAndSettle();
 

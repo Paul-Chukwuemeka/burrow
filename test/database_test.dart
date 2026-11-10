@@ -344,7 +344,7 @@ void main() {
       final version = await migrated
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(version.data['user_version'], 9);
+      expect(version.data['user_version'], 10);
       expect(await migrated.countHighlightsForBook('none'), 0);
 
       await migrated.close();

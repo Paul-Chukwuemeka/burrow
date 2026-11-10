@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../models/book_stats.dart';
+import '../models/library_enums.dart';
 
 part 'database.g.dart';
 
@@ -46,6 +47,9 @@ class Books extends Table {
       boolean().withDefault(const Constant(false))();
   IntColumn? get fileSize => integer().nullable()();
   IntColumn? get mtimeMs => integer().nullable()();
+  IntColumn get archiveTier =>
+      intEnum<ArchiveTier>().withDefault(const Constant(0))();
+  IntColumn get archivedAt => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -164,7 +168,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   /// Returns the local-midnight epoch-ms for the day containing [ms].
   /// Two timestamps on the same calendar day (in the device's local timezone)
@@ -297,6 +301,14 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           'CREATE INDEX IF NOT EXISTS idx_highlights_book_id ON highlights (book_id);',
         );
+      }
+      if (from < 10) {
+        if (!await hasColumn('books', 'archive_tier')) {
+          await m.addColumn(books, books.archiveTier);
+        }
+        if (!await hasColumn('books', 'archived_at')) {
+          await m.addColumn(books, books.archivedAt);
+        }
       }
     },
   );
@@ -743,6 +755,8 @@ Book bookFromRow(BookRow row) => Book(
   metadataComplete: row.metadataComplete,
   fileSize: row.fileSize,
   mtimeMs: row.mtimeMs,
+  archiveTier: row.archiveTier,
+  archivedAt: row.archivedAt,
 );
 
 BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
@@ -775,6 +789,8 @@ BooksCompanion bookToCompanion(Book book) => BooksCompanion.insert(
   metadataComplete: Value(book.metadataComplete),
   fileSize: Value(book.fileSize),
   mtimeMs: Value(book.mtimeMs),
+  archiveTier: Value(book.archiveTier),
+  archivedAt: Value(book.archivedAt),
 );
 
 BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
@@ -807,6 +823,8 @@ BooksCompanion bookToCompanionForUpdate(Book book) => BooksCompanion(
   metadataComplete: Value(book.metadataComplete),
   fileSize: Value(book.fileSize),
   mtimeMs: Value(book.mtimeMs),
+  archiveTier: Value(book.archiveTier),
+  archivedAt: Value(book.archivedAt),
 );
 
 BooksCompanion positionToUpdate({
