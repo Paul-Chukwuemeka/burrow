@@ -4,6 +4,7 @@ import '../db/database.dart' as db;
 import '../models/book.dart';
 import '../services/library_service.dart';
 import '../utils/highlight_locator.dart';
+import '../utils/pdf_highlight_geometry.dart';
 
 /// Loads and mutates the highlights for one book.
 ///
@@ -16,13 +17,48 @@ class HighlightController extends ChangeNotifier {
   final Book book;
 
   List<db.HighlightRow> _highlights = const [];
+  Map<int, List<db.HighlightRow>> _byChapter = const {};
+  Map<int, List<({PdfHighlightRect rect, int color})>> _pdfRectsByPage =
+      const {};
   bool _disposed = false;
 
   List<db.HighlightRow> get highlights => List.unmodifiable(_highlights);
 
   Future<void> load() async {
     _highlights = await library.getHighlights(book.id);
+    _byChapter = _groupByChapter(_highlights);
+    _pdfRectsByPage = _groupPdfRects(_highlights);
     if (!_disposed) notifyListeners();
+  }
+
+  static Map<int, List<db.HighlightRow>> _groupByChapter(
+    List<db.HighlightRow> rows,
+  ) {
+    final map = <int, List<db.HighlightRow>>{};
+    for (final row in rows) {
+      final start = row.chapter;
+      if (start == null) continue;
+      final end = row.endChapter ?? start;
+      for (var chapter = start; chapter <= end; chapter++) {
+        map.putIfAbsent(chapter, () => []).add(row);
+      }
+    }
+    return map;
+  }
+
+  static Map<int, List<({PdfHighlightRect rect, int color})>> _groupPdfRects(
+    List<db.HighlightRow> rows,
+  ) {
+    final map = <int, List<({PdfHighlightRect rect, int color})>>{};
+    for (final row in rows) {
+      for (final segment in decodePdfSegments(row.segments)) {
+        final list = map.putIfAbsent(segment.page, () => []);
+        for (final rect in segment.rects) {
+          list.add((rect: rect, color: row.color));
+        }
+      }
+    }
+    return map;
   }
 
   Future<db.HighlightRow?> addReflowable({
@@ -100,15 +136,13 @@ class HighlightController extends ChangeNotifier {
     return _afterWrite(id);
   }
 
-  /// Highlights whose range overlaps [chapter].
-  List<db.HighlightRow> forChapter(int chapter) => _highlights
-      .where(
-        (row) =>
-            row.chapter != null &&
-            row.chapter! <= chapter &&
-            (row.endChapter ?? row.chapter!) >= chapter,
-      )
-      .toList(growable: false);
+  /// Highlights whose range overlaps [chapter], precomputed on load.
+  List<db.HighlightRow> forChapter(int chapter) =>
+      _byChapter[chapter] ?? const [];
+
+  /// Highlight rectangles for one PDF page, precomputed on load.
+  List<({PdfHighlightRect rect, int color})> pdfRectsForPage(int page) =>
+      _pdfRectsByPage[page] ?? const [];
 
   Future<db.HighlightRow?> _afterWrite(String id) async {
     if (id.isEmpty) return null;

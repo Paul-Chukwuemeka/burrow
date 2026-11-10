@@ -268,6 +268,7 @@ void main() {
       Future<db.HighlightRow?> Function(db.HighlightRow)? onRestore,
       String Function(db.HighlightRow)? locatorLabel,
       bool Function(db.HighlightRow)? canJump,
+      VoidCallback? onExport,
     }) => HighlightTab(
       highlights: highlights,
       onJump: onJump ?? (_) {},
@@ -277,7 +278,7 @@ void main() {
       onRestore: onRestore ?? (r) async => r,
       locatorLabel: locatorLabel ?? (_) => 'Page 12',
       canJump: canJump ?? (_) => true,
-      onExport: () {},
+      onExport: onExport ?? () {},
     );
 
     testWidgets('shows a Notes tab with a count', (tester) async {
@@ -390,15 +391,44 @@ void main() {
       tester,
     ) async {
       var jumps = 0;
-      await open(
-        tester,
-        tab(canJump: (_) => false, onJump: (_) => jumps++),
-      );
+      await open(tester, tab(canJump: (_) => false, onJump: (_) => jumps++));
 
       expect(find.textContaining('Location unavailable'), findsOneWidget);
       await tester.tap(find.text('quoted words'));
       await tester.pumpAndSettle();
       expect(jumps, 0);
+    });
+
+    testWidgets('export action calls onExport', (tester) async {
+      var exported = 0;
+      await open(tester, tab(onExport: () => exported++));
+
+      await tester.tap(find.byTooltip('Export highlights'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Export highlights').last);
+      await tester.pumpAndSettle();
+
+      expect(exported, 1);
+    });
+
+    testWidgets('deleting updates the count and survives a tab switch', (
+      tester,
+    ) async {
+      await open(tester, tab());
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('Notes 0'), findsOneWidget);
+
+      await tester.tap(find.text('Contents'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Notes 0'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('quoted words'), findsNothing);
+      expect(find.text('No highlights yet.'), findsOneWidget);
     });
 
     testWidgets('empty state renders', (tester) async {

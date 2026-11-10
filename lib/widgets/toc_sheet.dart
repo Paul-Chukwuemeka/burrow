@@ -150,18 +150,26 @@ class _TocSheetContent extends StatefulWidget {
 class _TocSheetContentState extends State<_TocSheetContent>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  late final ValueNotifier<int> _notesCount;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _notesCount = ValueNotifier(widget.highlightTab.highlights.length);
   }
 
   @override
   void dispose() {
+    _notesCount.dispose();
     _tabController.dispose();
     super.dispose();
   }
+
+  Widget _notesTab() => ValueListenableBuilder<int>(
+    valueListenable: _notesCount,
+    builder: (context, count, _) => Tab(text: 'Notes $count'),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -202,7 +210,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
                   tabs: [
                     const Tab(text: 'Outline'),
                     const Tab(text: 'Bookmarks'),
-                    Tab(text: 'Notes ${widget.highlightTab.highlights.length}'),
+                    _notesTab(),
                   ],
                 ),
                 const Divider(height: 1),
@@ -233,6 +241,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
                       ),
                       _HighlightsList(
                         tab: widget.highlightTab,
+                        count: _notesCount,
                         theme: theme,
                         scrollController: scrollController,
                       ),
@@ -287,7 +296,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
                 tabs: [
                   const Tab(text: 'Contents'),
                   const Tab(text: 'Bookmarks'),
-                  Tab(text: 'Notes ${widget.highlightTab.highlights.length}'),
+                  _notesTab(),
                 ],
               ),
               const Divider(height: 1),
@@ -323,6 +332,7 @@ class _TocSheetContentState extends State<_TocSheetContent>
                     ),
                     _HighlightsList(
                       tab: widget.highlightTab,
+                      count: _notesCount,
                       theme: theme,
                       scrollController: scrollController,
                     ),
@@ -608,11 +618,13 @@ class _BookmarksList extends StatelessWidget {
 class _HighlightsList extends StatefulWidget {
   const _HighlightsList({
     required this.tab,
+    required this.count,
     required this.theme,
     required this.scrollController,
   });
 
   final HighlightTab tab;
+  final ValueNotifier<int> count;
   final ReaderTheme theme;
   final ScrollController scrollController;
 
@@ -620,15 +632,20 @@ class _HighlightsList extends StatefulWidget {
   State<_HighlightsList> createState() => _HighlightsListState();
 }
 
-class _HighlightsListState extends State<_HighlightsList> {
+class _HighlightsListState extends State<_HighlightsList>
+    with AutomaticKeepAliveClientMixin<_HighlightsList> {
   late List<db.HighlightRow> _items;
   db.HighlightRow? _lastDeleted;
   Timer? _undoTimer;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
     _items = _sorted(widget.tab.highlights);
+    widget.count.value = _items.length;
   }
 
   @override
@@ -651,6 +668,7 @@ class _HighlightsListState extends State<_HighlightsList> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = widget.theme;
     if (_items.isEmpty) {
       return _frame(
@@ -838,6 +856,7 @@ class _HighlightsListState extends State<_HighlightsList> {
       _items.removeWhere((item) => item.id == row.id);
       _lastDeleted = row;
     });
+    widget.count.value = _items.length;
     widget.tab.onDelete(row);
 
     _undoTimer?.cancel();
@@ -850,6 +869,20 @@ class _HighlightsListState extends State<_HighlightsList> {
 
   Widget _frame(ReaderTheme theme, Widget child) => Column(
     children: [
+      Row(
+        children: [
+          const Spacer(),
+          PopupMenuButton<String>(
+            tooltip: 'Export highlights',
+            icon: const Icon(Icons.ios_share),
+            enabled: _items.isNotEmpty,
+            onSelected: (_) => widget.tab.onExport(),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'export', child: Text('Export highlights')),
+            ],
+          ),
+        ],
+      ),
       if (_lastDeleted != null) _undoBanner(theme),
       Expanded(child: child),
     ],
@@ -884,6 +917,7 @@ class _HighlightsListState extends State<_HighlightsList> {
       _lastDeleted = null;
       _items = _sorted([..._items, restored]);
     });
+    widget.count.value = _items.length;
   }
 
   String _date(int ms) => DateTime.fromMillisecondsSinceEpoch(

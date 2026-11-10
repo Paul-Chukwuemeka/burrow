@@ -59,24 +59,35 @@ void main() {
     expect(tapped, 1);
   });
 
-  testWidgets('all five actions fit at 320 dp', (tester) async {
+  testWidgets('all five actions fit and tap at 320 dp', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
+    var noted = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SizedBox(width: 320, child: toolbar(singleWord: true)),
+          body: SizedBox(
+            width: 320,
+            child: toolbar(singleWord: true, onNote: () => noted++),
+          ),
         ),
       ),
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Define'), findsOneWidget);
-    expect(find.text('Copy'), findsOneWidget);
-    expect(find.text('Share'), findsOneWidget);
-    expect(find.text('Highlight'), findsOneWidget);
-    expect(find.text('Note'), findsOneWidget);
+    for (final label in ['Define', 'Copy', 'Share', 'Highlight', 'Note']) {
+      final rect = tester.getRect(find.text(label));
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(
+        rect.right,
+        lessThanOrEqualTo(320),
+        reason: '$label is off screen',
+      );
+    }
+
+    await tester.tap(find.text('Note'));
+    expect(noted, 1);
   });
 }

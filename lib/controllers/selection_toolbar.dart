@@ -61,58 +61,62 @@ class SelectionToolbarOverlay {
               ),
             Positioned(
               left: 8,
-              right: 8,
               top: (globalPosition.dy - 56).clamp(
                 0.0,
                 MediaQuery.sizeOf(context).height - 60,
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: theme.background,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                  child: SelectionToolbar(
-                    singleWord: singleWord,
-                    theme: theme,
-                    onDefine: () {
-                      dismiss();
-                      openDictionarySheet(word);
-                    },
-                    onCopy: () {
-                      dismiss();
-                      Clipboard.setData(ClipboardData(text: _text));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Copied "$_text"'),
-                          duration: const Duration(seconds: 1),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width - 24,
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.background,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                      );
-                    },
-                    onShare: () {
-                      dismiss();
-                      SharePlus.instance.share(ShareParams(text: _text));
-                    },
-                    onHighlight: () {
-                      dismiss();
-                      onHighlight();
-                    },
-                    onNote: () {
-                      dismiss();
-                      onNote();
-                    },
+                      ],
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 6,
+                    ),
+                    child: SelectionToolbar(
+                      singleWord: singleWord,
+                      theme: theme,
+                      onDefine: () {
+                        dismiss();
+                        openDictionarySheet(word);
+                      },
+                      onCopy: () {
+                        dismiss();
+                        Clipboard.setData(ClipboardData(text: _text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Copied "$_text"'),
+                            duration: const Duration(seconds: 1),
+                          ),
+                        );
+                      },
+                      onShare: () {
+                        dismiss();
+                        SharePlus.instance.share(ShareParams(text: _text));
+                      },
+                      onHighlight: () {
+                        dismiss();
+                        onHighlight();
+                      },
+                      onNote: () {
+                        dismiss();
+                        onNote();
+                      },
+                    ),
                   ),
                 ),
               ),

@@ -94,6 +94,37 @@ void main() {
     },
   );
 
+  test('pdfRectsForPage groups decoded rectangles by page', () async {
+    await controller.addPdf(
+      text: 'pdf',
+      page: 12,
+      segments:
+          '[{"page":12,"rects":[[1,2,3,4],[5,6,7,8]]},'
+          '{"page":13,"rects":[[9,10,11,12]]}]',
+      color: 2,
+    );
+
+    expect(controller.pdfRectsForPage(12), hasLength(2));
+    expect(controller.pdfRectsForPage(13), hasLength(1));
+    expect(controller.pdfRectsForPage(99), isEmpty);
+    expect(controller.pdfRectsForPage(12).first.color, 2);
+  });
+
+  test('loading twice keeps one row per highlight', () async {
+    await controller.addReflowable(
+      text: 'once',
+      start: 0,
+      end: 5,
+      charsBefore: const [0, 100],
+      color: 0,
+    );
+
+    await controller.load();
+    await controller.load();
+
+    expect(controller.highlights, hasLength(1));
+  });
+
   test('forChapter excludes PDF rows', () async {
     await controller.addPdf(text: 'pdf', page: 1, segments: '[]', color: 0);
 

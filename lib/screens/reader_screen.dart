@@ -248,7 +248,6 @@ class ReaderScreenState extends State<ReaderScreen>
   late final HighlightController _highlightCtrl;
   ({String text, int page, String segments})? _pendingPdfSelection;
   PdfTextSelection? _pdfSelection;
-  List<db.HighlightRow> _pdfHighlights = const [];
 
   // Search state.
   late final ReaderSearchController _searchCtrl;
@@ -322,9 +321,7 @@ class ReaderScreenState extends State<ReaderScreen>
     });
     _highlightCtrl = HighlightController(library: widget.library, book: _book);
     _highlightCtrl.addListener(() {
-      if (!mounted) return;
-      _pdfHighlights = _highlightCtrl.highlights;
-      setState(() {});
+      if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -1696,19 +1693,18 @@ class ReaderScreenState extends State<ReaderScreen>
   /// already-loaded rows and never queries the database.
   void _paintPdfHighlights(Canvas canvas, Rect pageRect, PdfPage page) {
     final dark = _settings.colors.brightness == Brightness.dark;
-    for (final row in _pdfHighlights) {
-      for (final rect in pdfRectsForPage(row.segments, page.pageNumber)) {
-        final target = PdfRect(
-          rect.left,
-          rect.top,
-          rect.right,
-          rect.bottom,
-        ).toRectInDocument(page: page, pageRect: pageRect);
-        canvas.drawRect(
-          target,
-          Paint()..color = highlightBackground(row.color, dark: dark),
-        );
-      }
+    for (final item in _highlightCtrl.pdfRectsForPage(page.pageNumber)) {
+      final rect = item.rect;
+      final target = PdfRect(
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
+      ).toRectInDocument(page: page, pageRect: pageRect);
+      canvas.drawRect(
+        target,
+        Paint()..color = highlightBackground(item.color, dark: dark),
+      );
     }
   }
 
