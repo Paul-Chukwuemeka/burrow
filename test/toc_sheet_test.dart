@@ -9,8 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 HighlightTab _emptyTab() => HighlightTab(
   highlights: const [],
   onJump: (_) {},
-  onNoteChanged: (_, __) {},
-  onColorChanged: (_, __) {},
+  onNoteChanged: (_, _) {},
+  onColorChanged: (_, _) {},
   onDelete: (_) {},
   onRestore: (row) async => row,
   locatorLabel: (_) => '',
@@ -272,8 +272,8 @@ void main() {
     }) => HighlightTab(
       highlights: highlights,
       onJump: onJump ?? (_) {},
-      onNoteChanged: onNoteChanged ?? (_, __) {},
-      onColorChanged: onColorChanged ?? (_, __) {},
+      onNoteChanged: onNoteChanged ?? (_, _) {},
+      onColorChanged: onColorChanged ?? (_, _) {},
       onDelete: onDelete ?? (_) {},
       onRestore: onRestore ?? (r) async => r,
       locatorLabel: locatorLabel ?? (_) => 'Page 12',
