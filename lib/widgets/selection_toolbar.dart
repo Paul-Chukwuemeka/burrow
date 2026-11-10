@@ -28,32 +28,27 @@ class SelectionToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Two rows keep every action visible at 320 dp; a single row of five
-    // text buttons is wider than a small phone.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (singleWord) ...[
-              _toolbarButton(label: 'Define', onTap: onDefine),
-              _toolbarDivider(),
-            ],
-            _toolbarButton(label: 'Copy', onTap: onCopy),
+    // A single row keeps every action visible in reading order; when it will
+    // not fit (small phones) it scales down proportionally instead of
+    // scrolling actions out of reach.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (singleWord) ...[
+            _toolbarButton(label: 'Define', onTap: onDefine),
             _toolbarDivider(),
-            _toolbarButton(label: 'Share', onTap: onShare),
           ],
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _toolbarButton(label: 'Highlight', onTap: onHighlight),
-            _toolbarDivider(),
-            _toolbarButton(label: 'Note', onTap: onNote),
-          ],
-        ),
-      ],
+          _toolbarButton(label: 'Copy', onTap: onCopy),
+          _toolbarDivider(),
+          _toolbarButton(label: 'Share', onTap: onShare),
+          _toolbarDivider(),
+          _toolbarButton(label: 'Highlight', onTap: onHighlight),
+          _toolbarDivider(),
+          _toolbarButton(label: 'Note', onTap: onNote),
+        ],
+      ),
     );
   }
 
