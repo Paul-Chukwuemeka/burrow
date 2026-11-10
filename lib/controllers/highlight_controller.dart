@@ -18,8 +18,9 @@ class HighlightController extends ChangeNotifier {
 
   List<db.HighlightRow> _highlights = const [];
   Map<int, List<db.HighlightRow>> _byChapter = const {};
-  Map<int, List<({PdfHighlightRect rect, int color})>> _pdfRectsByPage =
-      const {};
+  Map<int, List<db.HighlightRow>> _pdfRowsByPage = const {};
+  Map<int, List<({PdfHighlightRect rect, int color, bool note})>>
+  _pdfRectsByPage = const {};
   bool _disposed = false;
 
   List<db.HighlightRow> get highlights => List.unmodifiable(_highlights);
@@ -27,6 +28,7 @@ class HighlightController extends ChangeNotifier {
   Future<void> load() async {
     _highlights = await library.getHighlights(book.id);
     _byChapter = _groupByChapter(_highlights);
+    _pdfRowsByPage = _groupPdfRows(_highlights);
     _pdfRectsByPage = _groupPdfRects(_highlights);
     if (!_disposed) notifyListeners();
   }
@@ -46,15 +48,30 @@ class HighlightController extends ChangeNotifier {
     return map;
   }
 
-  static Map<int, List<({PdfHighlightRect rect, int color})>> _groupPdfRects(
+  static Map<int, List<db.HighlightRow>> _groupPdfRows(
     List<db.HighlightRow> rows,
   ) {
-    final map = <int, List<({PdfHighlightRect rect, int color})>>{};
+    final map = <int, List<db.HighlightRow>>{};
     for (final row in rows) {
+      final pages = <int>{
+        for (final segment in decodePdfSegments(row.segments)) segment.page,
+      };
+      for (final page in pages) {
+        map.putIfAbsent(page, () => []).add(row);
+      }
+    }
+    return map;
+  }
+
+  static Map<int, List<({PdfHighlightRect rect, int color, bool note})>>
+  _groupPdfRects(List<db.HighlightRow> rows) {
+    final map = <int, List<({PdfHighlightRect rect, int color, bool note})>>{};
+    for (final row in rows) {
+      final note = row.note.trim().isNotEmpty;
       for (final segment in decodePdfSegments(row.segments)) {
         final list = map.putIfAbsent(segment.page, () => []);
         for (final rect in segment.rects) {
-          list.add((rect: rect, color: row.color));
+          list.add((rect: rect, color: row.color, note: note));
         }
       }
     }
@@ -141,8 +158,13 @@ class HighlightController extends ChangeNotifier {
       _byChapter[chapter] ?? const [];
 
   /// Highlight rectangles for one PDF page, precomputed on load.
-  List<({PdfHighlightRect rect, int color})> pdfRectsForPage(int page) =>
-      _pdfRectsByPage[page] ?? const [];
+  List<({PdfHighlightRect rect, int color, bool note})> pdfRectsForPage(
+    int page,
+  ) => _pdfRectsByPage[page] ?? const [];
+
+  /// Highlights that have any rectangle on [page], for tap hit-testing.
+  List<db.HighlightRow> pdfRowsForPage(int page) =>
+      _pdfRowsByPage[page] ?? const [];
 
   Future<db.HighlightRow?> _afterWrite(String id) async {
     if (id.isEmpty) return null;

@@ -108,6 +108,32 @@ void main() {
     expect(controller.pdfRectsForPage(13), hasLength(1));
     expect(controller.pdfRectsForPage(99), isEmpty);
     expect(controller.pdfRectsForPage(12).first.color, 2);
+    expect(controller.pdfRowsForPage(12), hasLength(1));
+    expect(controller.pdfRowsForPage(13), hasLength(1));
+    expect(controller.pdfRowsForPage(99), isEmpty);
+  });
+
+  test('PDF note flags follow the stored note', () async {
+    await controller.addPdf(
+      text: 'pdf',
+      page: 4,
+      segments: '[{"page":4,"rects":[[1,2,3,4]]}]',
+      color: 1,
+      note: 'with note',
+    );
+
+    expect(controller.pdfRectsForPage(4).single.note, isTrue);
+  });
+
+  test('PDF rectangles without a note are not marked', () async {
+    await controller.addPdf(
+      text: 'pdf',
+      page: 4,
+      segments: '[{"page":4,"rects":[[1,2,3,4]]}]',
+      color: 1,
+    );
+
+    expect(controller.pdfRectsForPage(4).single.note, isFalse);
   });
 
   test('loading twice keeps one row per highlight', () async {

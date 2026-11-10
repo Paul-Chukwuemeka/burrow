@@ -43,6 +43,7 @@ import '../utils/pdf_highlight_geometry.dart';
 import '../utils/text_selection.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/comic_image.dart';
+import '../widgets/highlight_actions_sheet.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/toc_sheet.dart';
 
@@ -1185,6 +1186,16 @@ class ReaderScreenState extends State<ReaderScreen>
 
   @visibleForTesting
   int get debugChapterCount => _doc?.chapters.length ?? -1;
+
+  /// The parsed body of [chapter], for tests that need real offsets.
+  @visibleForTesting
+  String debugChapterBody(int chapter) {
+    final doc = _doc;
+    if (doc == null || chapter < 0 || chapter >= doc.chapters.length) {
+      return '';
+    }
+    return doc.chapters[chapter].body;
+  }
   @visibleForTesting
   int get debugPaginatorCount => _paginators.length;
   @visibleForTesting
@@ -1705,6 +1716,31 @@ class ReaderScreenState extends State<ReaderScreen>
         target,
         Paint()..color = highlightBackground(item.color, dark: dark),
       );
+      if (item.note) {
+        // Same note marker as reflowable text: a dashed underline, never a
+        // solid one.
+        _paintDashedUnderline(
+          canvas,
+          target,
+          highlightNoteUnderline(item.color, dark: dark),
+        );
+      }
+    }
+  }
+
+  /// Draws a dashed underline along the lower edge of [rect].
+  void _paintDashedUnderline(Canvas canvas, Rect rect, Color color) {
+    final y = rect.bottom - 1;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5;
+    const dash = 5.0;
+    const gap = 3.0;
+    var x = rect.left;
+    while (x < rect.right) {
+      final end = math.min(x + dash, rect.right);
+      canvas.drawLine(Offset(x, y), Offset(end, y), paint);
+      x = end + gap;
     }
   }
 
@@ -1729,10 +1765,149 @@ class ReaderScreenState extends State<ReaderScreen>
         chapterLength: length,
       );
       if (clipped != null) {
-        slices.add((start: clipped.start, end: clipped.end, color: row.color));
+        slices.add((
+          start: clipped.start,
+          end: clipped.end,
+          color: row.color,
+          note: row.note.trim().isNotEmpty,
+        ));
       }
     }
     return slices;
+  }
+
+  /// Opens the actions for the highlight covering [offset] on [chapter].
+  ///
+  /// Returns `true` when a highlight was hit, so the page tap does not also
+  /// flip. Cross-chapter highlights are resolved per chapter: the start
+  /// chapter begins at its stored offset, the end chapter ends at its stored
+  /// offset, and any chapter between is covered end to end.
+  bool _openHighlightAt(int chapter, int offset) {
+    final doc = _doc;
+    if (doc == null || chapter < 0 || chapter >= doc.chapters.length) {
+      return false;
+    }
+    final length = doc.chapters[chapter].body.length;
+
+    for (final row in _highlightCtrl.forChapter(chapter)) {
+      final startChapter = row.chapter;
+      if (startChapter == null) continue;
+      final endChapter = row.endChapter ?? startChapter;
+      final start = startChapter == chapter ? (row.startOffset ?? 0) : 0;
+      final end = endChapter == chapter ? (row.endOffset ?? 0) : length;
+      if (offset >= start && offset < end) {
+        _openHighlightActions(row);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _openHighlightActions(db.HighlightRow row) async {
+    await showHighlightActions(
+      context,
+      row: row,
+      theme: _settings.colors,
+      onOpenNote: () => _showHighlightNote(row),
+      onEditNote: () => _editHighlightNote(row),
+      onChangeColor: () => _changeHighlightColor(row),
+      onDelete: () => _deleteHighlightWithUndo(row),
+    );
+  }
+
+  Future<void> _showHighlightNote(db.HighlightRow row) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Note'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                row.quote,
+                style: const TextStyle(fontStyle: FontStyle.italic),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(row.note),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, 'edit'),
+            child: const Text('Edit'),
+          ),
+        ],
+      ),
+    );
+    if (action == 'edit' && mounted) {
+      await _editHighlightNote(row);
+    }
+  }
+
+  Future<void> _editHighlightNote(db.HighlightRow row) async {
+    final controller = TextEditingController(text: row.note);
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit note'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(hintText: 'Your note'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (note == null || !mounted) return;
+    await _highlightCtrl.updateNote(row.id, note);
+  }
+
+  Future<void> _changeHighlightColor(db.HighlightRow row) async {
+    final color = await showHighlightColorPicker(
+      context,
+      current: row.color,
+      theme: _settings.colors,
+    );
+    if (color == null || !mounted) return;
+    await _highlightCtrl.updateColor(row.id, color);
+  }
+
+  Future<void> _deleteHighlightWithUndo(db.HighlightRow row) async {
+    await _highlightCtrl.delete(row.id);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Highlight deleted'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              await _highlightCtrl.restore(row);
+            },
+          ),
+        ),
+      );
   }
 
   void _showHighlightSaved() {
@@ -1857,6 +2032,35 @@ class ReaderScreenState extends State<ReaderScreen>
       params: PdfViewerParams(
         backgroundColor: theme.background,
         buildContextMenu: (context, params) => null,
+        onGeneralTap: (context, controller, details) {
+          if (details.type != PdfViewerGeneralTapType.tap) return false;
+          final hit = controller.getPdfPageHitTestResult(
+            details.documentPosition,
+            useDocumentLayoutCoordinates: true,
+          );
+          if (hit == null) return false;
+
+          final point = hit.offset;
+          for (final row in _highlightCtrl.pdfRowsForPage(
+            hit.page.pageNumber,
+          )) {
+            for (final segment in decodePdfSegments(row.segments)) {
+              if (segment.page != hit.page.pageNumber) continue;
+              for (final rect in segment.rects) {
+                final inside =
+                    point.x >= rect.left &&
+                    point.x <= rect.right &&
+                    point.y >= rect.bottom &&
+                    point.y <= rect.top;
+                if (inside) {
+                  _openHighlightActions(row);
+                  return true;
+                }
+              }
+            }
+          }
+          return false;
+        },
         textSelectionParams: PdfTextSelectionParams(
           enabled: true,
           onTextSelectionChange: (selection) async {
@@ -2541,6 +2745,7 @@ class ReaderScreenState extends State<ReaderScreen>
                     _clearSelection();
                     _jumpToChapter(target);
                   },
+                  onTapHighlight: (offset) => _openHighlightAt(chapter, offset),
                   page: page,
                   style: renderStyle,
                   theme: theme,
@@ -3542,6 +3747,7 @@ class _PageContent extends StatefulWidget {
     this.images = const [],
     this.links = const [],
     this.onTapLink,
+    this.onTapHighlight,
     this.highlightMatches,
     this.highlightSlices = const [],
     this.currentMatch,
@@ -3575,6 +3781,10 @@ class _PageContent extends StatefulWidget {
   final List<ImageRun> images;
   final List<ChapterLink> links;
   final void Function(int target)? onTapLink;
+
+  /// Called with the chapter-local offset under a tap. Returns `true` when a
+  /// highlight was hit and the tap should not also flip the page.
+  final bool Function(int chapterOffset)? onTapHighlight;
   final List<SearchResult>? highlightMatches;
   final List<HighlightSlice> highlightSlices;
   final SearchResult? currentMatch;
@@ -3698,6 +3908,14 @@ class _PageContentState extends State<_PageContent> {
                 return;
               }
             }
+          }
+        }
+        // Tapping painted highlight text opens that highlight's actions; the
+        // page does not flip underneath the sheet.
+        if (widget.onTapHighlight != null) {
+          final bodyOffset = _bodyTextOffsetAt(details.globalPosition);
+          if (bodyOffset != null && widget.onTapHighlight!(bodyOffset)) {
+            return;
           }
         }
         final w = context.size?.width ?? MediaQuery.sizeOf(context).width;

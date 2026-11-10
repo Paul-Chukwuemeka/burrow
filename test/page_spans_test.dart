@@ -650,7 +650,7 @@ void main() {
 
     test('paints a highlight background', () {
       final span = wrapSpans(
-        pages(slices: const [(start: 0, end: 4, color: 0)]),
+        pages(slices: const [(start: 0, end: 4, color: 0, note: false)]),
       );
       expect(span.toPlainText(), 'word word');
 
@@ -662,7 +662,7 @@ void main() {
     test('selection overrides a highlight', () {
       final span = wrapSpans(
         pages(
-          slices: const [(start: 0, end: 4, color: 0)],
+          slices: const [(start: 0, end: 4, color: 0, note: false)],
           selectedRange: (start: 0, end: 4),
         ),
       );
@@ -672,7 +672,7 @@ void main() {
 
     test('highlight boundaries split the span', () {
       final span = wrapSpans(
-        pages(slices: const [(start: 5, end: 9, color: 0)]),
+        pages(slices: const [(start: 5, end: 9, color: 0, note: false)]),
       );
       final children = span.children!.cast<TextSpan>();
       expect(children.map((c) => c.text), ['word ', 'word']);
@@ -682,11 +682,32 @@ void main() {
 
     test('a slice outside the page paints nothing', () {
       final span = wrapSpans(
-        pages(slices: const [(start: 50, end: 60, color: 0)]),
+        pages(slices: const [(start: 50, end: 60, color: 0, note: false)]),
       );
       for (final child in span.children!.cast<TextSpan>()) {
         expect(child.style?.backgroundColor, isNull);
       }
+    });
+
+    test('a highlight note paints a dashed underline', () {
+      final span = wrapSpans(
+        pages(slices: const [(start: 0, end: 4, color: 0, note: true)]),
+      );
+      final first = span.children!.first as TextSpan;
+      expect(first.style?.decoration, TextDecoration.underline);
+      expect(first.style?.decorationStyle, TextDecorationStyle.dashed);
+      expect(
+        first.style?.decorationColor,
+        highlightNoteUnderline(0, dark: false),
+      );
+    });
+
+    test('a highlight without a note has no underline', () {
+      final span = wrapSpans(
+        pages(slices: const [(start: 0, end: 4, color: 0, note: false)]),
+      );
+      final first = span.children!.first as TextSpan;
+      expect(first.style?.decoration, isNot(TextDecoration.underline));
     });
   });
 }

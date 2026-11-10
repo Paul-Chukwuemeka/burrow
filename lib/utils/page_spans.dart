@@ -245,11 +245,16 @@ List<InlineSpan> buildPageSpans({
     }
     for (final highlight in highlightSlices) {
       if (highlight.start <= segStart && segEnd <= highlight.end) {
+        final dark = theme.brightness == Brightness.dark;
         segStyle = segStyle.copyWith(
-          backgroundColor: highlightBackground(
-            highlight.color,
-            dark: theme.brightness == Brightness.dark,
-          ),
+          backgroundColor: highlightBackground(highlight.color, dark: dark),
+          // A note is marked with a dashed underline — never a solid one, so
+          // it cannot be confused with a link.
+          decoration: highlight.note ? TextDecoration.underline : null,
+          decorationStyle: highlight.note ? TextDecorationStyle.dashed : null,
+          decorationColor: highlight.note
+              ? highlightNoteUnderline(highlight.color, dark: dark)
+              : null,
         );
         break;
       }

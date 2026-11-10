@@ -20,10 +20,18 @@ const List<String> kHighlightColorNames = [
 ];
 
 /// A highlight range clipped to one chapter, ready to paint.
-typedef HighlightSlice = ({int start, int end, int color});
+typedef HighlightSlice = ({int start, int end, int color, bool note});
 
 /// Background colour for a stored palette [index], clamped into the palette.
 Color highlightBackground(int index, {required bool dark}) {
   final color = kHighlightColors[index.clamp(0, kHighlightColorCount - 1)];
   return color.withValues(alpha: dark ? 0.28 : 0.35);
+}
+
+/// Underline colour that marks a highlight carrying a note.
+Color highlightNoteUnderline(int index, {required bool dark}) {
+  final color = kHighlightColors[index.clamp(0, kHighlightColorCount - 1)];
+  return dark
+      ? Color.lerp(color, Colors.white, 0.35)!
+      : Color.lerp(color, Colors.black, 0.35)!;
 }
